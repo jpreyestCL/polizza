@@ -41,6 +41,21 @@ function isCityField(f: BranchFieldDef): boolean {
   return CITY_KEYS.includes(normalizeKey(f.fieldKey));
 }
 
+// Campos de vehículo con autocompletado contra maestros globales.
+// Sólo se aplica a campos `text` exactos (no afecta `tipo_inmueble`,
+// `tipo_nave`, etc. que son selects con enum cerrado).
+function isVehicleBrandField(f: BranchFieldDef): boolean {
+  return f.type === "text" && normalizeKey(f.fieldKey) === "marca";
+}
+
+function isVehicleModelField(f: BranchFieldDef): boolean {
+  return f.type === "text" && normalizeKey(f.fieldKey) === "modelo";
+}
+
+function isVehicleTypeField(f: BranchFieldDef): boolean {
+  return f.type === "text" && normalizeKey(f.fieldKey) === "tipo";
+}
+
 export function DynamicFieldForm({
   fields,
   values,
@@ -68,6 +83,9 @@ export function DynamicFieldForm({
         const isRich = isRichTextField(f);
         const isCommune = isCommuneField(f);
         const isCity = isCityField(f);
+        const isBrand = isVehicleBrandField(f);
+        const isModel = isVehicleModelField(f);
+        const isType = isVehicleTypeField(f);
         return (
           <div
             key={f.id}
@@ -97,6 +115,44 @@ export function DynamicFieldForm({
                     setField(f.fieldKey, name);
                   }
                 }}
+              />
+            ) : isBrand ? (
+              <FreeTextSearchCombobox
+                value={(values[f.fieldKey] as string) ?? ""}
+                onChange={(v) => {
+                  if (v !== (values[f.fieldKey] as string)) {
+                    // Al cambiar la marca, limpiamos el modelo seleccionado.
+                    const next: Record<string, unknown> = {
+                      ...values,
+                      [f.fieldKey]: v,
+                    };
+                    if (fields.some(isVehicleModelField)) next.modelo = "";
+                    onChange(next);
+                  } else {
+                    setField(f.fieldKey, v);
+                  }
+                }}
+                endpoint="/api/vehicle-brands/search"
+                placeholder="Buscar marca…"
+              />
+            ) : isModel ? (
+              <FreeTextSearchCombobox
+                value={(values[f.fieldKey] as string) ?? ""}
+                onChange={(v) => setField(f.fieldKey, v)}
+                endpoint="/api/vehicle-models/search"
+                extraParams={
+                  values.marca && typeof values.marca === "string"
+                    ? { brand: values.marca }
+                    : undefined
+                }
+                placeholder="Buscar modelo…"
+              />
+            ) : isType ? (
+              <FreeTextSearchCombobox
+                value={(values[f.fieldKey] as string) ?? ""}
+                onChange={(v) => setField(f.fieldKey, v)}
+                endpoint="/api/vehicle-types/search"
+                placeholder="Buscar tipo…"
               />
             ) : isCity ? (
               <Input
@@ -153,6 +209,74 @@ export function DynamicFieldForm({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Combobox que busca contra un endpoint de maestro y permite escribir un
+ * valor libre (al hacer click en "Agregar 'X'" el valor escrito se asigna
+ * tal cual al campo, sin tocar el maestro). La identidad del item es su
+ * nombre, así que el `value` que se persiste es el string.
+ */
+function FreeTextSearchCombobox({
+  value,
+  onChange,
+  endpoint,
+  extraParams,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  endpoint: string;
+  extraParams?: Record<string, string>;
+  placeholder?: string;
+}) {
+  const [initial, setInitial] = useState<{
+    id: string;
+    label: string;
+    sublabel?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    setInitial(value ? { id: value, label: value } : null);
+  }, [value]);
+
+  async function fetcher(q: string) {
+    const params = new URLSearchParams({ q, limit: "30" });
+    if (extraParams) {
+      for (const [k, v] of Object.entries(extraParams)) {
+        if (v) params.set(k, v);
+      }
+    }
+    const res = await fetch(`${endpoint}?${params.toString()}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      items: { id: string; name: string; brandName?: string }[];
+    };
+    return json.items.map((r) => ({
+      id: r.name,
+      label: r.name,
+      sublabel: r.brandName ?? undefined,
+    }));
+  }
+
+  return (
+    <AsyncCombobox
+      value={value}
+      initialOption={initial}
+      onChange={(id) => onChange(id)}
+      fetcher={fetcher}
+      placeholder={value || placeholder || "Seleccionar…"}
+      searchPlaceholder="Buscar o escribir…"
+      emptyText="No está en el maestro"
+      onCreate={(q) => {
+        if (!q) return;
+        onChange(q);
+      }}
+      createLabel="Usar este valor"
+    />
   );
 }
 

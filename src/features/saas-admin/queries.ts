@@ -114,6 +114,63 @@ export type GlobalProductCoverageRow = {
   sumsToTotal: boolean;
 };
 
+// ─── Vehículos ──────────────────────────────────────────────────────
+
+export type VehicleBrandRow = {
+  id: string;
+  name: string;
+  active: boolean;
+  modelsCount: number;
+};
+
+export async function listVehicleBrands(): Promise<VehicleBrandRow[]> {
+  const rows = await basePrisma.vehicleBrand.findMany({
+    orderBy: { name: "asc" },
+    include: { _count: { select: { models: true } } },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    active: r.active,
+    modelsCount: r._count.models,
+  }));
+}
+
+export type VehicleModelRow = {
+  id: string;
+  name: string;
+  active: boolean;
+  brandId: string;
+  brandName: string;
+};
+
+export async function listVehicleModels(): Promise<VehicleModelRow[]> {
+  const rows = await basePrisma.vehicleModel.findMany({
+    orderBy: [{ brand: { name: "asc" } }, { name: "asc" }],
+    include: { brand: { select: { id: true, name: true } } },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    active: r.active,
+    brandId: r.brand.id,
+    brandName: r.brand.name,
+  }));
+}
+
+export type VehicleTypeRow = {
+  id: string;
+  name: string;
+  active: boolean;
+};
+
+export async function listVehicleTypes(): Promise<VehicleTypeRow[]> {
+  const rows = await basePrisma.vehicleType.findMany({
+    orderBy: { name: "asc" },
+  });
+  return rows.map((r) => ({ id: r.id, name: r.name, active: r.active }));
+}
+
 export async function getGlobalProduct(id: string) {
   const product = await basePrisma.globalInsuranceProduct.findUnique({
     where: { id },

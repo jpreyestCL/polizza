@@ -8,8 +8,6 @@ import type { ProposalDetail } from "../queries";
 import { ProposalStatusBadge } from "./proposal-badges";
 import { DocumentsPanel } from "@/features/documents/components/documents-panel";
 import type { DocumentItem } from "@/features/documents/queries";
-import { BitacoraPanel } from "@/features/payment-plan/components/bitacora-panel";
-import type { OrgMember } from "@/features/clients/queries";
 import { MoneyValue } from "@/components/money-value";
 import { EmptyState } from "@/components/empty-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -33,16 +31,6 @@ type PremiumTotals = {
   gross: number;
 };
 
-type LogRow = {
-  id: string;
-  action: string;
-  summary: string;
-  nextDueDate: Date | null;
-  responsibleUserId: string | null;
-  userId: string | null;
-  createdAt: Date;
-};
-
 export function ProposalDetailTabs({
   proposal,
   activity,
@@ -52,8 +40,6 @@ export function ProposalDetailTabs({
   assignedUserName,
   ufValue,
   premiumTotals,
-  bitacoraLogs,
-  bitacoraMembers,
   timezone,
 }: {
   proposal: ProposalDetail;
@@ -64,8 +50,6 @@ export function ProposalDetailTabs({
   assignedUserName: string | null;
   ufValue: number | null;
   premiumTotals: PremiumTotals;
-  bitacoraLogs: LogRow[];
-  bitacoraMembers: OrgMember[];
   timezone: string;
 }) {
   const vigencia =
@@ -98,12 +82,19 @@ export function ProposalDetailTabs({
               <Field
                 label="Contratante"
                 value={
-                  <Link
-                    href={`/clientes/${proposal.client.id}`}
-                    className="text-primary hover:underline"
-                  >
-                    {proposal.client.name}
-                  </Link>
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <Link
+                      href={`/clientes/${proposal.client.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      {proposal.client.name}
+                    </Link>
+                    {proposal.client.rut && (
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {proposal.client.rut}
+                      </span>
+                    )}
+                  </span>
                 }
               />
               <Field label="Compañía" value={companyName} />
@@ -170,13 +161,6 @@ export function ProposalDetailTabs({
               <Field label="Creada" value={formatDate(proposal.createdAt)} />
             </dl>
           </div>
-
-          <BitacoraPanel
-            proposalId={proposal.id}
-            logs={bitacoraLogs}
-            members={bitacoraMembers}
-            timezone={timezone}
-          />
         </div>
       </TabsContent>
 

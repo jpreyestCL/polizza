@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, Layers, Package } from "lucide-react";
+import { Building2, Car, Layers, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
   { href: "/admin/companias", label: "Compañías", icon: Building2 },
   { href: "/admin/ramos", label: "Ramos", icon: Layers },
   { href: "/admin/productos", label: "Productos", icon: Package },
+  { href: "/admin/vehiculos", label: "Vehículos", icon: Car },
 ];
 
 export function AdminNav() {

@@ -150,6 +150,42 @@ model Holiday {
   @@unique([date])
 }
 
+// Maestros globales de vehículos (marca, modelo, tipo). Se usan en las
+// fichas de ramo "Vehículos Motorizados", "SOAP", "Equipo Móvil
+// Individualizado" y "Equipo Móvil General" como autocompletes. El
+// usuario puede escribir un valor libre si no está en el maestro.
+model VehicleBrand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  models VehicleModel[]
+}
+
+model VehicleModel {
+  id        String   @id @default(cuid())
+  brandId   String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  brand VehicleBrand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, name])
+  @@index([name])
+}
+
+model VehicleType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // Maestro global de comunas de Chile (datos de referencia, sin tenant).
 // Código oficial INE/SUBDERE (p. ej. "13101" para Santiago).
 model Commune {

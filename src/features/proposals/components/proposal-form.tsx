@@ -5,8 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { CalendarPlus, Loader2, Save, UserPlus } from "lucide-react";
+import { CalendarPlus, Loader2, Save } from "lucide-react";
 import { QuickClientDialog } from "@/features/clients/components/quick-client-dialog";
+import { FullClientDialog } from "@/features/clients/components/full-client-dialog";
 import { ClientCombobox } from "@/components/ui/client-combobox";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { CURRENCIES, currencyLabel } from "@/lib/money";
@@ -68,6 +69,12 @@ export function ProposalForm({
     defaultValues,
   });
   const [localClients, setLocalClients] = useState<ClientOpt[]>(clients);
+  const [createDialog, setCreateDialog] = useState<{
+    field: "clientId" | "insuredClientId" | "beneficiaryClientId";
+    mode: "full" | "quick";
+    defaultRut: string;
+    defaultName: string;
+  } | null>(null);
   const [currentMode, setCurrentMode] = useState(mode);
   const [currentId, setCurrentId] = useState<string | undefined>(proposalId);
   const [proposalNumber, setProposalNumber] = useState<string | null>(
@@ -80,11 +87,28 @@ export function ProposalForm({
     field: "clientId" | "insuredClientId" | "beneficiaryClientId",
     id: string,
     name: string,
+    rut?: string | null,
   ) {
     setLocalClients((prev) =>
-      prev.some((c) => c.id === id) ? prev : [...prev, { id, name }],
+      prev.some((c) => c.id === id)
+        ? prev
+        : [...prev, { id, name, rut: rut ?? null }],
     );
     form.setValue(field, id, { shouldDirty: true });
+  }
+
+  function openCreateDialog(
+    field: "clientId" | "insuredClientId" | "beneficiaryClientId",
+    query: string,
+  ) {
+    const trimmed = query.trim();
+    const looksLikeRut = /[0-9]/.test(trimmed) && trimmed.length <= 12;
+    setCreateDialog({
+      field,
+      mode: field === "clientId" ? "full" : "quick",
+      defaultRut: looksLikeRut ? trimmed : "",
+      defaultName: looksLikeRut ? "" : trimmed,
+    });
   }
 
   const selectedCompanyId = form.watch("insuranceCompanyId");
@@ -159,11 +183,15 @@ export function ProposalForm({
   function applyCompanyDefaultEmail(companyId: string) {
     const company = catalog.companies.find((c) => c.id === companyId);
     if (!company) return;
-    const cur = form.getValues();
-    if (!cur.recipientEmail) {
-      const defaultContact = company.contacts.find((c) => c.isDefault);
-      const email = defaultContact?.email ?? company.defaultEmail ?? "";
-      if (email) form.setValue("recipientEmail", email);
+    const defaultContact = company.contacts.find((c) => c.isDefault);
+    const email = defaultContact?.email ?? company.defaultEmail ?? "";
+    if (email) {
+      form.setValue("recipientEmail", email, { shouldDirty: true });
+      if (defaultContact) {
+        form.setValue("recipientContactId", defaultContact.id, {
+          shouldDirty: true,
+        });
+      }
     }
   }
 
@@ -311,35 +339,23 @@ export function ProposalForm({
             render={({ field }) => (
               <FormItem className="sm:col-span-2">
                 <FormLabel>Contratante (RUT/cliente) *</FormLabel>
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <ClientCombobox
-                      value={field.value}
-                      onChange={(id, c) => {
-                        field.onChange(id);
-                        if (c && !localClients.some((x) => x.id === c.id)) {
-                          setLocalClients((p) => [
-                            ...p,
-                            { id: c.id, name: c.name, rut: c.rut ?? null },
-                          ]);
-                        }
-                      }}
-                      initial={
-                        localClients.find((c) => c.id === field.value) ?? null
-                      }
-                    />
-                  </div>
-                  <QuickClientDialog
-                    trigger={
-                      <Button type="button" variant="outline" size="icon" aria-label="Nuevo cliente">
-                        <UserPlus className="size-4" />
-                      </Button>
+                <ClientCombobox
+                  value={field.value}
+                  onChange={(id, c) => {
+                    field.onChange(id);
+                    if (c && !localClients.some((x) => x.id === c.id)) {
+                      setLocalClients((p) => [
+                        ...p,
+                        { id: c.id, name: c.name, rut: c.rut ?? null },
+                      ]);
                     }
-                    onCreated={(id, name) =>
-                      handleClientCreated("clientId", id, name)
-                    }
-                  />
-                </div>
+                  }}
+                  initial={
+                    localClients.find((c) => c.id === field.value) ?? null
+                  }
+                  onCreate={(q) => openCreateDialog("clientId", q)}
+                  createLabel="Agregar nuevo (ficha completa)"
+                />
                 <FormMessage />
               </FormItem>
             )}
@@ -362,6 +378,7 @@ export function ProposalForm({
                     }
                   }}
                   initial={localClients.find((c) => c.id === field.value) ?? null}
+                  onCreate={(q) => openCreateDialog("insuredClientId", q)}
                 />
                 <FormMessage />
               </FormItem>
@@ -385,12 +402,43 @@ export function ProposalForm({
                     }
                   }}
                   initial={localClients.find((c) => c.id === field.value) ?? null}
+                  onCreate={(q) => openCreateDialog("beneficiaryClientId", q)}
                 />
                 <FormMessage />
               </FormItem>
             )}
           />
         </Section>
+
+        {createDialog?.mode === "full" && (
+          <FullClientDialog
+            open
+            onOpenChange={(v) => {
+              if (!v) setCreateDialog(null);
+            }}
+            defaultRut={createDialog.defaultRut}
+            defaultName={createDialog.defaultName}
+            onCreated={(id, name, rut) => {
+              handleClientCreated(createDialog.field, id, name, rut);
+              setCreateDialog(null);
+            }}
+          />
+        )}
+        {createDialog?.mode === "quick" && (
+          <QuickClientDialog
+            open
+            onOpenChange={(v) => {
+              if (!v) setCreateDialog(null);
+            }}
+            trigger={null}
+            defaultRut={createDialog.defaultRut}
+            defaultName={createDialog.defaultName}
+            onCreated={(id, name) => {
+              handleClientCreated(createDialog.field, id, name);
+              setCreateDialog(null);
+            }}
+          />
+        )}
 
         <Section title="Compañía, ramo y producto">
           <FormField

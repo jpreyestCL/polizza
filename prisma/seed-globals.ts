@@ -70,14 +70,12 @@ const FIELDS_PERSONA: FieldDef[] = [
   { fieldKey: "apellido_paterno", label: "Apellido Paterno", type: "text" },
   { fieldKey: "apellido_materno", label: "Apellido Materno", type: "text" },
   { fieldKey: "identificacion", label: "Identificación", type: "text" },
-  { fieldKey: "comentarios", label: "Comentarios / Glosa", type: "textarea" },
 ];
 
 const FIELDS_GENERICO_RIESGO: FieldDef[] = [
   { fieldKey: "descripcion_riesgo", label: "Descripción del riesgo", type: "textarea", required: true },
   { fieldKey: "identificacion", label: "Identificación", type: "text" },
   { fieldKey: "referencia", label: "Referencia", type: "text" },
-  { fieldKey: "comentarios", label: "Comentarios / Glosa", type: "textarea" },
 ];
 
 const FIELDS_VEHICULO: FieldDef[] = [
@@ -87,14 +85,12 @@ const FIELDS_VEHICULO: FieldDef[] = [
   { fieldKey: "uso", label: "Uso", type: "text" },
   { fieldKey: "marca", label: "Marca", type: "text" },
   { fieldKey: "modelo", label: "Modelo", type: "text" },
-  { fieldKey: "otro_modelo", label: "Otro modelo", type: "text" },
   { fieldKey: "version", label: "Versión", type: "text" },
   { fieldKey: "n_serie", label: "N° de serie", type: "text" },
   { fieldKey: "deducible", label: "Deducible", type: "text" },
   { fieldKey: "n_motor", label: "N° de motor", type: "text" },
   { fieldKey: "n_chasis", label: "N° de chasis", type: "text" },
   { fieldKey: "identificacion", label: "Identificación", type: "text" },
-  { fieldKey: "comentarios", label: "Comentarios / Glosa", type: "textarea" },
 ];
 
 const BRANCHES: BranchDef[] = [
@@ -175,8 +171,6 @@ const BRANCHES: BranchDef[] = [
       { fieldKey: "uso", label: "Uso", type: "text" },
       { fieldKey: "marca", label: "Marca", type: "text" },
       { fieldKey: "modelo", label: "Modelo", type: "text" },
-      { fieldKey: "otro_modelo", label: "Otro modelo", type: "text" },
-      { fieldKey: "comentarios", label: "Comentarios / Glosa", type: "textarea" },
     ],
   },
   {
@@ -187,7 +181,6 @@ const BRANCHES: BranchDef[] = [
     fields: [
       { fieldKey: "n_operacion", label: "N° de operación", type: "text" },
       { fieldKey: "descripcion_riesgo", label: "Descripción del riesgo", type: "textarea" },
-      { fieldKey: "comentarios", label: "Comentarios / Glosa", type: "textarea" },
       {
         fieldKey: "tipo_transporte",
         label: "Tipo de transporte",
@@ -347,6 +340,15 @@ export async function seedGlobals(prisma: PrismaClient) {
       create: c,
     });
   }
+
+  // Limpieza de campos legacy que ya no están en el seed.
+  // - "otro_modelo": se eliminó al introducir el autocompletado de modelo.
+  // - "comentarios": se eliminó del JSON porque ya tenemos
+  //   `ProposalItem.glossNote` como columna dedicada (evita pedir glosa dos
+  //   veces en el formulario de ítem).
+  await prisma.branchFieldSchema.deleteMany({
+    where: { fieldKey: { in: ["otro_modelo", "comentarios"] } },
+  });
 
   // BranchType + BranchFieldSchema
   for (const b of BRANCHES) {

@@ -14,6 +14,12 @@ import {
   type GlobalProductValues,
   globalProductCoverageSchema,
   type GlobalProductCoverageValues,
+  vehicleBrandSchema,
+  type VehicleBrandValues,
+  vehicleModelSchema,
+  type VehicleModelValues,
+  vehicleTypeSchema,
+  type VehicleTypeValues,
 } from "./schemas";
 
 type ActionResult<T = undefined> =
@@ -422,5 +428,174 @@ export async function deleteProductCoverageAction(
   });
   await prisma.globalProductCoverage.delete({ where: { id: coverageId } });
   if (cov) revalidatePath(`/admin/productos/${cov.globalProductId}`);
+  return { ok: true };
+}
+
+// ─── Vehículos ──────────────────────────────────────────────────────
+
+export async function createVehicleBrandAction(
+  raw: VehicleBrandValues,
+): Promise<ActionResult<{ id: string }>> {
+  const parsed = vehicleBrandSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  }
+  const { prisma } = await requireSuperadmin();
+  try {
+    const created = await prisma.vehicleBrand.create({
+      data: { name: parsed.data.name, active: parsed.data.active },
+    });
+    revalidatePath("/admin/vehiculos");
+    return { ok: true, data: { id: created.id } };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, error: "Ya existe una marca con ese nombre." };
+    }
+    throw e;
+  }
+}
+
+export async function updateVehicleBrandAction(
+  id: string,
+  raw: VehicleBrandValues,
+): Promise<ActionResult> {
+  const parsed = vehicleBrandSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  }
+  const { prisma } = await requireSuperadmin();
+  try {
+    await prisma.vehicleBrand.update({
+      where: { id },
+      data: { name: parsed.data.name, active: parsed.data.active },
+    });
+    revalidatePath("/admin/vehiculos");
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, error: "Ya existe una marca con ese nombre." };
+    }
+    throw e;
+  }
+}
+
+export async function deleteVehicleBrandAction(id: string): Promise<ActionResult> {
+  const { prisma } = await requireSuperadmin();
+  await prisma.vehicleBrand.delete({ where: { id } });
+  revalidatePath("/admin/vehiculos");
+  return { ok: true };
+}
+
+export async function createVehicleModelAction(
+  raw: VehicleModelValues,
+): Promise<ActionResult<{ id: string }>> {
+  const parsed = vehicleModelSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  }
+  const { prisma } = await requireSuperadmin();
+  try {
+    const created = await prisma.vehicleModel.create({
+      data: {
+        brandId: parsed.data.brandId,
+        name: parsed.data.name,
+        active: parsed.data.active,
+      },
+    });
+    revalidatePath("/admin/vehiculos");
+    return { ok: true, data: { id: created.id } };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, error: "Ya existe un modelo con ese nombre en la marca." };
+    }
+    throw e;
+  }
+}
+
+export async function updateVehicleModelAction(
+  id: string,
+  raw: VehicleModelValues,
+): Promise<ActionResult> {
+  const parsed = vehicleModelSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  }
+  const { prisma } = await requireSuperadmin();
+  try {
+    await prisma.vehicleModel.update({
+      where: { id },
+      data: {
+        brandId: parsed.data.brandId,
+        name: parsed.data.name,
+        active: parsed.data.active,
+      },
+    });
+    revalidatePath("/admin/vehiculos");
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, error: "Ya existe un modelo con ese nombre en la marca." };
+    }
+    throw e;
+  }
+}
+
+export async function deleteVehicleModelAction(id: string): Promise<ActionResult> {
+  const { prisma } = await requireSuperadmin();
+  await prisma.vehicleModel.delete({ where: { id } });
+  revalidatePath("/admin/vehiculos");
+  return { ok: true };
+}
+
+export async function createVehicleTypeAction(
+  raw: VehicleTypeValues,
+): Promise<ActionResult<{ id: string }>> {
+  const parsed = vehicleTypeSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  }
+  const { prisma } = await requireSuperadmin();
+  try {
+    const created = await prisma.vehicleType.create({
+      data: { name: parsed.data.name, active: parsed.data.active },
+    });
+    revalidatePath("/admin/vehiculos");
+    return { ok: true, data: { id: created.id } };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, error: "Ya existe un tipo con ese nombre." };
+    }
+    throw e;
+  }
+}
+
+export async function updateVehicleTypeAction(
+  id: string,
+  raw: VehicleTypeValues,
+): Promise<ActionResult> {
+  const parsed = vehicleTypeSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  }
+  const { prisma } = await requireSuperadmin();
+  try {
+    await prisma.vehicleType.update({
+      where: { id },
+      data: { name: parsed.data.name, active: parsed.data.active },
+    });
+    revalidatePath("/admin/vehiculos");
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      return { ok: false, error: "Ya existe un tipo con ese nombre." };
+    }
+    throw e;
+  }
+}
+
+export async function deleteVehicleTypeAction(id: string): Promise<ActionResult> {
+  const { prisma } = await requireSuperadmin();
+  await prisma.vehicleType.delete({ where: { id } });
+  revalidatePath("/admin/vehiculos");
   return { ok: true };
 }

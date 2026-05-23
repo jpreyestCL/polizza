@@ -7,11 +7,14 @@ export type ProposalItemRow = {
   id: string;
   order: number;
   branchTypeId: string;
+  branchTypeKey: string;
   branchTypeName: string;
   insuredClientId: string | null;
   insuredClientName: string | null;
+  insuredClientRut: string | null;
   beneficiaryClientId: string | null;
   beneficiaryClientName: string | null;
+  beneficiaryClientRut: string | null;
   identification: string | null;
   glossNote: string | null;
   data: Record<string, unknown>;
@@ -28,11 +31,11 @@ export async function listProposalItems(
     where: { proposalId },
     orderBy: { order: "asc" },
     include: {
-      branchType: { select: { name: true } },
+      branchType: { select: { key: true, name: true } },
       coverages: { orderBy: { order: "asc" } },
     },
   });
-  // Map insured/beneficiary names
+  // Map insured/beneficiary names + ruts
   const clientIds = new Set<string>();
   for (const r of rows) {
     if (r.insuredClientId) clientIds.add(r.insuredClientId);
@@ -41,22 +44,31 @@ export async function listProposalItems(
   const clients = clientIds.size
     ? await db.client.findMany({
         where: { id: { in: Array.from(clientIds) } },
-        select: { id: true, name: true },
+        select: { id: true, name: true, rut: true },
       })
     : [];
-  const clientMap = new Map(clients.map((c) => [c.id, c.name]));
+  const clientMap = new Map(
+    clients.map((c) => [c.id, { name: c.name, rut: c.rut ?? null }]),
+  );
   return rows.map((r) => ({
     id: r.id,
     order: r.order,
     branchTypeId: r.branchTypeId,
+    branchTypeKey: r.branchType.key,
     branchTypeName: r.branchType.name,
     insuredClientId: r.insuredClientId,
     insuredClientName: r.insuredClientId
-      ? (clientMap.get(r.insuredClientId) ?? null)
+      ? (clientMap.get(r.insuredClientId)?.name ?? null)
+      : null,
+    insuredClientRut: r.insuredClientId
+      ? (clientMap.get(r.insuredClientId)?.rut ?? null)
       : null,
     beneficiaryClientId: r.beneficiaryClientId,
     beneficiaryClientName: r.beneficiaryClientId
-      ? (clientMap.get(r.beneficiaryClientId) ?? null)
+      ? (clientMap.get(r.beneficiaryClientId)?.name ?? null)
+      : null,
+    beneficiaryClientRut: r.beneficiaryClientId
+      ? (clientMap.get(r.beneficiaryClientId)?.rut ?? null)
       : null,
     identification: r.identification,
     glossNote: r.glossNote,

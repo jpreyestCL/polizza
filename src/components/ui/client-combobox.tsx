@@ -11,6 +11,8 @@ type Props = {
   initial?: Client | null;
   placeholder?: string;
   disabled?: boolean;
+  onCreate?: (query: string) => void;
+  createLabel?: string;
 };
 
 export function ClientCombobox({
@@ -19,6 +21,8 @@ export function ClientCombobox({
   initial,
   placeholder = "Buscar contratante por nombre o RUT",
   disabled,
+  onCreate,
+  createLabel = "Agregar nuevo",
 }: Props) {
   const fetcher = useCallback(async (q: string): Promise<ComboOption[]> => {
     const url = `/api/clients/search?q=${encodeURIComponent(q)}&limit=20`;
@@ -53,6 +57,8 @@ export function ClientCombobox({
       searchPlaceholder="Buscar por nombre o RUT"
       emptyText="Sin coincidencias"
       disabled={disabled}
+      onCreate={onCreate}
+      createLabel={createLabel}
     />
   );
 }

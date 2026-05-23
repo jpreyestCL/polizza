@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { seedGlobals } from "./seed-globals";
 import { seedCommunes } from "./seed-communes";
+import { seedVehicles } from "./seed-vehicles";
 
 const prisma = new PrismaClient();
 
@@ -51,6 +52,7 @@ async function main() {
 
   await seedGlobals(prisma);
   await seedCommunes(prisma);
+  await seedVehicles(prisma);
 
   console.info(
     `Seed global: ${CURRENCIES.length} monedas, ${HOLIDAYS_2026.length} feriados, + catálogos (ramos + compañías globales).`,

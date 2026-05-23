@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { UserPlus } from "lucide-react";
 import { createProspectClientAction } from "../actions";
@@ -33,18 +33,31 @@ export function QuickClientDialog({
   onCreated,
   defaultRut,
   defaultName,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   trigger?: React.ReactNode;
   onCreated: (id: string, name: string) => void;
   defaultRut?: string;
   defaultName?: string;
+  open?: boolean;
+  onOpenChange?: (v: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [type, setType] = useState<"PERSONA" | "EMPRESA">("PERSONA");
   const [rut, setRut] = useState(defaultRut ?? "");
   const [name, setName] = useState(defaultName ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      if (defaultRut !== undefined) setRut(defaultRut);
+      if (defaultName !== undefined) setName(defaultName);
+    }
+  }, [open, defaultRut, defaultName]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,13 +82,15 @@ export function QuickClientDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button type="button" variant="outline" size="sm">
-            <UserPlus className="size-4" /> Nuevo
-          </Button>
-        )}
-      </DialogTrigger>
+      {trigger !== null && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button type="button" variant="outline" size="sm">
+              <UserPlus className="size-4" /> Nuevo
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nuevo cliente (prospecto)</DialogTitle>
