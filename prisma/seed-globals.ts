@@ -82,7 +82,15 @@ const FIELDS_VEHICULO: FieldDef[] = [
   { fieldKey: "patente", label: "Patente", type: "text", required: true },
   { fieldKey: "anio", label: "Año", type: "number" },
   { fieldKey: "tipo", label: "Tipo", type: "text" },
-  { fieldKey: "uso", label: "Uso", type: "text" },
+  {
+    fieldKey: "uso",
+    label: "Uso",
+    type: "select",
+    options: [
+      { value: "PARTICULAR", label: "Particular" },
+      { value: "COMERCIAL", label: "Comercial" },
+    ],
+  },
   { fieldKey: "marca", label: "Marca", type: "text" },
   { fieldKey: "modelo", label: "Modelo", type: "text" },
   { fieldKey: "version", label: "Versión", type: "text" },

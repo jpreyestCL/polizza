@@ -210,6 +210,8 @@ export default async function PropuestaDetailPage({
         defaultBeneficiaryId={proposal.beneficiaryClientId}
         defaultBeneficiaryName={defaultBeneficiary?.name ?? null}
         defaultBeneficiaryRut={defaultBeneficiary?.rut ?? null}
+        defaultCommissionAffectPct={proposal.commissionAffectPct}
+        defaultCommissionExemptPct={proposal.commissionExemptPct}
         locked={locked}
       />
 

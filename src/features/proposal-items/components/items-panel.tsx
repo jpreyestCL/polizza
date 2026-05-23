@@ -166,6 +166,8 @@ export function ProposalItemsPanel({
   defaultBeneficiaryId,
   defaultBeneficiaryName,
   defaultBeneficiaryRut,
+  defaultCommissionAffectPct,
+  defaultCommissionExemptPct,
   locked = false,
 }: {
   proposalId: string;
@@ -181,6 +183,8 @@ export function ProposalItemsPanel({
   defaultBeneficiaryId: string | null;
   defaultBeneficiaryName?: string | null;
   defaultBeneficiaryRut?: string | null;
+  defaultCommissionAffectPct?: number | null;
+  defaultCommissionExemptPct?: number | null;
   locked?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -241,6 +245,7 @@ export function ProposalItemsPanel({
               <th className="px-3 py-2 text-left">Asegurado</th>
               <th className="px-3 py-2 text-left">Beneficiario</th>
               <th className="px-3 py-2 text-center">Cobs</th>
+              <th className="px-3 py-2 text-right">Monto asegurado</th>
               <th className="px-3 py-2 text-right">Prima neta</th>
               <th className="px-3 py-2"></th>
             </tr>
@@ -249,7 +254,7 @@ export function ProposalItemsPanel({
             {items.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={8}
                   className="px-3 py-10 text-center text-muted-foreground"
                 >
                   Aún no hay ítems en esta propuesta.
@@ -269,6 +274,12 @@ export function ProposalItemsPanel({
                   defaultInsuredRut={defaultInsuredRut ?? null}
                   defaultBeneficiaryName={defaultBeneficiaryName ?? null}
                   defaultBeneficiaryRut={defaultBeneficiaryRut ?? null}
+                  defaultCommissionAffectPct={
+                    defaultCommissionAffectPct ?? null
+                  }
+                  defaultCommissionExemptPct={
+                    defaultCommissionExemptPct ?? null
+                  }
                   locked={locked}
                 />
               ))
@@ -291,6 +302,8 @@ function ItemRow({
   defaultInsuredRut,
   defaultBeneficiaryName,
   defaultBeneficiaryRut,
+  defaultCommissionAffectPct,
+  defaultCommissionExemptPct,
   locked,
 }: {
   idx: number;
@@ -303,6 +316,8 @@ function ItemRow({
   defaultInsuredRut: string | null;
   defaultBeneficiaryName: string | null;
   defaultBeneficiaryRut: string | null;
+  defaultCommissionAffectPct: number | null;
+  defaultCommissionExemptPct: number | null;
   locked: boolean;
 }) {
   const router = useRouter();
@@ -374,6 +389,9 @@ function ItemRow({
       </td>
       <td className="px-3 py-2 text-center">{item.coveragesCount}</td>
       <td className="px-3 py-2 text-right tabular-nums">
+        <InsuredAmountCell coverages={item.coverages} />
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
         {item.totalNetPremium > 0
           ? item.totalNetPremium.toLocaleString("es-CL", {
               maximumFractionDigits: 2,
@@ -387,6 +405,8 @@ function ItemRow({
             itemLabel={`#${idx} · ${item.branchTypeName}`}
             coverages={item.coverages}
             productId={productId}
+            defaultCommissionAffectPct={defaultCommissionAffectPct}
+            defaultCommissionExemptPct={defaultCommissionExemptPct}
             trigger={
               <Button
                 variant="ghost"
@@ -435,6 +455,36 @@ function ItemRow({
         </div>
       </td>
     </tr>
+  );
+}
+
+/**
+ * Suma de montos asegurados de las coberturas que tienen `sumsToTotal`.
+ * Si hay varias monedas distintas las muestra agrupadas; lo común es que
+ * compartan moneda y se muestre un único renglón.
+ */
+function InsuredAmountCell({
+  coverages,
+}: {
+  coverages: { insuredAmount: number | null; insuredCurrency: string; sumsToTotal: boolean }[];
+}) {
+  const totals = new Map<string, number>();
+  for (const c of coverages) {
+    if (!c.sumsToTotal) continue;
+    const amt = c.insuredAmount ?? 0;
+    if (!amt) continue;
+    totals.set(c.insuredCurrency, (totals.get(c.insuredCurrency) ?? 0) + amt);
+  }
+  if (totals.size === 0) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="space-y-0.5">
+      {Array.from(totals.entries()).map(([currency, amount]) => (
+        <div key={currency}>
+          {amount.toLocaleString("es-CL", { maximumFractionDigits: 2 })}{" "}
+          <span className="text-xs text-muted-foreground">{currency}</span>
+        </div>
+      ))}
+    </div>
   );
 }
 

@@ -8,6 +8,7 @@ import { canDeleteClient } from "@/lib/roles";
 import { normalizeRut } from "@/lib/rut";
 import {
   clientFormSchema,
+  composeClientName,
   INTERACTION_CHANNELS,
   INTERACTION_LABELS,
   type ClientFormValues,
@@ -43,25 +44,51 @@ function duplicateRutResult(): ActionResult {
  */
 export async function createProspectClientAction(input: {
   rut: string;
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastNamePaterno?: string;
+  lastNameMaterno?: string;
   type?: "PERSONA" | "EMPRESA";
 }): Promise<
   | { ok: true; id: string; name: string }
   | { ok: false; error: string }
 > {
   const rut = input.rut?.trim();
-  const name = input.name?.trim();
-  if (!rut || !name) {
-    return { ok: false, error: "RUT y nombre son requeridos." };
+  const type = input.type ?? "PERSONA";
+  const firstName = input.firstName?.trim() ?? "";
+  const lastNamePaterno = input.lastNamePaterno?.trim() ?? "";
+  const lastNameMaterno = input.lastNameMaterno?.trim() ?? "";
+  const name = composeClientName({
+    type,
+    name: input.name,
+    firstName,
+    lastNamePaterno,
+    lastNameMaterno,
+  });
+  if (!rut) {
+    return { ok: false, error: "RUT requerido." };
+  }
+  if (type === "PERSONA" && (!firstName || !lastNamePaterno)) {
+    return {
+      ok: false,
+      error: "Nombres y apellido paterno son requeridos.",
+    };
+  }
+  if (!name) {
+    return { ok: false, error: "Nombre requerido." };
   }
   const { ctx, db } = await requireOrgDb();
   try {
     const created = await db.client.create({
       data: {
         organizationId: ctx.organizationId,
-        type: input.type ?? "PERSONA",
+        type,
         rut: normalizeRut(rut),
         name,
+        firstName: type === "PERSONA" ? firstName : null,
+        lastNamePaterno: type === "PERSONA" ? lastNamePaterno : null,
+        lastNameMaterno:
+          type === "PERSONA" ? (lastNameMaterno || null) : null,
         status: "PROSPECTO",
         assignedUserId: ctx.userId,
         createdById: ctx.userId,
@@ -115,7 +142,17 @@ export async function createClientAction(
           organizationId: ctx.organizationId,
           type: data.type,
           rut: normalizeRut(data.rut),
-          name: data.name,
+          name: composeClientName(data) || data.name,
+          firstName:
+            data.type === "PERSONA" ? emptyToNull(data.firstName) : null,
+          lastNamePaterno:
+            data.type === "PERSONA"
+              ? emptyToNull(data.lastNamePaterno)
+              : null,
+          lastNameMaterno:
+            data.type === "PERSONA"
+              ? emptyToNull(data.lastNameMaterno)
+              : null,
           legalName: emptyToNull(data.legalName),
           giro: emptyToNull(data.giro),
           birthDate: parseDate(data.birthDate),
@@ -201,7 +238,17 @@ export async function updateClientAction(
         data: {
           type: data.type,
           rut: normalizeRut(data.rut),
-          name: data.name,
+          name: composeClientName(data) || data.name,
+          firstName:
+            data.type === "PERSONA" ? emptyToNull(data.firstName) : null,
+          lastNamePaterno:
+            data.type === "PERSONA"
+              ? emptyToNull(data.lastNamePaterno)
+              : null,
+          lastNameMaterno:
+            data.type === "PERSONA"
+              ? emptyToNull(data.lastNameMaterno)
+              : null,
           legalName: emptyToNull(data.legalName),
           giro: emptyToNull(data.giro),
           birthDate: parseDate(data.birthDate),
@@ -246,7 +293,7 @@ export async function updateClientAction(
       entityType: "CLIENT",
       entityId: id,
       action: "updated",
-      summary: `Cliente actualizado: ${data.name}`,
+      summary: `Cliente actualizado: ${composeClientName(data) || data.name}`,
       userId: ctx.userId,
     });
 

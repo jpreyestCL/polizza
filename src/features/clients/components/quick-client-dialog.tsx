@@ -48,7 +48,11 @@ export function QuickClientDialog({
   const setOpen = onOpenChange ?? setUncontrolledOpen;
   const [type, setType] = useState<"PERSONA" | "EMPRESA">("PERSONA");
   const [rut, setRut] = useState(defaultRut ?? "");
+  // Empresa: usa "name" (razón social). Persona: usa los 3 campos abajo.
   const [name, setName] = useState(defaultName ?? "");
+  const [firstName, setFirstName] = useState("");
+  const [lastNamePaterno, setLastNamePaterno] = useState("");
+  const [lastNameMaterno, setLastNameMaterno] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,12 +66,28 @@ export function QuickClientDialog({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!rut.trim() || !name.trim()) {
-      setError("RUT y nombre son requeridos");
+    if (!rut.trim()) {
+      setError("RUT requerido");
+      return;
+    }
+    if (type === "PERSONA") {
+      if (!firstName.trim() || !lastNamePaterno.trim()) {
+        setError("Nombres y apellido paterno son requeridos");
+        return;
+      }
+    } else if (!name.trim()) {
+      setError("Razón social requerida");
       return;
     }
     setSubmitting(true);
-    const r = await createProspectClientAction({ rut, name, type });
+    const r = await createProspectClientAction({
+      rut,
+      type,
+      name: type === "EMPRESA" ? name : undefined,
+      firstName: type === "PERSONA" ? firstName : undefined,
+      lastNamePaterno: type === "PERSONA" ? lastNamePaterno : undefined,
+      lastNameMaterno: type === "PERSONA" ? lastNameMaterno : undefined,
+    });
     setSubmitting(false);
     if (!r.ok) {
       setError(r.error);
@@ -78,6 +98,9 @@ export function QuickClientDialog({
     setOpen(false);
     setRut("");
     setName("");
+    setFirstName("");
+    setLastNamePaterno("");
+    setLastNameMaterno("");
   }
 
   return (
@@ -126,16 +149,42 @@ export function QuickClientDialog({
               />
             </div>
           </div>
-          <div>
-            <Label className="text-xs">
-              {type === "EMPRESA" ? "Razón social *" : "Nombre completo *"}
-            </Label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
+          {type === "EMPRESA" ? (
+            <div>
+              <Label className="text-xs">Razón social *</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label className="text-xs">Nombres *</Label>
+                <Input
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Apellido paterno *</Label>
+                <Input
+                  value={lastNamePaterno}
+                  onChange={(e) => setLastNamePaterno(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Apellido materno</Label>
+                <Input
+                  value={lastNameMaterno}
+                  onChange={(e) => setLastNameMaterno(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
           {error && (
             <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}

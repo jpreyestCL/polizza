@@ -55,7 +55,12 @@ export function FullClientDialog({
 
   const [type, setType] = useState<ClientType>("PERSONA");
   const [rut, setRut] = useState(defaultRut ?? "");
+  // Para EMPRESA `name` es el nombre comercial. Para PERSONA dejamos `name`
+  // como espejo (se compone server-side desde los 3 campos siguientes).
   const [name, setName] = useState(defaultName ?? "");
+  const [firstName, setFirstName] = useState("");
+  const [lastNamePaterno, setLastNamePaterno] = useState("");
+  const [lastNameMaterno, setLastNameMaterno] = useState("");
   const [legalName, setLegalName] = useState("");
   const [giro, setGiro] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -82,6 +87,9 @@ export function FullClientDialog({
     setType("PERSONA");
     setRut("");
     setName("");
+    setFirstName("");
+    setLastNamePaterno("");
+    setLastNameMaterno("");
     setLegalName("");
     setGiro("");
     setBirthDate("");
@@ -97,20 +105,39 @@ export function FullClientDialog({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!rut.trim() || !name.trim()) {
-      setError("RUT y nombre son requeridos");
+    if (!rut.trim()) {
+      setError("RUT requerido");
       return;
     }
     if (!isValidRut(rut)) {
       setError("RUT inválido");
       return;
     }
+    if (type === "PERSONA") {
+      if (!firstName.trim() || !lastNamePaterno.trim()) {
+        setError("Nombres y apellido paterno son requeridos");
+        return;
+      }
+    } else if (!name.trim()) {
+      setError("Nombre comercial requerido");
+      return;
+    }
+    const composedName =
+      type === "PERSONA"
+        ? [firstName, lastNamePaterno, lastNameMaterno]
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .join(" ")
+        : name.trim();
     setSubmitting(true);
     const r = await createClientAction({
       type,
       status: "PROSPECTO",
       rut: formatRut(rut),
-      name: name.trim(),
+      name: composedName,
+      firstName: type === "PERSONA" ? firstName.trim() : "",
+      lastNamePaterno: type === "PERSONA" ? lastNamePaterno.trim() : "",
+      lastNameMaterno: type === "PERSONA" ? lastNameMaterno.trim() : "",
       legalName: legalName.trim(),
       giro: giro.trim(),
       birthDate,
@@ -135,8 +162,8 @@ export function FullClientDialog({
       setError(r.error);
       return;
     }
-    toast.success(`Cliente "${name.trim()}" creado`);
-    onCreated(r.id, name.trim(), formatRut(rut));
+    toast.success(`Cliente "${composedName}" creado`);
+    onCreated(r.id, composedName, formatRut(rut));
     setOpen(false);
     reset();
   }
@@ -182,16 +209,42 @@ export function FullClientDialog({
                 required
               />
             </div>
-            <div className="col-span-2">
-              <Label className="text-xs">
-                {type === "EMPRESA" ? "Nombre comercial *" : "Nombre completo *"}
-              </Label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
+            {type === "EMPRESA" ? (
+              <div className="col-span-2">
+                <Label className="text-xs">Nombre comercial *</Label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              </div>
+            ) : (
+              <>
+                <div className="col-span-2">
+                  <Label className="text-xs">Nombres *</Label>
+                  <Input
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Apellido paterno *</Label>
+                  <Input
+                    value={lastNamePaterno}
+                    onChange={(e) => setLastNamePaterno(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Apellido materno</Label>
+                  <Input
+                    value={lastNameMaterno}
+                    onChange={(e) => setLastNameMaterno(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
             {type === "EMPRESA" && (
               <>
                 <div>

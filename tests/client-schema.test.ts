@@ -5,7 +5,10 @@ const baseClient = {
   type: "PERSONA" as const,
   status: "PROSPECTO" as const,
   rut: "11.111.111-1",
-  name: "Juan Pérez",
+  name: "Juan Pérez González",
+  firstName: "Juan",
+  lastNamePaterno: "Pérez",
+  lastNameMaterno: "González",
   legalName: "",
   giro: "",
   birthDate: "",
@@ -39,10 +42,30 @@ describe("clientFormSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rechaza un nombre vacío", () => {
+  it("rechaza una persona sin nombres", () => {
     expect(
-      clientFormSchema.safeParse({ ...baseClient, name: "" }).success,
+      clientFormSchema.safeParse({ ...baseClient, firstName: "" }).success,
     ).toBe(false);
+  });
+
+  it("rechaza una persona sin apellido paterno", () => {
+    expect(
+      clientFormSchema.safeParse({ ...baseClient, lastNamePaterno: "" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("acepta una empresa solo con razón social en name", () => {
+    expect(
+      clientFormSchema.safeParse({
+        ...baseClient,
+        type: "EMPRESA",
+        firstName: "",
+        lastNamePaterno: "",
+        lastNameMaterno: "",
+        name: "Acme SpA",
+      }).success,
+    ).toBe(true);
   });
 
   it("rechaza un correo con formato inválido", () => {

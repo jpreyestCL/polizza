@@ -43,7 +43,10 @@ export const clientFormSchema = z
       .trim()
       .min(1, "RUT requerido")
       .refine(isValidRut, "RUT inválido"),
-    name: z.string().trim().min(1, "Nombre requerido").max(160),
+    name: z.string().trim().max(160).default(""),
+    firstName: z.string().trim().max(120).default(""),
+    lastNamePaterno: z.string().trim().max(80).default(""),
+    lastNameMaterno: z.string().trim().max(80).default(""),
     legalName: z.string().trim().max(160).default(""),
     giro: z.string().trim().max(160).default(""),
     birthDate: z.string().default(""),
@@ -64,6 +67,30 @@ export const clientFormSchema = z
     contacts: z.array(contactSchema).max(20).default([]),
   })
   .superRefine((data, ctx) => {
+    // PERSONA exige nombres + apellido paterno; EMPRESA exige el campo `name`
+    // (que en la UI rotula como "Nombre comercial" o "Nombre").
+    if (data.type === "PERSONA") {
+      if (!data.firstName.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["firstName"],
+          message: "Nombres requerido",
+        });
+      }
+      if (!data.lastNamePaterno.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["lastNamePaterno"],
+          message: "Apellido paterno requerido",
+        });
+      }
+    } else if (!data.name.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["name"],
+        message: "Nombre requerido",
+      });
+    }
     // Un cliente Activo exige datos de contacto y ubicación completos.
     if (data.status !== "ACTIVO") return;
     const requiredText: {
@@ -95,6 +122,26 @@ export const clientFormSchema = z
 
 export type ClientFormValues = z.infer<typeof clientFormSchema>;
 export type ContactValues = z.infer<typeof contactSchema>;
+
+/**
+ * Para personas, el `name` legacy del modelo se compone concatenando los 3
+ * campos. Para empresas, mantenemos el `name` (nombre comercial) ingresado.
+ */
+export function composeClientName(input: {
+  type: "PERSONA" | "EMPRESA";
+  name?: string;
+  firstName?: string;
+  lastNamePaterno?: string;
+  lastNameMaterno?: string;
+}): string {
+  if (input.type === "PERSONA") {
+    return [input.firstName, input.lastNamePaterno, input.lastNameMaterno]
+      .map((s) => s?.trim() ?? "")
+      .filter(Boolean)
+      .join(" ");
+  }
+  return (input.name ?? "").trim();
+}
 
 /** Canales de gestión registrables en el historial del cliente. */
 export const INTERACTION_CHANNELS = [

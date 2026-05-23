@@ -62,12 +62,16 @@ export function ItemCoveragesDialog({
   coverages,
   productId,
   trigger,
+  defaultCommissionAffectPct,
+  defaultCommissionExemptPct,
 }: {
   itemId: string;
   itemLabel: string;
   coverages: ItemCoverageRow[];
   productId: string | null;
   trigger: React.ReactNode;
+  defaultCommissionAffectPct?: number | null;
+  defaultCommissionExemptPct?: number | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -294,7 +298,21 @@ export function ItemCoveragesDialog({
         itemId={itemId}
         open={formOpen}
         onOpenChange={setFormOpen}
-        initial={editing ? rowToValues(editing) : EMPTY}
+        initial={
+          editing
+            ? rowToValues(editing)
+            : {
+                ...EMPTY,
+                commissionAffectPct:
+                  defaultCommissionAffectPct != null
+                    ? String(defaultCommissionAffectPct)
+                    : "",
+                commissionExemptPct:
+                  defaultCommissionExemptPct != null
+                    ? String(defaultCommissionExemptPct)
+                    : "",
+              }
+        }
         coverageId={editing?.id ?? null}
       />
     </>
@@ -461,15 +479,31 @@ function CoverageFormDialog({
                 }
               />
             </div>
-            <div className="flex items-end pb-1">
+            <div className="flex flex-col gap-2 pb-1 sm:items-start sm:justify-end">
               <label className="flex items-center gap-2 text-xs">
                 <Checkbox
                   checked={values.isCommercialValue}
-                  onCheckedChange={(v) =>
-                    setValues({ ...values, isCommercialValue: v === true })
-                  }
+                  onCheckedChange={(v) => {
+                    const isCommercial = v === true;
+                    setValues({
+                      ...values,
+                      isCommercialValue: isCommercial,
+                      // Valor comercial implica que el monto asegurado se
+                      // determina al momento del siniestro, no por suma fija.
+                      insuredAmount: isCommercial ? "0" : values.insuredAmount,
+                    });
+                  }}
                 />
                 Valor comercial
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                <Checkbox
+                  checked={values.sumsToTotal}
+                  onCheckedChange={(v) =>
+                    setValues({ ...values, sumsToTotal: v === true })
+                  }
+                />
+                Suma al total
               </label>
             </div>
           </div>
@@ -482,9 +516,17 @@ function CoverageFormDialog({
               <label className="flex items-center gap-2 text-xs">
                 <Checkbox
                   checked={values.manualPremium}
-                  onCheckedChange={(v) =>
-                    setValues({ ...values, manualPremium: v === true })
-                  }
+                  onCheckedChange={(v) => {
+                    const isManual = v === true;
+                    setValues({
+                      ...values,
+                      manualPremium: isManual,
+                      // Al pasar a manual limpiamos las tasas para evitar que
+                      // queden valores fantasma que no se usan en el cálculo.
+                      taxRateAffect: isManual ? "" : values.taxRateAffect,
+                      taxRateExempt: isManual ? "" : values.taxRateExempt,
+                    });
+                  }}
                 />
                 Cálculo manual (ingreso directo)
               </label>
@@ -539,28 +581,6 @@ function CoverageFormDialog({
                     setValues({ ...values, premiumExempt: e.target.value })
                   }
                 />
-              </div>
-              <div className="flex items-end pb-1">
-                <label className="flex items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={values.affectedByIva}
-                    onCheckedChange={(v) =>
-                      setValues({ ...values, affectedByIva: v === true })
-                    }
-                  />
-                  Afecto IVA (19%)
-                </label>
-              </div>
-              <div className="flex items-end pb-1">
-                <label className="flex items-center gap-2 text-xs">
-                  <Checkbox
-                    checked={values.sumsToTotal}
-                    onCheckedChange={(v) =>
-                      setValues({ ...values, sumsToTotal: v === true })
-                    }
-                  />
-                  Suma al total
-                </label>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
