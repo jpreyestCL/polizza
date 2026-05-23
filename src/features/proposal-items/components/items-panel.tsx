@@ -13,7 +13,6 @@ import {
 import type { BranchFieldDef, ProposalItemRow } from "../queries";
 import { proposalItemSchema, type ProposalItemValues } from "../schemas";
 import { DynamicFieldForm } from "./dynamic-field-form";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -209,12 +208,7 @@ function ItemRow({
     <tr className="border-b last:border-0 align-top">
       <td className="px-3 py-2 tabular-nums">{idx}</td>
       <td className="px-3 py-2 max-w-[320px]">
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="shrink-0 text-[10px]">
-            {item.branchTypeName}
-          </Badge>
-          <span className="truncate font-medium">{summary}</span>
-        </div>
+        <div className="truncate font-medium">{summary}</div>
         {fichaDescription && (
           <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
             {fichaDescription}

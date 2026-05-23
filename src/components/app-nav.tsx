@@ -16,6 +16,8 @@ import {
   KeyRound,
   Building2,
   Package,
+  Handshake,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -67,6 +69,20 @@ const NAV_ITEMS: NavItem[] = [
     href: "/configuracion/portales",
     label: "Portales aseguradoras",
     icon: KeyRound,
+    available: true,
+    adminOnly: true,
+  },
+  {
+    href: "/configuracion/corredoras",
+    label: "Corredoras",
+    icon: Handshake,
+    available: true,
+    adminOnly: true,
+  },
+  {
+    href: "/configuracion/propuestas",
+    label: "Ajustes propuestas",
+    icon: Settings,
     available: true,
     adminOnly: true,
   },
