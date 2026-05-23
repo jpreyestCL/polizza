@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Command,
-  CommandEmpty,
   CommandInput,
   CommandItem,
   CommandList,
@@ -34,6 +33,11 @@ type Props = {
   disabled?: boolean;
   footer?: React.ReactNode;
   className?: string;
+  /** Si se entrega, muestra un botón "Agregar" en el empty state (y al final
+   *  de la lista) que llama `onCreate(query)`. Cierra el popover al gatillarse. */
+  onCreate?: (query: string) => void;
+  /** Texto del botón. Default: "Agregar". */
+  createLabel?: string;
 };
 
 export function AsyncCombobox({
@@ -47,6 +51,8 @@ export function AsyncCombobox({
   disabled,
   footer,
   className,
+  onCreate,
+  createLabel = "Agregar",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -115,34 +121,78 @@ export function AsyncCombobox({
                 <Loader2 className="size-3 animate-spin" /> Buscando…
               </div>
             ) : items.length === 0 ? (
-              <CommandEmpty>{emptyText}</CommandEmpty>
-            ) : (
-              items.map((opt) => (
-                <CommandItem
-                  key={opt.id}
-                  value={opt.id}
-                  onSelect={() => {
-                    setSelected(opt);
-                    onChange(opt.id, opt);
-                    setOpen(false);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 size-4",
-                      value === opt.id ? "opacity-100" : "opacity-0",
-                    )}
-                  />
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate">{opt.label}</span>
-                    {opt.sublabel && (
-                      <span className="truncate text-xs text-muted-foreground">
-                        {opt.sublabel}
-                      </span>
-                    )}
+              <div className="px-2 py-3 text-center text-sm text-muted-foreground">
+                {emptyText}
+                {onCreate && (
+                  <div className="mt-2 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCreate(query.trim());
+                        setOpen(false);
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-dashed px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+                    >
+                      <Plus className="size-3.5" />
+                      {createLabel}
+                      {query.trim() && (
+                        <span className="ml-1 max-w-[180px] truncate font-normal text-muted-foreground">
+                          “{query.trim()}”
+                        </span>
+                      )}
+                    </button>
                   </div>
-                </CommandItem>
-              ))
+                )}
+              </div>
+            ) : (
+              <>
+                {items.map((opt) => (
+                  <CommandItem
+                    key={opt.id}
+                    value={opt.id}
+                    onSelect={() => {
+                      setSelected(opt);
+                      onChange(opt.id, opt);
+                      setOpen(false);
+                    }}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 size-4",
+                        value === opt.id ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate">{opt.label}</span>
+                      {opt.sublabel && (
+                        <span className="truncate text-xs text-muted-foreground">
+                          {opt.sublabel}
+                        </span>
+                      )}
+                    </div>
+                  </CommandItem>
+                ))}
+                {onCreate && (
+                  <div className="border-t p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onCreate(query.trim());
+                        setOpen(false);
+                      }}
+                      className="flex w-full items-center gap-1.5 rounded-sm px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <Plus className="size-3.5" />
+                      {createLabel}
+                      {query.trim() && (
+                        <span className="ml-1 max-w-[200px] truncate">
+                          “{query.trim()}”
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </CommandList>
           {footer && <div className="border-t p-1">{footer}</div>}

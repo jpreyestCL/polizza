@@ -86,3 +86,24 @@ export const globalProductCoverageSchema = z.object({
 export type GlobalProductCoverageValues = z.infer<
   typeof globalProductCoverageSchema
 >;
+
+// ─── Vehículos (maestros globales) ───────────────────────────────────
+
+export const vehicleBrandSchema = z.object({
+  name: z.string().trim().min(1, "Nombre requerido").max(80),
+  active: z.boolean().default(true),
+});
+export type VehicleBrandValues = z.infer<typeof vehicleBrandSchema>;
+
+export const vehicleModelSchema = z.object({
+  brandId: z.string().min(1, "Marca requerida"),
+  name: z.string().trim().min(1, "Nombre requerido").max(120),
+  active: z.boolean().default(true),
+});
+export type VehicleModelValues = z.infer<typeof vehicleModelSchema>;
+
+export const vehicleTypeSchema = z.object({
+  name: z.string().trim().min(1, "Nombre requerido").max(80),
+  active: z.boolean().default(true),
+});
+export type VehicleTypeValues = z.infer<typeof vehicleTypeSchema>;

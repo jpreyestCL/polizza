@@ -29,6 +29,7 @@ import { PaymentPlanPanel } from "@/features/payment-plan/components/payment-pla
 import { PdfAndEmailButtons } from "@/features/proposal-pdf/components/pdf-and-email-buttons";
 import { getUfValue } from "@/server/uf";
 import { ProposalDetailTabs } from "@/features/proposals/components/proposal-detail-tabs";
+import { BitacoraPanel } from "@/features/payment-plan/components/bitacora-panel";
 import { ProposalStatusBadge } from "@/features/proposals/components/proposal-badges";
 import { ProposalStatusButton } from "@/features/proposals/components/proposal-status-button";
 import { DeleteProposalDialog } from "@/features/proposals/components/delete-proposal-dialog";
@@ -96,6 +97,13 @@ export default async function PropuestaDetailPage({
     ? (members.find((m) => m.userId === proposal.assignedUserId)?.name ?? null)
     : null;
   const locked = isProposalLocked(proposal.status);
+
+  const defaultInsured = proposal.insuredClientId
+    ? (clients.find((c) => c.id === proposal.insuredClientId) ?? null)
+    : null;
+  const defaultBeneficiary = proposal.beneficiaryClientId
+    ? (clients.find((c) => c.id === proposal.beneficiaryClientId) ?? null)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -185,8 +193,6 @@ export default async function PropuestaDetailPage({
         assignedUserName={assignedUserName}
         ufValue={uf?.value ?? null}
         premiumTotals={premiumTotals}
-        bitacoraLogs={logs}
-        bitacoraMembers={members}
         timezone={ctx.organizationTimezone}
       />
 
@@ -195,11 +201,15 @@ export default async function PropuestaDetailPage({
         productId={proposal.productId ?? null}
         items={items}
         branches={branches}
-        clients={clients.map((c) => ({ id: c.id, name: c.name }))}
+        clients={clients.map((c) => ({ id: c.id, name: c.name, rut: c.rut ?? null }))}
         fieldSchemasByBranch={fieldSchemasByBranch}
         defaultBranchTypeId={proposal.branchTypeId}
         defaultInsuredId={proposal.insuredClientId}
+        defaultInsuredName={defaultInsured?.name ?? null}
+        defaultInsuredRut={defaultInsured?.rut ?? null}
         defaultBeneficiaryId={proposal.beneficiaryClientId}
+        defaultBeneficiaryName={defaultBeneficiary?.name ?? null}
+        defaultBeneficiaryRut={defaultBeneficiary?.rut ?? null}
         locked={locked}
       />
 
@@ -241,6 +251,12 @@ export default async function PropuestaDetailPage({
         }
       />
 
+      <BitacoraPanel
+        proposalId={id}
+        logs={logs}
+        members={members}
+        timezone={ctx.organizationTimezone}
+      />
     </div>
   );
 }

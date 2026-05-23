@@ -24,18 +24,133 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ClientCombobox } from "@/components/ui/client-combobox";
+import { QuickClientDialog } from "@/features/clients/components/quick-client-dialog";
 import { BulkUploadDialog } from "./bulk-upload-dialog";
 
 type BranchOption = { id: string; name: string };
-type ClientOption = { id: string; name: string };
+type ClientOption = { id: string; name: string; rut?: string | null };
+
+/**
+ * Mapea cada llave de ramo a los campos que deben mostrarse en el resumen
+ * del listado de ítems (línea principal "Identificación" y línea secundaria
+ * "Bajo identificación"). Definido por el cliente — ver Libro4.xlsx.
+ */
+const BRANCH_SUMMARY: Record<
+  string,
+  { identification: string[]; secondary: string | "__GLOSS__" }
+> = {
+  incendio: {
+    identification: ["direccion", "comuna", "ciudad"],
+    secondary: "descripcion_materia",
+  },
+  todo_riesgo_construccion: {
+    identification: ["direccion", "comuna", "ciudad"],
+    secondary: "descripcion_materia",
+  },
+  todo_riesgo_bienes: {
+    identification: ["direccion", "comuna", "ciudad"],
+    secondary: "descripcion_materia",
+  },
+  accidentes_personales_nominados: {
+    identification: ["nombre", "apellido_paterno", "rut_asegurado"],
+    secondary: "__GLOSS__",
+  },
+  accidentes_personales_innominados: {
+    identification: ["descripcion_riesgo"],
+    secondary: "__GLOSS__",
+  },
+  responsabilidad_civil: {
+    identification: ["descripcion_riesgo"],
+    secondary: "__GLOSS__",
+  },
+  garantia: {
+    identification: ["descripcion_riesgo"],
+    secondary: "__GLOSS__",
+  },
+  equipo_movil_individualizado: {
+    identification: ["tipo", "marca", "modelo", "anio", "patente"],
+    secondary: "__GLOSS__",
+  },
+  vehiculos_motorizados: {
+    identification: ["tipo", "marca", "modelo", "anio", "patente"],
+    secondary: "__GLOSS__",
+  },
+  soap: {
+    identification: ["tipo", "marca", "modelo", "anio", "patente"],
+    secondary: "__GLOSS__",
+  },
+  equipo_movil_general: {
+    identification: ["descripcion_riesgo"],
+    secondary: "__GLOSS__",
+  },
+  transporte: {
+    identification: ["descripcion_riesgo"],
+    secondary: "__GLOSS__",
+  },
+  casco_maritimo: {
+    identification: ["tipo_nave", "nombre_nave", "matricula"],
+    secondary: "__GLOSS__",
+  },
+  casco_aereo: {
+    identification: ["tipo_aeronave", "marca", "modelo", "matricula"],
+    secondary: "__GLOSS__",
+  },
+  vida_salud: {
+    identification: ["nombre", "apellido_paterno", "rut_asegurado"],
+    secondary: "__GLOSS__",
+  },
+};
+
+function formatFieldValue(
+  fieldKey: string,
+  raw: unknown,
+  fields: BranchFieldDef[],
+): string | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const field = fields.find((f) => f.fieldKey === fieldKey);
+  if (field?.type === "select" && field.options) {
+    const opt = field.options.find((o) => o.value === raw);
+    if (opt) return opt.label;
+  }
+  return String(raw);
+}
+
+function buildItemSummary(
+  branchKey: string,
+  data: Record<string, unknown>,
+  glossNote: string | null,
+  identification: string | null,
+  fields: BranchFieldDef[],
+): { identification: string; secondary: string | null } {
+  const config = BRANCH_SUMMARY[branchKey];
+  if (!config) {
+    return {
+      identification:
+        identification ??
+        (Object.values(data).find(
+          (v) => typeof v === "string" && v.length > 0,
+        ) as string | undefined) ??
+        "—",
+      secondary: glossNote,
+    };
+  }
+  const parts = config.identification
+    .map((k) => formatFieldValue(k, data[k], fields))
+    .filter((v): v is string => Boolean(v));
+  const ident =
+    parts.length > 0 ? parts.join(" · ") : (identification ?? "—");
+  const secondary =
+    config.secondary === "__GLOSS__"
+      ? glossNote
+      : formatFieldValue(
+          config.secondary,
+          data[config.secondary],
+          fields,
+        );
+  return { identification: ident, secondary };
+}
 
 export function ProposalItemsPanel({
   proposalId,
@@ -46,7 +161,11 @@ export function ProposalItemsPanel({
   fieldSchemasByBranch,
   defaultBranchTypeId,
   defaultInsuredId,
+  defaultInsuredName,
+  defaultInsuredRut,
   defaultBeneficiaryId,
+  defaultBeneficiaryName,
+  defaultBeneficiaryRut,
   locked = false,
 }: {
   proposalId: string;
@@ -57,7 +176,11 @@ export function ProposalItemsPanel({
   fieldSchemasByBranch: Record<string, BranchFieldDef[]>;
   defaultBranchTypeId: string | null;
   defaultInsuredId: string | null;
+  defaultInsuredName?: string | null;
+  defaultInsuredRut?: string | null;
   defaultBeneficiaryId: string | null;
+  defaultBeneficiaryName?: string | null;
+  defaultBeneficiaryRut?: string | null;
   locked?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -142,6 +265,10 @@ export function ProposalItemsPanel({
                   branches={branches}
                   clients={clients}
                   fieldSchemasByBranch={fieldSchemasByBranch}
+                  defaultInsuredName={defaultInsuredName ?? null}
+                  defaultInsuredRut={defaultInsuredRut ?? null}
+                  defaultBeneficiaryName={defaultBeneficiaryName ?? null}
+                  defaultBeneficiaryRut={defaultBeneficiaryRut ?? null}
                   locked={locked}
                 />
               ))
@@ -160,6 +287,10 @@ function ItemRow({
   branches,
   clients,
   fieldSchemasByBranch,
+  defaultInsuredName,
+  defaultInsuredRut,
+  defaultBeneficiaryName,
+  defaultBeneficiaryRut,
   locked,
 }: {
   idx: number;
@@ -168,6 +299,10 @@ function ItemRow({
   branches: BranchOption[];
   clients: ClientOption[];
   fieldSchemasByBranch: Record<string, BranchFieldDef[]>;
+  defaultInsuredName: string | null;
+  defaultInsuredRut: string | null;
+  defaultBeneficiaryName: string | null;
+  defaultBeneficiaryRut: string | null;
   locked: boolean;
 }) {
   const router = useRouter();
@@ -187,44 +322,55 @@ function ItemRow({
     });
   }
 
-  // Summary: identificación o primer valor relevante del data JSON
-  const summary =
-    item.identification ??
-    (item.data?.patente as string | undefined) ??
-    (item.data?.direccion as string | undefined) ??
-    (item.data?.nombre_nave as string | undefined) ??
-    (item.data?.descripcion_riesgo as string | undefined) ??
-    "—";
+  const branchFields = fieldSchemasByBranch[item.branchTypeId] ?? [];
+  const { identification: summary, secondary: fichaDescription } =
+    buildItemSummary(
+      item.branchTypeKey,
+      item.data,
+      item.glossNote,
+      item.identification,
+      branchFields,
+    );
 
-  // Descripción/comentarios/glosa específicos de la ficha del ramo.
-  const fichaDescription =
-    (item.data?.descripcion as string | undefined) ??
-    (item.data?.descripcion_riesgo as string | undefined) ??
-    (item.data?.comentarios as string | undefined) ??
-    (item.data?.glosa as string | undefined) ??
-    null;
+  // Asegurado / beneficiario con fallback al default de la carátula. Cuando
+  // se hereda mostramos el nombre + RUT del contratante por defecto y una
+  // marca discreta "(de carátula)".
+  const insuredName = item.insuredClientName ?? defaultInsuredName;
+  const insuredRut = item.insuredClientName
+    ? item.insuredClientRut
+    : defaultInsuredRut;
+  const insuredIsDefault = !item.insuredClientId;
+  const beneficiaryName =
+    item.beneficiaryClientName ?? defaultBeneficiaryName;
+  const beneficiaryRut = item.beneficiaryClientName
+    ? item.beneficiaryClientRut
+    : defaultBeneficiaryRut;
+  const beneficiaryIsDefault = !item.beneficiaryClientId;
 
   return (
     <tr className="border-b last:border-0 align-top">
       <td className="px-3 py-2 tabular-nums">{idx}</td>
-      <td className="px-3 py-2 max-w-[320px]">
-        <div className="truncate font-medium">{summary}</div>
+      <td className="px-3 py-2 max-w-[360px]">
+        <div className="font-medium leading-snug">{summary}</div>
         {fichaDescription && (
-          <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+          <div className="mt-0.5 line-clamp-3 whitespace-pre-line text-xs text-muted-foreground">
             {fichaDescription}
           </div>
         )}
-        {item.glossNote && (
-          <div className="mt-0.5 line-clamp-2 text-xs italic text-muted-foreground">
-            {item.glossNote}
-          </div>
-        )}
       </td>
-      <td className="px-3 py-2 text-muted-foreground">
-        {item.insuredClientName ?? "—"}
+      <td className="px-3 py-2">
+        <ClientCell
+          name={insuredName}
+          rut={insuredRut}
+          isDefault={insuredIsDefault}
+        />
       </td>
-      <td className="px-3 py-2 text-muted-foreground">
-        {item.beneficiaryClientName ?? "—"}
+      <td className="px-3 py-2">
+        <ClientCell
+          name={beneficiaryName}
+          rut={beneficiaryRut}
+          isDefault={beneficiaryIsDefault}
+        />
       </td>
       <td className="px-3 py-2 text-center">{item.coveragesCount}</td>
       <td className="px-3 py-2 text-right tabular-nums">
@@ -292,6 +438,33 @@ function ItemRow({
   );
 }
 
+function ClientCell({
+  name,
+  rut,
+  isDefault,
+}: {
+  name: string | null;
+  rut: string | null;
+  isDefault: boolean;
+}) {
+  if (!name) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="space-y-0.5">
+      <div className="leading-snug">{name}</div>
+      {rut && (
+        <div className="text-xs tabular-nums text-muted-foreground">{rut}</div>
+      )}
+      {isDefault && (
+        <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+          de carátula
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ItemDialog({
   proposalId,
   itemId,
@@ -317,8 +490,35 @@ function ItemDialog({
   const [values, setValues] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [localClients, setLocalClients] = useState<ClientOption[]>(clients);
+  const [createDialog, setCreateDialog] = useState<{
+    field: "insuredClientId" | "beneficiaryClientId";
+    defaultRut: string;
+    defaultName: string;
+  } | null>(null);
 
   const currentFields = fieldSchemasByBranch[values.branchTypeId] ?? [];
+
+  // Si la ficha del ramo ya pregunta "comentarios" o "glosa", evitamos
+  // mostrar el textarea hardcoded para no duplicar.
+  const hasFichaGlosa = currentFields.some((f) =>
+    ["comentarios", "glosa", "descripcion_riesgo"].includes(
+      f.fieldKey.toLowerCase(),
+    ),
+  );
+
+  function openCreateClient(
+    field: "insuredClientId" | "beneficiaryClientId",
+    query: string,
+  ) {
+    const trimmed = query.trim();
+    const looksLikeRut = /[0-9]/.test(trimmed) && trimmed.length <= 12;
+    setCreateDialog({
+      field,
+      defaultRut: looksLikeRut ? trimmed : "",
+      defaultName: looksLikeRut ? "" : trimmed,
+    });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -371,54 +571,80 @@ function ItemDialog({
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <Label className="text-xs">Asegurado</Label>
-              <Select
-                value={values.insuredClientId || undefined}
-                onValueChange={(v) =>
-                  setValues({
-                    ...values,
-                    insuredClientId: v === "__DEFAULT" ? "" : v,
-                  })
+              <Label className="text-xs">
+                Asegurado{" "}
+                <span className="font-normal text-muted-foreground">
+                  (deja vacío para usar default carátula)
+                </span>
+              </Label>
+              <ClientCombobox
+                value={values.insuredClientId}
+                onChange={(id, c) => {
+                  setValues({ ...values, insuredClientId: id });
+                  if (c && !localClients.some((x) => x.id === c.id)) {
+                    setLocalClients((p) => [
+                      ...p,
+                      { id: c.id, name: c.name, rut: c.rut ?? null },
+                    ]);
+                  }
+                }}
+                initial={
+                  localClients.find((c) => c.id === values.insuredClientId) ??
+                  null
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Default (carátula)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__DEFAULT">— Default carátula —</SelectItem>
-                  {clients.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Buscar por nombre o RUT"
+                onCreate={(q) => openCreateClient("insuredClientId", q)}
+              />
             </div>
             <div>
-              <Label className="text-xs">Beneficiario</Label>
-              <Select
-                value={values.beneficiaryClientId || undefined}
-                onValueChange={(v) =>
-                  setValues({
-                    ...values,
-                    beneficiaryClientId: v === "__DEFAULT" ? "" : v,
-                  })
+              <Label className="text-xs">
+                Beneficiario{" "}
+                <span className="font-normal text-muted-foreground">
+                  (deja vacío para usar default carátula)
+                </span>
+              </Label>
+              <ClientCombobox
+                value={values.beneficiaryClientId}
+                onChange={(id, c) => {
+                  setValues({ ...values, beneficiaryClientId: id });
+                  if (c && !localClients.some((x) => x.id === c.id)) {
+                    setLocalClients((p) => [
+                      ...p,
+                      { id: c.id, name: c.name, rut: c.rut ?? null },
+                    ]);
+                  }
+                }}
+                initial={
+                  localClients.find(
+                    (c) => c.id === values.beneficiaryClientId,
+                  ) ?? null
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Default (carátula)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__DEFAULT">— Default carátula —</SelectItem>
-                  {clients.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Buscar por nombre o RUT"
+                onCreate={(q) => openCreateClient("beneficiaryClientId", q)}
+              />
             </div>
           </div>
+          {createDialog && (
+            <QuickClientDialog
+              open
+              trigger={null}
+              onOpenChange={(v) => {
+                if (!v) setCreateDialog(null);
+              }}
+              defaultRut={createDialog.defaultRut}
+              defaultName={createDialog.defaultName}
+              onCreated={(id, name) => {
+                setLocalClients((p) =>
+                  p.some((c) => c.id === id) ? p : [...p, { id, name }],
+                );
+                setValues((v) => ({
+                  ...v,
+                  [createDialog.field]: id,
+                }));
+                setCreateDialog(null);
+              }}
+            />
+          )}
 
           {values.branchTypeId && currentFields.length > 0 && (
             <div className="space-y-2 rounded-md border bg-muted/30 p-4">
@@ -438,17 +664,19 @@ function ItemDialog({
             </div>
           )}
 
-          <div>
-            <Label className="text-xs">Glosa / comentario</Label>
-            <Textarea
-              rows={3}
-              value={values.glossNote}
-              onChange={(e) =>
-                setValues({ ...values, glossNote: e.target.value })
-              }
-              placeholder="Notas adicionales para este ítem"
-            />
-          </div>
+          {!hasFichaGlosa && (
+            <div>
+              <Label className="text-xs">Glosa / comentario</Label>
+              <Textarea
+                rows={3}
+                value={values.glossNote}
+                onChange={(e) =>
+                  setValues({ ...values, glossNote: e.target.value })
+                }
+                placeholder="Notas adicionales para este ítem"
+              />
+            </div>
+          )}
 
           {error && (
             <div className="whitespace-pre-line rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
