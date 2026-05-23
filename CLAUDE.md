@@ -96,19 +96,34 @@ todas las tablas de Better Auth.
 - **DB**: PostgreSQL local `poliza`
 - **Postgres user**: `postgres` (peer auth desde `su - postgres`)
 
+## Repositorio
+
+- **GitHub**: https://github.com/jpreyestCL/polizza.git
+- **Rama principal**: `main`
+- El servidor de staging es un checkout de este repo en `/home/ai/apps/poliza`.
+- Para deployar primero hay que **pushear a `main`** (`git push origin main`)
+  y luego correr el deploy manual abajo — el servidor hace `git fetch` +
+  `git reset --hard origin/main`, así sabemos que corre exactamente el mismo
+  SHA que el local.
+
 ## DEPLOY a staging — pasos manuales
 
-```bash
-# 1. Sincronizar código (excluye .next, node_modules, .git, .env)
-rsync -az --delete \
-  --exclude '.next' --exclude 'node_modules' --exclude '.git' \
-  --exclude 'tsconfig.tsbuildinfo' --exclude '.env' --exclude '.claude*' \
-  -e ssh /Users/jpreyest/work/seguros/ \
-  root@161.35.229.180:/home/ai/apps/poliza/
+> Pre-requisito: tener los cambios commiteados y pusheados a `origin/main`.
 
-# 2. Reasignar ownership y construir (todo en un ssh)
+```bash
+# 1. Push del código a GitHub
+git push origin main
+
+# 2. Actualizar el checkout del servidor a la misma SHA
 ssh root@161.35.229.180 '
-  chown -R ai:ai /home/ai/apps/poliza
+  su - ai -c "cd /home/ai/apps/poliza && \
+    git fetch origin main && \
+    git reset --hard origin/main && \
+    git log --oneline -1"
+'
+
+# 3. Instalar deps y construir
+ssh root@161.35.229.180 '
   su - ai -c "cd /home/ai/apps/poliza && \
     pnpm install --frozen-lockfile 2>&1 | tail -3 && \
     pnpm build 2>&1 | tail -3 && \
@@ -117,30 +132,28 @@ ssh root@161.35.229.180 '
     echo done"
 '
 
-# 3. Si hay migraciones nuevas:
+# 4. Si hay migraciones nuevas:
 ssh root@161.35.229.180 'su - ai -c "cd /home/ai/apps/poliza && pnpm db:deploy"'
 
-# 4. Si hay cambios en el seed (ramos, compañías globales, etc.):
+# 5. Si hay cambios en el seed (ramos, compañías globales, etc.):
 ssh root@161.35.229.180 'su - ai -c "cd /home/ai/apps/poliza && pnpm db:seed"'
 
-# 5. Reiniciar el servicio y verificar
+# 6. Reiniciar el servicio y verificar
 ssh root@161.35.229.180 'systemctl restart poliza && sleep 3 && systemctl is-active poliza'
 
-# 6. Smoke test
+# 7. Smoke test
 curl -sS -o /dev/null -w "HTTP %{http_code}\n" https://poliza.100aventuras.cl/login
 ```
 
 ### Deploy completo en un solo comando
 
 ```bash
-rsync -az --delete \
-  --exclude '.next' --exclude 'node_modules' --exclude '.git' \
-  --exclude 'tsconfig.tsbuildinfo' --exclude '.env' --exclude '.claude*' \
-  -e ssh /Users/jpreyest/work/seguros/ \
-  root@161.35.229.180:/home/ai/apps/poliza/ && \
+git push origin main && \
 ssh root@161.35.229.180 '
-  chown -R ai:ai /home/ai/apps/poliza && \
   su - ai -c "cd /home/ai/apps/poliza && \
+    git fetch origin main 2>&1 | tail -3 && \
+    git reset --hard origin/main 2>&1 | tail -2 && \
+    git log --oneline -1 && \
     pnpm install --frozen-lockfile 2>&1 | tail -3 && \
     pnpm build 2>&1 | tail -3 && \
     cp -r public .next/standalone/ 2>/dev/null; \
@@ -151,6 +164,14 @@ ssh root@161.35.229.180 '
   systemctl restart poliza && sleep 3 && systemctl is-active poliza
 ' && \
 curl -sS -o /dev/null -w "HTTP %{http_code}\n" https://poliza.100aventuras.cl/login
+```
+
+### Verificar qué SHA corre el servidor
+
+```bash
+ssh root@161.35.229.180 'su - ai -c "cd /home/ai/apps/poliza && git log --oneline -1 && git status --short"'
+# Comparar contra el local:
+git log --oneline -1
 ```
 
 ### Por qué Next standalone + copy public/static
@@ -313,6 +334,8 @@ ssh root@161.35.229.180 'su - postgres -c "psql poliza < /tmp/backup-YYYYMMDD-HH
 - **No** correr `pnpm db:migrate` en staging (es `db:deploy`, no `dev`)
 - **No** commit `.env`
 - **No** push --force a main
+- **No** editar archivos directamente en el servidor — siempre commit + push y luego `git fetch` + `reset --hard origin/main` en el server
+- **No** usar rsync para deployar — el flujo ahora es via git
 - **No** crear migraciones manuales en `prisma/migrations/` — siempre con `prisma migrate dev` o `prisma migrate diff`
 - **No** usar `basePrisma` para escribir en tablas tenant — usar `db` de `requireOrgDb()`
 - **No** hacer `db.create({ data: { ... } })` sin pasar `organizationId` explícito
