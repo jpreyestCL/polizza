@@ -1,0 +1,1331 @@
+// Polizza — esquema de datos MVP 1
+// Multi-tenant: las tablas de dominio llevan organizationId (scoping por aplicación).
+// Tablas globales (Currency, ExchangeRate, Holiday) y de Better Auth no se filtran.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Better Auth — autenticación, organizaciones y membresías
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  isSuperadmin  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions    Session[]
+  accounts    Account[]
+  members     Member[]
+  invitations Invitation[]
+}
+
+model Session {
+  id                   String   @id @default(cuid())
+  expiresAt            DateTime
+  token                String   @unique
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  ipAddress            String?
+  userAgent            String?
+  userId               String
+  activeOrganizationId String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Organization {
+  id                     String   @id @default(cuid())
+  name                   String
+  slug                   String?  @unique
+  logo                   String?
+  metadata               String?
+  // Configuración de propuestas (Polizza)
+  reservaDays            Int      @default(15)
+  proposalNumberPattern  String   @default("{YEAR}-{SEQ:0000}")
+  proposalSequenceYear   Int?
+  proposalSequenceValue  Int      @default(0)
+  // Zona horaria IANA usada para formatear fechas/horas en UI y bitácoras.
+  timezone               String   @default("America/Santiago")
+  createdAt              DateTime @default(now())
+
+  members     Member[]
+  invitations Invitation[]
+}
+
+model Member {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           String   @default("ejecutivo")
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+}
+
+model Invitation {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String
+  role           String?
+  status         String   @default("pending")
+  expiresAt      DateTime
+  inviterId      String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inviter      User         @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Catálogos globales (Chile)
+// ─────────────────────────────────────────────────────────────
+
+model Currency {
+  code      String   @id // UF, CLP, USD, EUR
+  name      String
+  symbol    String?
+  createdAt DateTime @default(now())
+}
+
+model ExchangeRate {
+  id           String   @id @default(cuid())
+  currencyCode String
+  date         DateTime @db.Date
+  valueClp     Decimal  @db.Decimal(14, 4)
+  createdAt    DateTime @default(now())
+
+  @@unique([currencyCode, date])
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  name      String
+  createdAt DateTime @default(now())
+
+  @@unique([date])
+}
+
+// Maestro global de comunas de Chile (datos de referencia, sin tenant).
+// Código oficial INE/SUBDERE (p. ej. "13101" para Santiago).
+model Commune {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  city      String // provincia / ciudad asociada
+  region    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([name])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Maestros por organización
+// ─────────────────────────────────────────────────────────────
+
+// Legado: InsuranceLine se mantiene para compat con módulos previos
+// (propuestas v1, pólizas v1, car-quotes). El flujo nuevo usa BranchType.
+model InsuranceLine {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  code           String?
+  category       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+// Compañía aseguradora a nivel global (maestro administrado por SaaS-admin).
+// Los datos "predefinidos" del documento (razón social, RUT, dirección, etc.)
+// viven aquí y los corredores los ven en read-only.
+model GlobalInsuranceCompany {
+  id        String   @id @default(cuid())
+  name      String
+  legalName String?
+  rut       String?
+  address   String?
+  commune   String?
+  city      String?
+  url       String?
+  logoUrl   String?
+  isLife    Boolean  @default(false)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenantProfiles InsuranceCompany[]
+  products       GlobalInsuranceProduct[]
+
+  @@unique([name])
+}
+
+// Compañía aseguradora a nivel tenant.
+// - Si `globalCompanyId` está seteado, los campos heredados se toman del global
+//   y aquí solo viven los datos operativos del corredor (código corredor,
+//   link cobranza, transferencias, contactos, email default de envío).
+// - Si `globalCompanyId` es null, la compañía es "custom" del tenant: todos
+//   los campos del global se replican localmente (name, rut, address, etc.).
+model InsuranceCompany {
+  id              String   @id @default(cuid())
+  organizationId  String
+  globalCompanyId String?
+  // Operativos del corredor:
+  brokerCode      String?
+  paymentLink     String?
+  bankAccountClp  String?
+  bankAccountUsd  String?
+  defaultEmail    String?
+  // Campos "custom" (cuando globalCompanyId es null):
+  name            String
+  legalName       String?
+  rut             String?
+  address         String?
+  commune         String?
+  city            String?
+  url             String?
+  logoUrl         String?
+  isLife          Boolean  @default(false)
+  contactEmail    String?
+  status          String   @default("ACTIVA")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  globalCompany GlobalInsuranceCompany?   @relation(fields: [globalCompanyId], references: [id])
+  contacts      InsuranceCompanyContact[]
+  products      InsuranceProduct[]
+
+  @@unique([organizationId, globalCompanyId])
+  @@index([organizationId])
+}
+
+model InsuranceCompanyContact {
+  id                     String   @id @default(cuid())
+  organizationId         String
+  insuranceCompanyId     String
+  name                   String
+  lastName               String?
+  email                  String?
+  phone                  String?
+  celular                String?
+  role                   String? // cargo
+  isDefault              Boolean  @default(false)
+  isReservationRecipient Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  insuranceCompany InsuranceCompany @relation(fields: [insuranceCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([insuranceCompanyId])
+}
+
+// Ramo (BranchType): global, administrado por SaaS-admin.
+model BranchType {
+  id        String   @id @default(cuid())
+  key       String   @unique // ej: "incendio", "vehiculos", "casco_maritimo"
+  name      String // ej: "Incendio"
+  category  String // "GENERALES" | "VIDA_SALUD"
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fieldSchemas   BranchFieldSchema[]
+  globalProducts GlobalInsuranceProduct[]
+  products       InsuranceProduct[]
+  items          ProposalItem[]
+  proposals      Proposal[]
+}
+
+// Definición declarativa de los campos de la "ficha de datos" por ramo.
+// Se renderiza dinámicamente en el formulario de ítem de propuesta.
+model BranchFieldSchema {
+  id           String   @id @default(cuid())
+  branchTypeId String
+  fieldKey     String // ej: "patente", "anio", "tipo_inmueble"
+  label        String // ej: "Patente"
+  type         String // "text" | "number" | "date" | "select" | "textarea"
+  required     Boolean  @default(false)
+  order        Int      @default(0)
+  options      Json? // [{value,label}] cuando type=select
+  helpText     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  branchType BranchType @relation(fields: [branchTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([branchTypeId, fieldKey])
+  @@index([branchTypeId])
+}
+
+// Producto a nivel global (maestro).
+model GlobalInsuranceProduct {
+  id                  String   @id @default(cuid())
+  globalCompanyId     String
+  branchTypeId        String
+  name                String
+  code                String?
+  commissionAffectPct Decimal? @db.Decimal(6, 3)
+  commissionExemptPct Decimal? @db.Decimal(6, 3)
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  globalCompany  GlobalInsuranceCompany  @relation(fields: [globalCompanyId], references: [id], onDelete: Cascade)
+  branchType     BranchType              @relation(fields: [branchTypeId], references: [id])
+  coverages      GlobalProductCoverage[]
+  tenantProducts InsuranceProduct[]
+
+  @@unique([globalCompanyId, name])
+  @@index([branchTypeId])
+}
+
+model GlobalProductCoverage {
+  id                String   @id @default(cuid())
+  globalProductId   String
+  order             Int      @default(0)
+  name              String // nombre cobertura
+  polCad            String? // "POL"/"CAD"
+  text              String? // texto cobertura
+  insuredAmount     Decimal? @db.Decimal(16, 2)
+  type              String // "COBERTURA" | "ADICIONAL"
+  isCommercialValue Boolean  @default(false)
+  affectedByIva     Boolean  @default(false)
+  sumsToTotal       Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  product GlobalInsuranceProduct @relation(fields: [globalProductId], references: [id], onDelete: Cascade)
+
+  @@index([globalProductId])
+}
+
+// Producto a nivel tenant (override o custom).
+// - Si globalProductId != null: hereda del global, puede sobreescribir % comisión
+//   y agregar coberturas propias.
+// - Si globalProductId == null: es un producto 100% custom del tenant.
+model InsuranceProduct {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  globalProductId     String?
+  insuranceCompanyId  String
+  branchTypeId        String?
+  name                String
+  code                String?
+  commissionAffectPct Decimal? @db.Decimal(6, 3)
+  commissionExemptPct Decimal? @db.Decimal(6, 3)
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  globalProduct    GlobalInsuranceProduct? @relation(fields: [globalProductId], references: [id])
+  insuranceCompany InsuranceCompany        @relation(fields: [insuranceCompanyId], references: [id], onDelete: Cascade)
+  branchType       BranchType?             @relation(fields: [branchTypeId], references: [id])
+  coverages        TenantProductCoverage[]
+
+  @@unique([organizationId, insuranceCompanyId, globalProductId])
+  @@index([organizationId])
+  @@index([insuranceCompanyId])
+}
+
+model TenantProductCoverage {
+  id                String   @id @default(cuid())
+  organizationId    String
+  productId         String
+  order             Int      @default(0)
+  name              String
+  factor            Decimal? @db.Decimal(10, 4)
+  polCad            String?
+  text              String?
+  insuredAmount     Decimal? @db.Decimal(16, 2)
+  premium           Decimal? @db.Decimal(14, 2)
+  type              String // "COBERTURA" | "ADICIONAL"
+  isCommercialValue Boolean  @default(false)
+  affectedByIva     Boolean  @default(false)
+  sumsToTotal       Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  product InsuranceProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([productId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Clientes
+// ─────────────────────────────────────────────────────────────
+
+enum ClientType {
+  PERSONA
+  EMPRESA
+}
+
+enum ClientStatus {
+  PROSPECTO
+  ACTIVO
+  INACTIVO
+}
+
+enum ContactAssignment {
+  COBRANZA
+  SINIESTROS
+  EMISION
+}
+
+model Client {
+  id               String       @id @default(cuid())
+  organizationId   String
+  type             ClientType   @default(PERSONA)
+  rut              String
+  name             String
+  legalName        String?
+  email            String?
+  phone            String?
+  celular          String?
+  birthDate        DateTime?    @db.Date
+  address          String?
+  region           String?
+  commune          String?
+  assignedUserId   String?
+  source           String?
+  status           ClientStatus @default(PROSPECTO)
+  observaciones    String?
+  createdById      String?
+  updatedById      String?
+  giro             String?
+  comentarioAlerta String?
+  vendedor         String?
+  cobranzaUserId   String?
+  siniestrosUserId String?
+  holdingId        String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  contacts       ClientContact[]
+  relationships  ClientRelationship[]
+  tagAssignments ClientTagAssignment[]
+  proposals      Proposal[]
+  policies       Policy[]
+  claims         Claim[]
+  branches       Branch[]
+  carQuotations  CarQuotation[]
+  holding        Holding?              @relation(fields: [holdingId], references: [id])
+
+  @@unique([organizationId, rut])
+  @@index([organizationId])
+  @@index([organizationId, assignedUserId])
+}
+
+model ClientContact {
+  id             String             @id @default(cuid())
+  organizationId String
+  clientId       String
+  name           String
+  role           String?
+  email          String?
+  phone          String?
+  celular        String?
+  assignmentType ContactAssignment?
+  isPrimary      Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([clientId])
+}
+
+model ClientRelationship {
+  id               String   @id @default(cuid())
+  organizationId   String
+  clientId         String
+  relatedClientId  String
+  relationshipType String
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([clientId])
+}
+
+model ClientTag {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  color          String   @default("slate")
+  createdAt      DateTime @default(now())
+
+  assignments ClientTagAssignment[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+model ClientTagAssignment {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String
+  tagId          String
+  createdAt      DateTime @default(now())
+
+  client Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tag    ClientTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, tagId])
+  @@index([organizationId])
+}
+
+model Holding {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  notes          String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  clients Client[]
+
+  @@index([organizationId])
+}
+
+model Branch {
+  id             String   @id @default(cuid())
+  organizationId String
+  clientId       String
+  name           String
+  address        String?
+  contactName    String?
+  commune        String?
+  region         String?
+  phone          String?
+  celular        String?
+  email          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([clientId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Propuestas (modeladas; UI llega en sub-proyecto posterior)
+// ─────────────────────────────────────────────────────────────
+
+enum ProposalStatus {
+  ELABORACION
+  POR_ENVIAR
+  ENVIADA_COMPANIA
+  DEVUELTA
+  EMITIDA
+  POR_DESPACHAR
+  DESPACHADA
+  RECHAZADA
+}
+
+model Proposal {
+  id                         String         @id @default(cuid())
+  organizationId             String
+  clientId                   String
+  proposalNumber             String
+  companyId                  String?
+  lineId                     String?
+  branchId                   String?
+  branchTypeId               String?
+  productId                  String?
+  status                     ProposalStatus @default(ELABORACION)
+  premiumNet                 Decimal?       @db.Decimal(14, 2)
+  premiumGross               Decimal?       @db.Decimal(14, 2)
+  currency                   String         @default("UF")
+  startDate                  DateTime?      @db.Date
+  endDate                    DateTime?      @db.Date
+  // Campos del documento "Propuestas":
+  sentAt                     DateTime?
+  recipientEmail             String?
+  recipientContactId         String?
+  quotationId                String?
+  quotationNumberRef         String?
+  previousPolicyId           String?
+  // Asegurado / beneficiario por defecto (la propuesta usa Client.id como
+  // contratante; estos son los defaults a nivel propuesta).
+  insuredClientId            String?
+  beneficiaryClientId        String?
+  // Casillas de relación con otras compañías / corredores:
+  coaseguro                  Boolean        @default(false)
+  coaseguroDetails           Json?
+  coCorredor                 Boolean        @default(false)
+  coCorredorDetails          Json?
+  reaseguro                  Boolean        @default(false)
+  reaseguroDetails           Json?
+  deOtroCorredor             Boolean        @default(false)
+  garantiaSuscripcion        Boolean        @default(false)
+  conReserva                 Boolean        @default(false)
+  conClausulaInalterabilidad Boolean        @default(false)
+  facultativo                Boolean        @default(false)
+  // Comisión a nivel propuesta (overridea producto):
+  commissionAffectPct        Decimal?       @db.Decimal(6, 3)
+  commissionExemptPct        Decimal?       @db.Decimal(6, 3)
+  observations               String?
+  assignedUserId             String?
+  salespersonId              String?
+  // Renovación
+  isRenewal                  Boolean        @default(false)
+  previousPolicyNumberText   String?
+  // Garantía de suscripción
+  garantiaExpiry             DateTime?      @db.Date
+  garantiaCompleted          Boolean        @default(false)
+  garantiaCompletedAt        DateTime?      @db.Date
+  garantiaObservations       String?
+  // PDF generado y almacenado al pasar a POR_ENVIAR. Se borra al reabrir.
+  pdfBytes                   Bytes?
+  pdfGeneratedAt             DateTime?
+  currentStateStartedAt      DateTime       @default(now())
+  createdById                String?
+  createdAt                  DateTime       @default(now())
+  updatedAt                  DateTime       @updatedAt
+
+  client                    Client                              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  branchType                BranchType?                         @relation(fields: [branchTypeId], references: [id])
+  statusHistory             ProposalStatusHistory[]
+  items                     ProposalItem[]
+  paymentPlan               PaymentPlan?
+  logs                      ProposalLog[]
+  brokerParticipations      ProposalBrokerParticipation[]
+  coaseguroParticipations   ProposalCoaseguroParticipation[]
+
+  @@unique([organizationId, proposalNumber])
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([previousPolicyId])
+  @@index([quotationId])
+}
+
+// Ítem de una propuesta. La ficha de datos depende del ramo (BranchType) y
+// se guarda en el JSON `data` validado contra BranchFieldSchema.
+model ProposalItem {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  proposalId          String
+  branchTypeId        String
+  order               Int      @default(0)
+  insuredClientId     String?
+  beneficiaryClientId String?
+  identification      String?
+  glossNote           String?
+  data                Json     @default("{}")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  proposal   Proposal               @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  branchType BranchType             @relation(fields: [branchTypeId], references: [id])
+  coverages  ProposalItemCoverage[]
+
+  @@index([organizationId])
+  @@index([proposalId])
+}
+
+model ProposalItemCoverage {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  itemId              String
+  order               Int      @default(0)
+  name                String // texto cobertura
+  polCad              String? // POL / CAD
+  type                String // "COBERTURA" | "ADICIONAL"
+  isCommercialValue   Boolean  @default(false)
+  insuredAmount       Decimal? @db.Decimal(16, 2)
+  insuredCurrency     String   @default("UF")
+  affectedByIva       Boolean  @default(false)
+  taxRateAffect       Decimal? @db.Decimal(7, 4) // tasa afecta
+  taxRateExempt       Decimal? @db.Decimal(7, 4) // tasa exenta
+  premiumAffect       Decimal? @db.Decimal(14, 2)
+  premiumExempt       Decimal? @db.Decimal(14, 2)
+  premiumNet          Decimal? @db.Decimal(14, 2) // total prima neta
+  ivaAmount           Decimal? @db.Decimal(14, 2)
+  premiumGross        Decimal? @db.Decimal(14, 2) // prima bruta
+  commissionAffectPct Decimal? @db.Decimal(6, 3)
+  commissionExemptPct Decimal? @db.Decimal(6, 3)
+  commissionAmount    Decimal? @db.Decimal(14, 2)
+  sumsToTotal         Boolean  @default(true)
+  manualPremium       Boolean  @default(false) // "cálculo manual de primas"
+  autoLoaded          Boolean  @default(false) // cargada automáticamente desde TenantProductCoverage
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  item ProposalItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([itemId])
+}
+
+enum PaymentOption {
+  CONTADO
+  AVISO_CUOTA
+  CHEQUES
+  PAC
+  PAT
+  CUPONERA
+  OTRO
+}
+
+model PaymentPlan {
+  id                String         @id @default(cuid())
+  organizationId    String
+  proposalId        String         @unique
+  policyId          String?        @unique
+  sinPlanDePago     Boolean        @default(false)
+  option            PaymentOption?
+  installmentsCount Int            @default(0)
+  observations      String?
+  documented        Boolean        @default(false)
+  firstPaymentDate  DateTime?      @db.Date
+  firstSignDate     DateTime?      @db.Date
+  valorCuota        Decimal?       @db.Decimal(14, 2)
+  cobrAnticipada    Boolean        @default(false)
+  facturaAnticipada Boolean        @default(false)
+  requiereFactura   Boolean        @default(false)
+  primaBruta        Decimal?       @db.Decimal(14, 4)
+  cambio            Decimal?       @db.Decimal(14, 4)
+  primaTotalPesos   Decimal?       @db.Decimal(14, 2)
+  payerRut          String?
+  payerName         String?
+  payerLastName     String?
+  payerLegalName    String?
+  payerPhone        String?
+  payerCelular      String?
+  payerEmail        String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}
+
+// Bitácora de propuesta — registra acciones automáticas y manuales.
+model ProposalLog {
+  id                String    @id @default(cuid())
+  organizationId    String
+  proposalId        String
+  action            String // "CREATED" | "STATUS_CHANGED" | "EMAIL_SENT" | "NOTE" | ...
+  summary           String
+  payload           Json?
+  nextDueDate       DateTime?
+  responsibleUserId String?
+  userId            String?
+  createdAt         DateTime  @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([proposalId])
+}
+
+enum EndorsementType {
+  CANCELACION
+  ANULACION
+  MODIFICACION
+}
+
+model Endorsement {
+  id             String          @id @default(cuid())
+  organizationId String
+  policyId       String
+  type           EndorsementType
+  effectiveDate  DateTime        @db.Date
+  reason         String?
+  notes          String?
+  createdById    String?
+  createdAt      DateTime        @default(now())
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([policyId])
+}
+
+model ProposalStatusHistory {
+  id             String         @id @default(cuid())
+  organizationId String
+  proposalId     String
+  status         ProposalStatus
+  note           String?
+  returnReasonId String?
+  changedById    String?
+  createdAt      DateTime       @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([proposalId])
+}
+
+model ProposalReturnReason {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+}
+
+// Corredora externa (maestro por organización). Se utiliza en propuestas
+// con co-corredor.
+model Broker {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  rut            String?
+  email          String?
+  phone          String?
+  contactName    String?
+  address        String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  brokerParticipations ProposalBrokerParticipation[]
+
+  @@unique([organizationId, rut])
+  @@index([organizationId])
+}
+
+model ProposalBrokerParticipation {
+  id               String   @id @default(cuid())
+  organizationId   String
+  proposalId       String
+  brokerId         String
+  participationPct Decimal  @db.Decimal(6, 3)
+  createdAt        DateTime @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  broker   Broker   @relation(fields: [brokerId], references: [id])
+
+  @@index([organizationId])
+  @@index([proposalId])
+  @@index([brokerId])
+}
+
+model ProposalCoaseguroParticipation {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  proposalId         String
+  insuranceCompanyId String
+  participationPct   Decimal  @db.Decimal(6, 3)
+  policyNumber       String?
+  createdAt          DateTime @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([proposalId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Pólizas (modeladas; UI llega en sub-proyecto posterior)
+// ─────────────────────────────────────────────────────────────
+
+enum PolicyStatus {
+  VIGENTE
+  VENCIDA
+  RENOVADA
+  CANCELADA
+  ANULADA
+}
+
+model Policy {
+  id               String       @id @default(cuid())
+  organizationId   String
+  clientId         String
+  proposalId       String?
+  policyNumber     String
+  companyId        String?
+  lineId           String?
+  branchId         String?
+  status           PolicyStatus @default(VIGENTE)
+  premiumNet       Decimal?     @db.Decimal(14, 2)
+  currency         String       @default("UF")
+  startDate        DateTime?    @db.Date
+  endDate          DateTime?    @db.Date
+  previousPolicyId String?
+  nextPolicyId     String?
+  assignedUserId   String?
+  createdById      String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  client        Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  items         PolicyItem[]
+  coverages     PolicyCoverage[]
+  statusHistory PolicyStatusHistory[]
+  installments  Installment[]
+  endorsements  Endorsement[]
+
+  @@unique([organizationId, policyNumber])
+  @@index([organizationId])
+  @@index([clientId])
+}
+
+model PolicyItem {
+  id             String   @id @default(cuid())
+  organizationId String
+  policyId       String
+  description    String
+  insuredAmount  Decimal? @db.Decimal(16, 2)
+  currency       String   @default("UF")
+  createdAt      DateTime @default(now())
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([policyId])
+}
+
+model PolicyCoverage {
+  id             String   @id @default(cuid())
+  organizationId String
+  policyId       String
+  name           String
+  deductible     String?
+  insuredAmount  Decimal? @db.Decimal(16, 2)
+  currency       String   @default("UF")
+  createdAt      DateTime @default(now())
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([policyId])
+}
+
+model PolicyStatusHistory {
+  id             String       @id @default(cuid())
+  organizationId String
+  policyId       String
+  status         PolicyStatus
+  note           String?
+  changedById    String?
+  createdAt      DateTime     @default(now())
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([policyId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Workflow transversal: tareas, alertas, comentarios, bitácora
+// ─────────────────────────────────────────────────────────────
+
+enum EntityType {
+  CLIENT
+  PROPOSAL
+  POLICY
+  CLAIM
+  RENEWAL
+  TASK
+  CAR_QUOTATION
+}
+
+enum TaskStatus {
+  PENDIENTE
+  EN_PROGRESO
+  COMPLETADA
+  CANCELADA
+}
+
+enum TaskPriority {
+  BAJA
+  MEDIA
+  ALTA
+}
+
+enum AlertSeverity {
+  INFO
+  ADVERTENCIA
+  CRITICA
+}
+
+enum AlertStatus {
+  ABIERTA
+  RESUELTA
+}
+
+model Task {
+  id             String       @id @default(cuid())
+  organizationId String
+  title          String
+  description    String?
+  entityType     EntityType?
+  entityId       String?
+  assignedUserId String?
+  dueDate        DateTime?
+  priority       TaskPriority @default(MEDIA)
+  status         TaskStatus   @default(PENDIENTE)
+  createdById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, assignedUserId])
+  @@index([entityType, entityId])
+}
+
+model Alert {
+  id             String        @id @default(cuid())
+  organizationId String
+  type           String
+  severity       AlertSeverity @default(INFO)
+  entityType     EntityType?
+  entityId       String?
+  message        String
+  triggeredAt    DateTime      @default(now())
+  resolvedAt     DateTime?
+  status         AlertStatus   @default(ABIERTA)
+
+  @@index([organizationId])
+  @@index([entityType, entityId])
+}
+
+model Comment {
+  id             String     @id @default(cuid())
+  organizationId String
+  entityType     EntityType
+  entityId       String
+  body           String
+  userId         String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([organizationId])
+  @@index([entityType, entityId])
+}
+
+model ActivityLog {
+  id             String     @id @default(cuid())
+  organizationId String
+  entityType     EntityType
+  entityId       String
+  action         String
+  summary        String
+  metadata       Json?
+  userId         String?
+  createdAt      DateTime   @default(now())
+
+  @@index([organizationId])
+  @@index([entityType, entityId])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  userId         String?
+  action         String
+  ipAddress      String?
+  userAgent      String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Documentos
+// ─────────────────────────────────────────────────────────────
+
+model Document {
+  id             String     @id @default(cuid())
+  organizationId String
+  entityType     EntityType
+  entityId       String
+  fileName       String
+  fileUrl        String
+  documentType   String?
+  description    String?
+  year           Int?
+  mimeType       String?
+  sizeBytes      Int?
+  uploadedById   String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  versions DocumentVersion[]
+
+  @@index([organizationId])
+  @@index([entityType, entityId])
+}
+
+model DocumentVersion {
+  id             String   @id @default(cuid())
+  organizationId String
+  documentId     String
+  version        Int
+  fileUrl        String
+  uploadedById   String?
+  createdAt      DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, version])
+  @@index([organizationId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Siniestros
+// ─────────────────────────────────────────────────────────────
+
+enum ClaimStatus {
+  REPORTADO
+  EN_EVALUACION
+  APROBADO
+  RECHAZADO
+  PAGADO
+  CERRADO
+}
+
+model Claim {
+  id                    String      @id @default(cuid())
+  organizationId        String
+  clientId              String
+  policyId              String?
+  claimNumber           String
+  description           String
+  occurredAt            DateTime?   @db.Date
+  reportedAt            DateTime?   @db.Date
+  status                ClaimStatus @default(REPORTADO)
+  estimatedAmount       Decimal?    @db.Decimal(14, 2)
+  settledAmount         Decimal?    @db.Decimal(14, 2)
+  currency              String      @default("UF")
+  assignedUserId        String?
+  createdById           String?
+  currentStateStartedAt DateTime    @default(now())
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  client        Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  statusHistory ClaimStatusHistory[]
+
+  @@unique([organizationId, claimNumber])
+  @@index([organizationId])
+  @@index([clientId])
+}
+
+model ClaimStatusHistory {
+  id             String      @id @default(cuid())
+  organizationId String
+  claimId        String
+  status         ClaimStatus
+  note           String?
+  changedById    String?
+  createdAt      DateTime    @default(now())
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([claimId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Cobranza: cuotas de pago de pólizas
+// ─────────────────────────────────────────────────────────────
+
+enum InstallmentStatus {
+  PENDIENTE
+  PAGADA
+  ANULADA
+}
+
+model Installment {
+  id             String            @id @default(cuid())
+  organizationId String
+  policyId       String?
+  paymentPlanId  String?
+  number         Int
+  amount         Decimal           @db.Decimal(14, 2)
+  currency       String            @default("UF")
+  dueDate        DateTime          @db.Date
+  status         InstallmentStatus @default(PENDIENTE)
+  paidAt         DateTime?         @db.Date
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  policy Policy? @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([policyId])
+  @@index([paymentPlanId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Cotizaciones de automóvil
+// ─────────────────────────────────────────────────────────────
+
+enum CarQuotationStatus {
+  BORRADOR
+  EN_PROCESO
+  COMPLETADA
+  ERROR
+}
+
+enum CarQuotationResultStatus {
+  PENDIENTE
+  EN_PROCESO
+  OBTENIDA
+  ERROR
+}
+
+enum VehicleCondition {
+  NUEVO
+  USADO
+}
+
+enum VehicleUse {
+  PARTICULAR
+  COMERCIAL
+}
+
+enum CivilLiability {
+  UF_500
+  UF_1000
+  UF_1500
+  UF_2000
+}
+
+enum WorkshopType {
+  EXCLUSIVIDAD
+  MARCA
+}
+
+model CarQuotation {
+  id                  String             @id @default(cuid())
+  organizationId      String
+  clientId            String
+  quotationNumber     String
+  status              CarQuotationStatus @default(BORRADOR)
+  patente             String
+  marca               String?
+  modelo              String?
+  anio                Int?
+  tipoVehiculo        String?
+  motorizacion        String?
+  vehicleCondition    VehicleCondition   @default(USADO)
+  vehicleUse          VehicleUse         @default(PARTICULAR)
+  civilLiability      CivilLiability     @default(UF_500)
+  workshopType        WorkshopType       @default(EXCLUSIVIDAD)
+  deductibles         Json
+  assignedUserId      String?
+  createdById         String?
+  previousQuotationId String?
+  notes               String?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  client  Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  results CarQuotationResult[]
+
+  @@unique([organizationId, quotationNumber])
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([previousQuotationId])
+}
+
+model CarQuotationResult {
+  id             String                   @id @default(cuid())
+  organizationId String
+  quotationId    String
+  insurerKey     String
+  insurerName    String
+  status         CarQuotationResultStatus @default(PENDIENTE)
+  premiumUf      Decimal?                 @db.Decimal(14, 2)
+  deductibleUf   Decimal?                 @db.Decimal(14, 2)
+  planName       String?
+  coverageDetail Json?
+  rawData        Json?
+  pdfBytes       Bytes?
+  errorMessage   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  quotation CarQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@unique([quotationId, insurerKey])
+  @@index([organizationId])
+  @@index([quotationId])
+  @@index([status])
+}
+
+model InsurerPortalCredential {
+  id                String   @id @default(cuid())
+  organizationId    String
+  insurerKey        String
+  insurerName       String
+  username          String
+  passwordEncrypted String
+  passwordIv        String
+  passwordTag       String
+  status            String   @default("ACTIVA")
+  notes             String?
+  createdById       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([organizationId, insurerKey])
+  @@index([organizationId])
+}

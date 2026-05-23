@@ -1,0 +1,32 @@
+node_modules
+.next
+out
+build
+.DS_Store
+
+# env
+.env
+.env.local
+.env*.local
+
+# misc
+*.pem
+npm-debug.log*
+.pnpm-debug.log*
+
+# testing
+coverage
+
+# editor
+.idea
+.vscode
+
+# prisma
+prisma/*.db
+
+# claude / agents
+.claude
+.claude*
+.claude-flow
+graphify-out
+tsconfig.tsbuildinfo
