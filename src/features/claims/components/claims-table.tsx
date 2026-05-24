@@ -14,7 +14,6 @@ import {
 } from "@tanstack/react-table";
 import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { formatDate } from "@/lib/utils";
-import { formatMoney, type CurrencyCode } from "@/lib/money";
 import type { ClaimListItem } from "../queries";
 import {
   CLAIM_STATUSES,
@@ -48,7 +47,7 @@ export function ClaimsTable({ claims }: { claims: ClaimListItem[] }) {
     () => [
       {
         accessorKey: "claimNumber",
-        header: "Número",
+        header: "Carpeta",
         cell: ({ row }) => (
           <Link
             href={`/siniestros/${row.original.id}`}
@@ -62,13 +61,48 @@ export function ClaimsTable({ claims }: { claims: ClaimListItem[] }) {
         id: "client",
         header: "Cliente",
         accessorFn: (row) => row.client.name,
+        cell: ({ row }) => (
+          <Link
+            href={`/clientes/${row.original.client.id}`}
+            className="hover:text-primary"
+          >
+            {row.original.client.name}
+          </Link>
+        ),
       },
       {
-        accessorKey: "description",
-        header: "Descripción",
-        cell: ({ getValue }) => (
-          <span className="line-clamp-1 max-w-xs text-muted-foreground">
-            {getValue<string>()}
+        id: "policy",
+        header: "Póliza",
+        accessorFn: (row) => row.policy?.policyNumber ?? "",
+        cell: ({ row }) =>
+          row.original.policy ? (
+            <Link
+              href={`/polizas/${row.original.policy.id}`}
+              className="hover:text-primary"
+            >
+              {row.original.policy.policyNumber}
+            </Link>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          ),
+      },
+      {
+        id: "ramo",
+        header: "Ramo",
+        accessorFn: (row) => row.branchTypeName ?? "",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.branchTypeName ?? "—"}
+          </span>
+        ),
+      },
+      {
+        id: "company",
+        header: "N° compañía",
+        accessorFn: (row) => row.companyClaimNumber ?? "",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.companyClaimNumber ?? "—"}
           </span>
         ),
       },
@@ -79,18 +113,6 @@ export function ClaimsTable({ claims }: { claims: ClaimListItem[] }) {
           <ClaimStatusBadge status={getValue<string>()} />
         ),
         filterFn: "equalsString",
-      },
-      {
-        id: "estimated",
-        header: "Monto estimado",
-        accessorFn: (row) => row.estimatedAmount ?? 0,
-        cell: ({ row }) =>
-          row.original.estimatedAmount !== null
-            ? formatMoney(
-                row.original.estimatedAmount,
-                row.original.currency as CurrencyCode,
-              )
-            : "—",
       },
       {
         accessorKey: "occurredAt",
@@ -125,9 +147,11 @@ export function ClaimsTable({ claims }: { claims: ClaimListItem[] }) {
 
   function exportCsv() {
     const header = [
-      "Número",
+      "Carpeta",
       "Cliente",
-      "Descripción",
+      "Póliza",
+      "Ramo",
+      "N° compañía",
       "Estado",
       "Monto estimado",
       "Monto liquidado",
@@ -139,7 +163,9 @@ export function ClaimsTable({ claims }: { claims: ClaimListItem[] }) {
       return [
         c.claimNumber,
         c.client.name,
-        c.description,
+        c.policy?.policyNumber ?? "",
+        c.branchTypeName ?? "",
+        c.companyClaimNumber ?? "",
         CLAIM_STATUS_LABELS[c.status as ClaimStatusValue] ?? c.status,
         c.estimatedAmount ?? "",
         c.settledAmount ?? "",

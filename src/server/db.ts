@@ -52,6 +52,8 @@ const TENANT_MODELS = new Set<string>([
   "Endorsement",
   "Claim",
   "ClaimStatusHistory",
+  "ClaimThirdParty",
+  "ClaimLog",
   "Installment",
   "Task",
   "Alert",

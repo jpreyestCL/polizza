@@ -11,6 +11,7 @@ type BadgeVariant =
 
 const STATUS_VARIANT: Record<ClaimStatusValue, BadgeVariant> = {
   REPORTADO: "secondary",
+  INGRESADO_COMPANIA: "warning",
   EN_EVALUACION: "default",
   APROBADO: "success",
   RECHAZADO: "destructive",

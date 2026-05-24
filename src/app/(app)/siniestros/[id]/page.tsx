@@ -1,18 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
-import { getClaimActivity, getClaimDetail } from "@/features/claims/queries";
-import { listPolicies } from "@/features/policies/queries";
+import {
+  getClaimActivity,
+  getClaimDetail,
+  getBranchFieldSchema,
+} from "@/features/claims/queries";
 import { getOrgMembers } from "@/features/clients/queries";
 import { listDocuments } from "@/features/documents/queries";
-import { getUfValue } from "@/server/uf";
 import { canDeleteClaim } from "@/lib/roles";
 import { ClaimDetailTabs } from "@/features/claims/components/claim-detail-tabs";
 import { ClaimStatusBadge } from "@/features/claims/components/claim-badges";
 import { ClaimStatusButton } from "@/features/claims/components/claim-status-button";
 import { DeleteClaimDialog } from "@/features/claims/components/delete-claim-dialog";
-import { Button } from "@/components/ui/button";
 
 export default async function SiniestroDetailPage({
   params,
@@ -25,20 +25,12 @@ export default async function SiniestroDetailPage({
   const claim = await getClaimDetail(db, id);
   if (!claim) notFound();
 
-  const [activity, documents, policies, members, uf] = await Promise.all([
+  const [activity, documents, members, branchFields] = await Promise.all([
     getClaimActivity(db, id),
     listDocuments(db, "CLAIM", id),
-    listPolicies(ctx, db),
     getOrgMembers(ctx.organizationId),
-    getUfValue(),
+    claim.branchTypeId ? getBranchFieldSchema(claim.branchTypeId) : [],
   ]);
-
-  const policyNumber = claim.policyId
-    ? (policies.find((p) => p.id === claim.policyId)?.policyNumber ?? null)
-    : null;
-  const assignedUserName = claim.assignedUserId
-    ? (members.find((m) => m.userId === claim.assignedUserId)?.name ?? null)
-    : null;
 
   return (
     <div className="space-y-6">
@@ -49,19 +41,35 @@ export default async function SiniestroDetailPage({
               {claim.claimNumber}
             </h1>
             <ClaimStatusBadge status={claim.status} />
+            {claim.companyClaimNumber && (
+              <span className="rounded border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                Compañía: {claim.companyClaimNumber}
+              </span>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
-            {claim.client.name}
+            <Link
+              href={`/clientes/${claim.client.id}`}
+              className="hover:text-primary"
+            >
+              {claim.client.name}
+            </Link>
+            {claim.policy && (
+              <>
+                {" · Póliza "}
+                <Link
+                  href={`/polizas/${claim.policy.id}`}
+                  className="hover:text-primary"
+                >
+                  {claim.policy.policyNumber}
+                </Link>
+              </>
+            )}
+            {claim.branchType && ` · ${claim.branchType.name}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <ClaimStatusButton claimId={id} currentStatus={claim.status} />
-          <Button asChild variant="outline">
-            <Link href={`/siniestros/${id}/editar`}>
-              <Pencil />
-              Editar
-            </Link>
-          </Button>
           {canDeleteClaim(ctx.role) && (
             <DeleteClaimDialog
               claimId={id}
@@ -75,9 +83,8 @@ export default async function SiniestroDetailPage({
         claim={claim}
         activity={activity}
         documents={documents}
-        policyNumber={policyNumber}
-        assignedUserName={assignedUserName}
-        ufValue={uf?.value ?? null}
+        branchFields={branchFields}
+        members={members}
       />
     </div>
   );

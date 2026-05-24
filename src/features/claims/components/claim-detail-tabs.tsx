@@ -1,118 +1,91 @@
 "use client";
 
-import Link from "next/link";
 import type { ActivityLog } from "@prisma/client";
 import { Activity, History } from "lucide-react";
-import { formatDate, formatDateTime } from "@/lib/utils";
-import type { ClaimDetail } from "../queries";
+import { formatDateTime } from "@/lib/utils";
+import type { ClaimDetail, BranchFieldDef } from "../queries";
 import { ClaimStatusBadge } from "./claim-badges";
+import { ClaimDetailsForm } from "./claim-details-form";
+import { ClaimCompanyInfoCard } from "./claim-company-info-card";
+import { ClaimThirdPartiesPanel } from "./claim-third-parties-panel";
+import { ClaimLogPanel } from "./claim-log-panel";
 import { DocumentsPanel } from "@/features/documents/components/documents-panel";
 import type { DocumentItem } from "@/features/documents/queries";
-import { MoneyValue } from "@/components/money-value";
 import { EmptyState } from "@/components/empty-state";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-function Field({ label, value }: { label: string; value?: React.ReactNode }) {
-  return (
-    <div className="space-y-0.5">
-      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </dt>
-      <dd className="text-sm">{value || "—"}</dd>
-    </div>
-  );
-}
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 export function ClaimDetailTabs({
   claim,
   activity,
   documents,
-  policyNumber,
-  assignedUserName,
-  ufValue,
+  branchFields,
+  members,
 }: {
   claim: ClaimDetail;
   activity: ActivityLog[];
   documents: DocumentItem[];
-  policyNumber: string | null;
-  assignedUserName: string | null;
-  ufValue: number | null;
+  branchFields: BranchFieldDef[];
+  members: { userId: string; name: string }[];
 }) {
   return (
-    <Tabs defaultValue="resumen">
+    <Tabs defaultValue="datos">
       <TabsList className="flex-wrap">
-        <TabsTrigger value="resumen">Resumen</TabsTrigger>
-        <TabsTrigger value="historial">
-          Historial ({claim.statusHistory.length})
+        <TabsTrigger value="datos">Denuncio</TabsTrigger>
+        <TabsTrigger value="ramo">Datos del ramo</TabsTrigger>
+        <TabsTrigger value="terceros">
+          Terceros ({claim.thirdParties.length})
         </TabsTrigger>
-        <TabsTrigger value="documentos">Documentos</TabsTrigger>
+        <TabsTrigger value="compania">Compañía</TabsTrigger>
+        <TabsTrigger value="documentos">
+          Documentos ({documents.length})
+        </TabsTrigger>
+        <TabsTrigger value="bitacora">
+          Bitácora ({claim.logs.length})
+        </TabsTrigger>
+        <TabsTrigger value="historial">
+          Estados ({claim.statusHistory.length})
+        </TabsTrigger>
         <TabsTrigger value="actividad">Actividad</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="resumen">
-        <div className="rounded-xl border bg-card p-5">
-          <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field
-              label="Cliente"
-              value={
-                <Link
-                  href={`/clientes/${claim.client.id}`}
-                  className="text-primary hover:underline"
-                >
-                  {claim.client.name}
-                </Link>
-              }
-            />
-            <Field
-              label="Póliza"
-              value={
-                claim.policyId && policyNumber ? (
-                  <Link
-                    href={`/polizas/${claim.policyId}`}
-                    className="text-primary hover:underline"
-                  >
-                    {policyNumber}
-                  </Link>
-                ) : null
-              }
-            />
-            <Field label="Ejecutivo" value={assignedUserName} />
-            <Field
-              label="Ocurrencia"
-              value={formatDate(claim.occurredAt)}
-            />
-            <Field label="Denuncio" value={formatDate(claim.reportedAt)} />
-            <Field label="Reportado" value={formatDate(claim.createdAt)} />
-            <Field
-              label="Monto estimado"
-              value={
-                <MoneyValue
-                  amount={claim.estimatedAmount}
-                  currency={claim.currency}
-                  ufValue={ufValue}
-                />
-              }
-            />
-            <Field
-              label="Monto liquidado"
-              value={
-                <MoneyValue
-                  amount={claim.settledAmount}
-                  currency={claim.currency}
-                  ufValue={ufValue}
-                />
-              }
-            />
-          </dl>
-          <div className="mt-5 border-t pt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Descripción
-            </p>
-            <p className="mt-1 whitespace-pre-wrap text-sm">
-              {claim.description}
-            </p>
-          </div>
-        </div>
+      <TabsContent value="datos">
+        <ClaimDetailsForm
+          claim={claim}
+          branchFields={branchFields}
+          members={members}
+        />
+      </TabsContent>
+
+      <TabsContent value="ramo">
+        <BranchDataPanel claim={claim} />
+      </TabsContent>
+
+      <TabsContent value="terceros">
+        <ClaimThirdPartiesPanel
+          claimId={claim.id}
+          thirdParties={claim.thirdParties}
+        />
+      </TabsContent>
+
+      <TabsContent value="compania">
+        <ClaimCompanyInfoCard claim={claim} />
+      </TabsContent>
+
+      <TabsContent value="documentos">
+        <DocumentsPanel
+          entityType="CLAIM"
+          entityId={claim.id}
+          documents={documents}
+        />
+      </TabsContent>
+
+      <TabsContent value="bitacora">
+        <ClaimLogPanel claimId={claim.id} logs={claim.logs} />
       </TabsContent>
 
       <TabsContent value="historial">
@@ -142,14 +115,6 @@ export function ClaimDetailTabs({
         )}
       </TabsContent>
 
-      <TabsContent value="documentos">
-        <DocumentsPanel
-          entityType="CLAIM"
-          entityId={claim.id}
-          documents={documents}
-        />
-      </TabsContent>
-
       <TabsContent value="actividad">
         {activity.length === 0 ? (
           <EmptyState
@@ -174,5 +139,68 @@ export function ClaimDetailTabs({
         )}
       </TabsContent>
     </Tabs>
+  );
+}
+
+function BranchDataPanel({ claim }: { claim: ClaimDetail }) {
+  const item = claim.proposalItem;
+  const data = (item?.data ?? {}) as Record<string, unknown>;
+  const entries = Object.entries(data).filter(
+    ([, v]) => v !== null && v !== undefined && v !== "",
+  );
+  const branchName = claim.branchType?.name ?? item?.branchType?.name ?? null;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border bg-card p-5">
+        <h3 className="text-sm font-semibold">Datos del ítem siniestrado</h3>
+        <p className="text-xs text-muted-foreground">
+          {branchName
+            ? `Ramo: ${branchName}`
+            : "Ítem sin ramo registrado"}
+        </p>
+        {claim.policyItem ? (
+          <dl className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs uppercase text-muted-foreground">
+                Descripción
+              </dt>
+              <dd className="text-sm">{claim.policyItem.description}</dd>
+            </div>
+            {claim.policyItemAmount !== null && (
+              <div>
+                <dt className="text-xs uppercase text-muted-foreground">
+                  Monto asegurado
+                </dt>
+                <dd className="text-sm">
+                  {claim.policyItemAmount.toLocaleString()}{" "}
+                  {claim.policyItem.currency}
+                </dd>
+              </div>
+            )}
+          </dl>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Este denuncio no tiene un ítem de póliza vinculado.
+          </p>
+        )}
+      </div>
+
+      {entries.length > 0 && (
+        <div className="rounded-xl border bg-card p-5">
+          <h3 className="text-sm font-semibold">Ficha original (propuesta)</h3>
+          <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {entries.map(([key, value]) => (
+              <div key={key}>
+                <dt className="text-xs uppercase text-muted-foreground">
+                  {key}
+                </dt>
+                <dd className="text-sm">{String(value)}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+    </div>
   );
 }

@@ -318,6 +318,7 @@ model BranchType {
   products       InsuranceProduct[]
   items          ProposalItem[]
   proposals      Proposal[]
+  claims         Claim[]
 }
 
 // Definición declarativa de los campos de la "ficha de datos" por ramo.
@@ -711,6 +712,7 @@ model ProposalItem {
   proposal   Proposal               @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   branchType BranchType             @relation(fields: [branchTypeId], references: [id])
   coverages  ProposalItemCoverage[]
+  claims     Claim[]
 
   @@index([organizationId])
   @@index([proposalId])
@@ -970,6 +972,7 @@ model PolicyItem {
   createdAt      DateTime @default(now())
 
   policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  claims Claim[]
 
   @@index([organizationId])
   @@index([policyId])
@@ -1170,6 +1173,7 @@ model DocumentVersion {
 
 enum ClaimStatus {
   REPORTADO
+  INGRESADO_COMPANIA
   EN_EVALUACION
   APROBADO
   RECHAZADO
@@ -1177,31 +1181,111 @@ enum ClaimStatus {
   CERRADO
 }
 
+enum ClaimEntryParty {
+  COMPANIA
+  CORREDOR
+}
+
+enum ClaimEntryChannel {
+  TELEFONO
+  EMAIL
+  WEB
+  CALL_CENTER
+  OTRO
+}
+
+enum ClaimLossType {
+  PARCIAL
+  TOTAL
+}
+
+enum ClaimLogKind {
+  CREATED
+  STATUS_CHANGED
+  COMPANY_FILED
+  COMPANY_NUMBER_ASSIGNED
+  LIQUIDATOR_ASSIGNED
+  DOCUMENT_UPLOADED
+  THIRD_PARTY_ADDED
+  THIRD_PARTY_REMOVED
+  UPDATED
+  NOTE
+}
+
 model Claim {
   id                    String      @id @default(cuid())
   organizationId        String
   clientId              String
   policyId              String?
+  policyItemId          String?
+  proposalItemId        String?
+  branchTypeId          String?
   claimNumber           String
+  folderNumber          Int
+  companyClaimNumber    String?
+  liquidatorName        String?
   description           String
-  occurredAt            DateTime?   @db.Date
-  reportedAt            DateTime?   @db.Date
   status                ClaimStatus @default(REPORTADO)
+  currency              String      @default("UF")
   estimatedAmount       Decimal?    @db.Decimal(14, 2)
   settledAmount         Decimal?    @db.Decimal(14, 2)
-  currency              String      @default("UF")
   assignedUserId        String?
   createdById           String?
   currentStateStartedAt DateTime    @default(now())
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
 
+  // Ingreso del denuncio
+  entryParty       ClaimEntryParty?
+  entryChannel     ClaimEntryChannel?
+  reportedAt       DateTime?          @db.Date
+  reportedAtBroker DateTime?
+  filedAtCompanyAt DateTime?
+
+  // Denunciante
+  reporterRut       String?
+  reporterFirstName String?
+  reporterLastName  String?
+  reporterPhone     String?
+  reporterEmail     String?
+
+  // Datos del siniestro (comunes)
+  occurredAt           DateTime?      @db.Date
+  occurredAtTime       String?
+  mainCoverageAffected String?
+  policeReportDate     DateTime?      @db.Date
+  policeStation        String?
+  policeReportFolio    String?
+  incidentCause        String?
+  incidentAddress      String?
+  incidentCommune      String?
+  incidentCity         String?
+  incidentNarrative    String?
+  lossType             ClaimLossType?
+  smartDeductible      Boolean?
+  hasAlcoholTest       Boolean?
+  driverAtFault        Boolean?
+  driverFirstName      String?
+  driverLastName       String?
+  driverRut            String?
+  driverAge            Int?
+
+  // Datos específicos por ramo (clave/valor según BranchFieldSchema u otros)
+  data Json @default("{}")
+
   client        Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  policyItem    PolicyItem?          @relation(fields: [policyItemId], references: [id], onDelete: SetNull)
+  proposalItem  ProposalItem?        @relation(fields: [proposalItemId], references: [id], onDelete: SetNull)
+  branchType    BranchType?          @relation(fields: [branchTypeId], references: [id])
   statusHistory ClaimStatusHistory[]
+  thirdParties  ClaimThirdParty[]
+  logs          ClaimLog[]
 
   @@unique([organizationId, claimNumber])
+  @@unique([organizationId, folderNumber])
   @@index([organizationId])
   @@index([clientId])
+  @@index([policyId])
 }
 
 model ClaimStatusHistory {
@@ -1212,6 +1296,64 @@ model ClaimStatusHistory {
   note           String?
   changedById    String?
   createdAt      DateTime    @default(now())
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([claimId])
+}
+
+model ClaimThirdParty {
+  id              String  @id @default(cuid())
+  organizationId  String
+  claimId         String
+  involvesVehicle Boolean @default(true)
+
+  // Persona
+  firstName String?
+  lastName  String?
+  rut       String?
+  phone     String?
+  email     String?
+
+  // Vehículo
+  vehicleType   String?
+  vehicleBrand  String?
+  vehicleModel  String?
+  vehicleYear   Int?
+  plate         String?
+  engineNumber  String?
+  chassisNumber String?
+
+  // Seguro
+  hasInsurance     Boolean?
+  insuranceCompany String?
+  policyNumber     String?
+
+  // Culpabilidad
+  atFault Boolean?
+
+  // Bien afectado cuando no hay vehículo
+  damagedGoodsDescription String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([claimId])
+}
+
+model ClaimLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  claimId        String
+  kind           ClaimLogKind
+  message        String
+  metadata       Json?
+  userId         String?
+  createdAt      DateTime     @default(now())
 
   claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
 
