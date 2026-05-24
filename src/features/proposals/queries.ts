@@ -114,17 +114,16 @@ export async function getProposalPremiumTotals(db: Db, proposalId: string) {
   let affect = 0;
   let exempt = 0;
   let net = 0;
-  let iva = 0;
-  let gross = 0;
   for (const it of items) {
     for (const c of it.coverages) {
       if (c.premiumAffect) affect += Number(c.premiumAffect);
       if (c.premiumExempt) exempt += Number(c.premiumExempt);
       if (c.premiumNet) net += Number(c.premiumNet);
-      if (c.ivaAmount) iva += Number(c.ivaAmount);
-      if (c.premiumGross) gross += Number(c.premiumGross);
     }
   }
+  // IVA del resumen = 19% × prima afecta total de todos los ítems.
+  const iva = affect * 0.19;
+  const gross = affect + exempt + iva;
   return { affect, exempt, net, iva, gross };
 }
 

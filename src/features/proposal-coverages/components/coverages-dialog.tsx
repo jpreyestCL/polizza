@@ -64,6 +64,8 @@ export function ItemCoveragesDialog({
   trigger,
   defaultCommissionAffectPct,
   defaultCommissionExemptPct,
+  open: openProp,
+  onOpenChange,
 }: {
   itemId: string;
   itemLabel: string;
@@ -72,9 +74,17 @@ export function ItemCoveragesDialog({
   trigger: React.ReactNode;
   defaultCommissionAffectPct?: number | null;
   defaultCommissionExemptPct?: number | null;
+  open?: boolean;
+  onOpenChange?: (v: boolean) => void;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setInternalOpen(v);
+    onOpenChange?.(v);
+  };
   const [editing, setEditing] = useState<ItemCoverageRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 

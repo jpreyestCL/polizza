@@ -189,6 +189,9 @@ export function ProposalItemsPanel({
 }) {
   const [open, setOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [pendingCoveragesItemId, setPendingCoveragesItemId] = useState<
+    string | null
+  >(null);
 
   const EMPTY: ProposalItemValues = {
     branchTypeId: defaultBranchTypeId ?? "",
@@ -232,6 +235,7 @@ export function ProposalItemsPanel({
               branches={branches}
               clients={clients}
               fieldSchemasByBranch={fieldSchemasByBranch}
+              onCreated={(id) => setPendingCoveragesItemId(id)}
             />
           </div>
         )}
@@ -244,7 +248,6 @@ export function ProposalItemsPanel({
               <th className="px-3 py-2 text-left">Identificación / Resumen</th>
               <th className="px-3 py-2 text-left">Asegurado</th>
               <th className="px-3 py-2 text-left">Beneficiario</th>
-              <th className="px-3 py-2 text-center">Cobs</th>
               <th className="px-3 py-2 text-right">Monto asegurado</th>
               <th className="px-3 py-2 text-right">Prima neta</th>
               <th className="px-3 py-2"></th>
@@ -254,7 +257,7 @@ export function ProposalItemsPanel({
             {items.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={7}
                   className="px-3 py-10 text-center text-muted-foreground"
                 >
                   Aún no hay ítems en esta propuesta.
@@ -281,6 +284,12 @@ export function ProposalItemsPanel({
                     defaultCommissionExemptPct ?? null
                   }
                   locked={locked}
+                  coveragesOpen={pendingCoveragesItemId === item.id}
+                  onCoveragesOpenChange={(v) => {
+                    if (!v && pendingCoveragesItemId === item.id) {
+                      setPendingCoveragesItemId(null);
+                    }
+                  }}
                 />
               ))
             )}
@@ -305,6 +314,8 @@ function ItemRow({
   defaultCommissionAffectPct,
   defaultCommissionExemptPct,
   locked,
+  coveragesOpen,
+  onCoveragesOpenChange,
 }: {
   idx: number;
   item: ProposalItemRow;
@@ -319,6 +330,8 @@ function ItemRow({
   defaultCommissionAffectPct: number | null;
   defaultCommissionExemptPct: number | null;
   locked: boolean;
+  coveragesOpen?: boolean;
+  onCoveragesOpenChange?: (v: boolean) => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -387,7 +400,6 @@ function ItemRow({
           isDefault={beneficiaryIsDefault}
         />
       </td>
-      <td className="px-3 py-2 text-center">{item.coveragesCount}</td>
       <td className="px-3 py-2 text-right tabular-nums">
         <InsuredAmountCell coverages={item.coverages} />
       </td>
@@ -407,6 +419,8 @@ function ItemRow({
             productId={productId}
             defaultCommissionAffectPct={defaultCommissionAffectPct}
             defaultCommissionExemptPct={defaultCommissionExemptPct}
+            open={coveragesOpen}
+            onOpenChange={onCoveragesOpenChange}
             trigger={
               <Button
                 variant="ghost"
@@ -525,6 +539,7 @@ function ItemDialog({
   branches,
   clients,
   fieldSchemasByBranch,
+  onCreated,
 }: {
   proposalId: string;
   itemId: string | null;
@@ -535,6 +550,7 @@ function ItemDialog({
   branches: BranchOption[];
   clients: ClientOption[];
   fieldSchemasByBranch: Record<string, BranchFieldDef[]>;
+  onCreated?: (id: string) => void;
 }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
@@ -589,6 +605,9 @@ function ItemDialog({
     }
     toast.success(itemId ? "Ítem actualizado" : "Ítem creado");
     onOpenChange(false);
+    if (!itemId && r.data?.id) {
+      onCreated?.(r.data.id);
+    }
     router.refresh();
   }
 
