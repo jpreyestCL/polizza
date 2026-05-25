@@ -3,6 +3,12 @@ import type { InstallmentStatus } from "@prisma/client";
 import type { SessionContext } from "@/server/context";
 import type { Db } from "@/server/db";
 import { canSeeAllClients } from "@/lib/roles";
+import {
+  buildPaginated,
+  cursorArgs,
+  type PageParams,
+  type Paginated,
+} from "@/lib/pagination";
 import { isInstallmentOverdue } from "./overdue";
 
 export type InstallmentItem = {
@@ -47,38 +53,49 @@ export async function listPolicyInstallments(
   }));
 }
 
-/** Todas las cuotas de la cartera, acotadas por rol, para la vista de Cobranza. */
+/** Todas las cuotas de la cartera (paginadas, cursor) para la vista de Cobranza. */
 export async function listAllInstallments(
   ctx: SessionContext,
   db: Db,
-): Promise<InstallmentWithPolicy[]> {
-  const rows = await db.installment.findMany({
-    where: {
-      policyId: { not: null },
-      ...(canSeeAllClients(ctx.role)
-        ? {}
-        : { policy: { assignedUserId: ctx.userId } }),
-    },
-    orderBy: { dueDate: "asc" },
-    select: {
-      id: true,
-      number: true,
-      amount: true,
-      currency: true,
-      dueDate: true,
-      status: true,
-      paidAt: true,
-      policyId: true,
-      policy: {
-        select: {
-          policyNumber: true,
-          client: { select: { name: true } },
+  page: PageParams,
+): Promise<Paginated<InstallmentWithPolicy>> {
+  const where = {
+    policyId: { not: null },
+    ...(canSeeAllClients(ctx.role)
+      ? {}
+      : { policy: { assignedUserId: ctx.userId } }),
+  };
+  const [rows, total] = await Promise.all([
+    db.installment.findMany({
+      where,
+      orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+      ...cursorArgs(page),
+      select: {
+        id: true,
+        number: true,
+        amount: true,
+        currency: true,
+        dueDate: true,
+        status: true,
+        paidAt: true,
+        policyId: true,
+        policy: {
+          select: {
+            policyNumber: true,
+            client: { select: { name: true } },
+          },
         },
       },
-    },
-  });
-  return rows
-    .filter((row): row is typeof row & { policyId: string; policy: NonNullable<typeof row.policy> } => row.policyId !== null && row.policy !== null)
+    }),
+    db.installment.count({ where }),
+  ]);
+  const enriched: InstallmentWithPolicy[] = rows
+    .filter(
+      (row): row is typeof row & {
+        policyId: string;
+        policy: NonNullable<typeof row.policy>;
+      } => row.policyId !== null && row.policy !== null,
+    )
     .map((row) => ({
       id: row.id,
       number: row.number,
@@ -92,4 +109,5 @@ export async function listAllInstallments(
       policyNumber: row.policy.policyNumber,
       clientName: row.policy.client.name,
     }));
+  return buildPaginated(enriched, page, total);
 }

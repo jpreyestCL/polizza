@@ -86,6 +86,38 @@ const WHERE_OPS = new Set<string>([
   "upsert",
 ]);
 
+// Llaves que indican una escritura anidada hacia otra entidad. Si aparecen en
+// `data` o en `create`/`update` de un upsert, lanzamos: el extends no propaga
+// organizationId a los hijos, así que el patrón seguro es transacción explícita
+// con createMany por entidad hija (ver src/features/clients/actions.ts).
+const NESTED_WRITE_KEYS = new Set([
+  "create",
+  "createMany",
+  "connectOrCreate",
+  "upsert",
+]);
+
+function assertNoNestedWrites(
+  model: string,
+  operation: string,
+  data: unknown,
+): void {
+  if (!data || typeof data !== "object") return;
+  for (const value of Object.values(data as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      if (NESTED_WRITE_KEYS.has(key)) {
+        throw new Error(
+          `[tenant-isolation] Escritura anidada (${key}) detectada en ` +
+            `${model}.${operation}. El extends no propaga organizationId a los ` +
+            `hijos. Usá $transaction + createMany por entidad. ` +
+            `Si necesitás conectar (sin crear), usá { connect: { id } }.`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Devuelve un cliente Prisma extendido y atado a una organización.
  *
@@ -93,10 +125,10 @@ const WHERE_OPS = new Set<string>([
  * `organizationId`. Es imposible (sin SQL crudo) leer o mutar datos de otro
  * tenant a través de este cliente.
  *
- * Nota sobre escrituras anidadas: las creaciones anidadas (p. ej.
- * `client.create({ data: { contacts: { create: [...] } } })`) NO reciben el
- * organizationId en los hijos. Para entidades hijas, créalas con su propia
- * operación (`createMany`) dentro de una transacción.
+ * Defensa adicional: si una operación de escritura sobre un modelo tenant
+ * incluye nested writes (`create`, `createMany`, `connectOrCreate`, `upsert`
+ * anidados), se lanza un error en runtime. El patrón seguro es transacción
+ * explícita con createMany por entidad hija.
  */
 export function getDb(organizationId: string) {
   return basePrisma.$extends({
@@ -118,6 +150,7 @@ export function getDb(organizationId: string) {
           }
 
           if (operation === "create") {
+            assertNoNestedWrites(model, operation, next.data);
             next.data = {
               ...((next.data as Record<string, unknown>) ?? {}),
               organizationId,
@@ -126,12 +159,23 @@ export function getDb(organizationId: string) {
 
           if (operation === "createMany" || operation === "createManyAndReturn") {
             const data = next.data;
+            if (Array.isArray(data)) {
+              for (const d of data) assertNoNestedWrites(model, operation, d);
+            } else {
+              assertNoNestedWrites(model, operation, data);
+            }
             next.data = Array.isArray(data)
               ? data.map((d) => ({ ...(d as object), organizationId }))
               : { ...((data as object) ?? {}), organizationId };
           }
 
+          if (operation === "update" || operation === "updateMany") {
+            assertNoNestedWrites(model, operation, next.data);
+          }
+
           if (operation === "upsert") {
+            assertNoNestedWrites(model, operation, next.create);
+            assertNoNestedWrites(model, operation, next.update);
             next.create = {
               ...((next.create as Record<string, unknown>) ?? {}),
               organizationId,

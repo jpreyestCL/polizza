@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireOrgDb } from "@/server/context";
-import { listClients, getOrgMembers } from "@/features/clients/queries";
+import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { listInsurers } from "@/features/car-quotes/insurers/registry";
 import { getRequoteDefaults } from "@/features/car-quotes/actions";
 import { QuotationForm } from "@/features/car-quotes/components/quotation-form";
@@ -18,7 +18,7 @@ export default async function RecotizarPage({
   if (!defaults) notFound();
 
   const [clients, members] = await Promise.all([
-    listClients(ctx, db),
+    listClientsForSelect(ctx, db),
     getOrgMembers(ctx.organizationId),
   ]);
   const clientItems = clients.map((c) => ({ id: c.id, name: c.name }));

@@ -1,5 +1,6 @@
 import "server-only";
 import { basePrisma, type Db } from "@/server/db";
+import { migrateItemData } from "@/lib/item-data-migration";
 import type { PdfProposal } from "./pdf-template";
 
 export async function buildProposalPdfData(
@@ -110,7 +111,7 @@ export async function buildProposalPdfData(
       branchName: it.branchType.name,
       identification: it.identification,
       glossNote: it.glossNote,
-      data: it.data as Record<string, unknown>,
+      data: migrateItemData(it.data, it.dataSchemaVersion).data,
       coverages,
     };
   });

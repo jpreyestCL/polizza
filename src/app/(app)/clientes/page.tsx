@@ -6,11 +6,23 @@ import { ClientsTable } from "@/features/clients/components/clients-table";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { Pager } from "@/components/pager";
+import { parsePageParams } from "@/lib/pagination";
 
-export default async function ClientesPage() {
+type SearchParams = Promise<
+  Record<string, string | string[] | undefined> | undefined
+>;
+
+export default async function ClientesPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const sp = await searchParams;
+  const page = parsePageParams(sp);
   const { ctx, db } = await requireOrgDb();
-  const [clients, members] = await Promise.all([
-    listClients(ctx, db),
+  const [clientsPage, members] = await Promise.all([
+    listClients(ctx, db, page),
     getOrgMembers(ctx.organizationId),
   ]);
 
@@ -28,7 +40,7 @@ export default async function ClientesPage() {
           </Button>
         }
       />
-      {clients.length === 0 ? (
+      {clientsPage.rows.length === 0 && !clientsPage.prevCursor ? (
         <EmptyState
           icon={Users}
           title="Aún no tienes clientes"
@@ -43,7 +55,15 @@ export default async function ClientesPage() {
           }
         />
       ) : (
-        <ClientsTable clients={clients} members={members} />
+        <>
+          <ClientsTable clients={clientsPage.rows} members={members} />
+          <Pager
+            page={clientsPage}
+            baseHref="/clientes"
+            searchParams={sp}
+            itemLabel="clientes"
+          />
+        </>
       )}
     </div>
   );

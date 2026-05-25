@@ -4,6 +4,12 @@ import type { SessionContext } from "@/server/context";
 import type { Db } from "@/server/db";
 import { canSeeAllClients } from "@/lib/roles";
 import { needsRenewal, renewalInfo, type RenewalLevel } from "@/lib/renewal";
+import {
+  buildPaginated,
+  cursorArgs,
+  type PageParams,
+  type Paginated,
+} from "@/lib/pagination";
 
 export type PolicyListItem = {
   id: string;
@@ -22,14 +28,113 @@ export type PolicyListItem = {
   renewalLevel: RenewalLevel;
 };
 
-/** Pólizas acotadas por rol, con estado de renovación calculado. */
+/** Pólizas paginadas (cursor) acotadas por rol, con estado de renovación. */
 export async function listPolicies(
   ctx: SessionContext,
   db: Db,
+  page: PageParams,
+): Promise<Paginated<PolicyListItem>> {
+  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  const [rows, total] = await Promise.all([
+    db.policy.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...cursorArgs(page),
+      select: {
+        id: true,
+        policyNumber: true,
+        status: true,
+        premiumNet: true,
+        currency: true,
+        startDate: true,
+        endDate: true,
+        companyId: true,
+        lineId: true,
+        assignedUserId: true,
+        createdAt: true,
+        client: { select: { id: true, name: true } },
+      },
+    }),
+    db.policy.count({ where }),
+  ]);
+
+  const enriched: PolicyListItem[] = rows.map((p) => {
+    const renewal = renewalInfo(p.status, p.endDate);
+    return {
+      ...p,
+      premiumNet: p.premiumNet ? Number(p.premiumNet) : null,
+      daysToExpiry: renewal.daysToExpiry,
+      renewalLevel: renewal.level,
+    };
+  });
+  return buildPaginated(enriched, page, total);
+}
+
+/**
+ * Pólizas que requieren atención de renovación. Tira solo las VIGENTES con
+ * endDate cercana al filtro de needsRenewal y ordena por urgencia. Pagina por
+ * cursor sobre endDate+id.
+ */
+export async function listRenewals(
+  ctx: SessionContext,
+  db: Db,
+  page: PageParams,
+): Promise<Paginated<PolicyListItem>> {
+  const where = {
+    ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
+    status: "VIGENTE" as const,
+    endDate: { not: null },
+  };
+  const [rows, total] = await Promise.all([
+    db.policy.findMany({
+      where,
+      orderBy: [{ endDate: "asc" }, { id: "asc" }],
+      ...cursorArgs(page),
+      select: {
+        id: true,
+        policyNumber: true,
+        status: true,
+        premiumNet: true,
+        currency: true,
+        startDate: true,
+        endDate: true,
+        companyId: true,
+        lineId: true,
+        assignedUserId: true,
+        createdAt: true,
+        client: { select: { id: true, name: true } },
+      },
+    }),
+    db.policy.count({ where }),
+  ]);
+
+  const enriched: PolicyListItem[] = rows
+    .map((p) => {
+      const renewal = renewalInfo(p.status, p.endDate);
+      return {
+        ...p,
+        premiumNet: p.premiumNet ? Number(p.premiumNet) : null,
+        daysToExpiry: renewal.daysToExpiry,
+        renewalLevel: renewal.level,
+      };
+    })
+    .filter((p) => needsRenewal(p.renewalLevel));
+  return buildPaginated(enriched, page, total);
+}
+
+/**
+ * Lista TODAS las pólizas (hasta 1000) — para dashboard y reportes que
+ * agregan/agrupan. Para listado de UI usar `listPolicies` con cursor.
+ */
+export async function listAllPoliciesForDashboard(
+  ctx: SessionContext,
+  db: Db,
 ): Promise<PolicyListItem[]> {
+  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
   const rows = await db.policy.findMany({
-    where: canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId },
-    orderBy: { createdAt: "desc" },
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 1000,
     select: {
       id: true,
       policyNumber: true,
@@ -45,7 +150,6 @@ export async function listPolicies(
       client: { select: { id: true, name: true } },
     },
   });
-
   return rows.map((p) => {
     const renewal = renewalInfo(p.status, p.endDate);
     return {
@@ -57,13 +161,13 @@ export async function listPolicies(
   });
 }
 
-/** Pólizas que requieren atención de renovación, ordenadas por urgencia. */
-export async function listRenewals(
+/** Renovaciones para el dashboard — derivadas de listAllPoliciesForDashboard. */
+export async function listAllRenewalsForDashboard(
   ctx: SessionContext,
   db: Db,
 ): Promise<PolicyListItem[]> {
-  const policies = await listPolicies(ctx, db);
-  return policies
+  const all = await listAllPoliciesForDashboard(ctx, db);
+  return all
     .filter((p) => needsRenewal(p.renewalLevel))
     .sort((a, b) => (a.daysToExpiry ?? 9999) - (b.daysToExpiry ?? 9999));
 }

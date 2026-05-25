@@ -2,12 +2,12 @@ import "server-only";
 import type { SessionContext } from "@/server/context";
 import type { Db } from "@/server/db";
 import {
-  listProposals,
+  listAllProposalsForKanban,
   type ProposalListItem,
 } from "@/features/proposals/queries";
 import {
-  listPolicies,
-  listRenewals,
+  listAllPoliciesForDashboard,
+  listAllRenewalsForDashboard,
   type PolicyListItem,
 } from "@/features/policies/queries";
 import { listTasks, type TaskListItem } from "@/features/tasks/queries";
@@ -57,9 +57,9 @@ export async function getDashboardData(
   const [clients, proposals, policies, renewals, tasks, recentActivity] =
     await Promise.all([
       db.client.count(),
-      listProposals(ctx, db, holidays),
-      listPolicies(ctx, db),
-      listRenewals(ctx, db),
+      listAllProposalsForKanban(ctx, db, holidays),
+      listAllPoliciesForDashboard(ctx, db),
+      listAllRenewalsForDashboard(ctx, db),
       listTasks(ctx, db),
       db.activityLog.findMany({
         orderBy: { createdAt: "desc" },

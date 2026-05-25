@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Users } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
-import { listClients, getOrgMembers } from "@/features/clients/queries";
+import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { listActiveBrokers } from "@/features/brokers/queries";
 import { getProposalFormCatalog } from "@/features/proposals/queries";
 import { ProposalForm } from "@/features/proposals/components/proposal-form";
@@ -13,7 +13,7 @@ import type { ProposalFormValues } from "@/features/proposals/schemas";
 export default async function NuevaPropuestaPage() {
   const { ctx, db } = await requireOrgDb();
   const [clients, members, catalog, brokers] = await Promise.all([
-    listClients(ctx, db),
+    listClientsForSelect(ctx, db),
     getOrgMembers(ctx.organizationId),
     getProposalFormCatalog(db),
     listActiveBrokers(db),

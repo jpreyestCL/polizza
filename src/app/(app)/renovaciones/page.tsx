@@ -5,11 +5,23 @@ import { getCompanies } from "@/features/catalog/queries";
 import { RenewalsList } from "@/features/policies/components/renewals-list";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { Pager } from "@/components/pager";
+import { parsePageParams } from "@/lib/pagination";
 
-export default async function RenovacionesPage() {
+type SearchParams = Promise<
+  Record<string, string | string[] | undefined> | undefined
+>;
+
+export default async function RenovacionesPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const sp = await searchParams;
+  const page = parsePageParams(sp);
   const { ctx, db } = await requireOrgDb();
-  const [renewals, companies] = await Promise.all([
-    listRenewals(ctx, db),
+  const [renewalsPage, companies] = await Promise.all([
+    listRenewals(ctx, db, page),
     getCompanies(db),
   ]);
 
@@ -19,14 +31,25 @@ export default async function RenovacionesPage() {
         title="Renovaciones"
         description="Pólizas próximas a vencer o ya vencidas que requieren gestión."
       />
-      {renewals.length === 0 ? (
+      {renewalsPage.rows.length === 0 && !renewalsPage.prevCursor ? (
         <EmptyState
           icon={RefreshCw}
           title="Sin renovaciones pendientes"
           description="Ninguna póliza vigente vence en los próximos 60 días."
         />
       ) : (
-        <RenewalsList policies={renewals} companies={companies} />
+        <>
+          <RenewalsList
+            policies={renewalsPage.rows}
+            companies={companies}
+          />
+          <Pager
+            page={renewalsPage}
+            baseHref="/renovaciones"
+            searchParams={sp}
+            itemLabel="renovaciones"
+          />
+        </>
       )}
     </div>
   );

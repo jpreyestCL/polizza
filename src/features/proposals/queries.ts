@@ -3,6 +3,12 @@ import type { ProposalStatus } from "@prisma/client";
 import type { SessionContext } from "@/server/context";
 import { basePrisma, type Db } from "@/server/db";
 import { canSeeAllClients } from "@/lib/roles";
+import {
+  buildPaginated,
+  cursorArgs,
+  type PageParams,
+  type Paginated,
+} from "@/lib/pagination";
 import { proposalSla, type SlaLevel } from "./sla";
 
 export type ProposalListItem = {
@@ -23,15 +29,65 @@ export type ProposalListItem = {
   slaLevel: SlaLevel;
 };
 
-/** Propuestas para Kanban y lista, acotadas por rol y con SLA calculado. */
+/** Propuestas paginadas (cursor) acotadas por rol, con SLA calculado. */
 export async function listProposals(
   ctx: SessionContext,
   db: Db,
   holidays: Set<string>,
+  page: PageParams,
+): Promise<Paginated<ProposalListItem>> {
+  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  const [rows, total] = await Promise.all([
+    db.proposal.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...cursorArgs(page),
+      select: {
+        id: true,
+        proposalNumber: true,
+        status: true,
+        premiumNet: true,
+        currency: true,
+        startDate: true,
+        endDate: true,
+        companyId: true,
+        lineId: true,
+        assignedUserId: true,
+        currentStateStartedAt: true,
+        createdAt: true,
+        client: { select: { id: true, name: true } },
+      },
+    }),
+    db.proposal.count({ where }),
+  ]);
+
+  const enriched: ProposalListItem[] = rows.map((p) => {
+    const sla = proposalSla(p.status, p.currentStateStartedAt, holidays);
+    return {
+      ...p,
+      premiumNet: p.premiumNet ? Number(p.premiumNet) : null,
+      daysInState: sla.daysInState,
+      slaLevel: sla.level,
+    };
+  });
+  return buildPaginated(enriched, page, total);
+}
+
+/**
+ * Para el Kanban: lista TODAS las propuestas (sin paginar) — el board agrupa
+ * por status y necesita el dataset completo. Usar solo desde la vista Kanban;
+ * la vista lista usa `listProposals` con cursor.
+ */
+export async function listAllProposalsForKanban(
+  ctx: SessionContext,
+  db: Db,
+  holidays: Set<string>,
 ): Promise<ProposalListItem[]> {
+  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
   const rows = await db.proposal.findMany({
-    where: canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId },
-    orderBy: { createdAt: "desc" },
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: 1000, // límite duro defensivo
     select: {
       id: true,
       proposalNumber: true,
@@ -48,7 +104,6 @@ export async function listProposals(
       client: { select: { id: true, name: true } },
     },
   });
-
   return rows.map((p) => {
     const sla = proposalSla(p.status, p.currentStateStartedAt, holidays);
     return {

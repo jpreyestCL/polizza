@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Users } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
-import { listClients, getOrgMembers } from "@/features/clients/queries";
+import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { listInsurers } from "@/features/car-quotes/insurers/registry";
 import { QuotationForm } from "@/features/car-quotes/components/quotation-form";
 import { PageHeader } from "@/components/page-header";
@@ -17,7 +17,7 @@ export default async function NuevaCotizacionPage({
   const { ctx, db } = await requireOrgDb();
   const { cliente } = await searchParams;
   const [clients, members] = await Promise.all([
-    listClients(ctx, db),
+    listClientsForSelect(ctx, db),
     getOrgMembers(ctx.organizationId),
   ]);
   const clientItems = clients.map((c) => ({ id: c.id, name: c.name }));
