@@ -3,6 +3,12 @@ import type { ClaimStatus, PolicyStatus } from "@prisma/client";
 import type { SessionContext } from "@/server/context";
 import { basePrisma, type Db } from "@/server/db";
 import { canSeeAllClients } from "@/lib/roles";
+import {
+  buildPaginated,
+  cursorArgs,
+  type PageParams,
+  type Paginated,
+} from "@/lib/pagination";
 
 export type ClaimListItem = {
   id: string;
@@ -26,14 +32,18 @@ export type ClaimListItem = {
   policy: { id: string; policyNumber: string } | null;
 };
 
-/** Siniestros acotados por rol. */
+/** Siniestros paginados (cursor) acotados por rol. */
 export async function listClaims(
   ctx: SessionContext,
   db: Db,
-): Promise<ClaimListItem[]> {
-  const rows = await db.claim.findMany({
-    where: canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId },
-    orderBy: { createdAt: "desc" },
+  page: PageParams,
+): Promise<Paginated<ClaimListItem>> {
+  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  const [rows, total] = await Promise.all([
+   db.claim.findMany({
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    ...cursorArgs(page),
     select: {
       id: true,
       claimNumber: true,
@@ -53,7 +63,9 @@ export async function listClaims(
       client: { select: { id: true, name: true } },
       branchType: { select: { key: true, name: true } },
     },
-  });
+   }),
+   db.claim.count({ where }),
+  ]);
 
   const policyIds = Array.from(
     new Set(rows.map((r) => r.policyId).filter((id): id is string => !!id)),
@@ -66,7 +78,7 @@ export async function listClaims(
     : [];
   const policyMap = new Map(policies.map((p) => [p.id, p]));
 
-  return rows.map((claim) => ({
+  const enriched: ClaimListItem[] = rows.map((claim) => ({
     id: claim.id,
     claimNumber: claim.claimNumber,
     folderNumber: claim.folderNumber,
@@ -91,6 +103,7 @@ export async function listClaims(
       ? (policyMap.get(claim.policyId) ?? null)
       : null,
   }));
+  return buildPaginated(enriched, page, total);
 }
 
 /** Detalle de un siniestro con todo lo necesario para la ficha. */

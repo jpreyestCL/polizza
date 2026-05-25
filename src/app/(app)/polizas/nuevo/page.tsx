@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Users } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
-import { listClients, getOrgMembers } from "@/features/clients/queries";
+import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { getCompanies, getLines } from "@/features/catalog/queries";
 import { listOrgBranches } from "@/features/branches/queries";
 import { getProposalDetail } from "@/features/proposals/queries";
@@ -24,7 +24,7 @@ export default async function NuevaPolizaPage({
   const { fromProposal } = await searchParams;
   const { ctx, db } = await requireOrgDb();
   const [clients, companies, lines, members, branches] = await Promise.all([
-    listClients(ctx, db),
+    listClientsForSelect(ctx, db),
     getCompanies(db),
     getLines(db),
     getOrgMembers(ctx.organizationId),

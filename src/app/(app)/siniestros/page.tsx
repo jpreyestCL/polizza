@@ -6,10 +6,22 @@ import { ClaimsTable } from "@/features/claims/components/claims-table";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { Pager } from "@/components/pager";
+import { parsePageParams } from "@/lib/pagination";
 
-export default async function SiniestrosPage() {
+type SearchParams = Promise<
+  Record<string, string | string[] | undefined> | undefined
+>;
+
+export default async function SiniestrosPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const sp = await searchParams;
+  const page = parsePageParams(sp);
   const { ctx, db } = await requireOrgDb();
-  const claims = await listClaims(ctx, db);
+  const claimsPage = await listClaims(ctx, db, page);
 
   return (
     <div className="space-y-6">
@@ -25,7 +37,7 @@ export default async function SiniestrosPage() {
           </Button>
         }
       />
-      {claims.length === 0 ? (
+      {claimsPage.rows.length === 0 && !claimsPage.prevCursor ? (
         <EmptyState
           icon={TriangleAlert}
           title="Aún no hay siniestros"
@@ -40,7 +52,15 @@ export default async function SiniestrosPage() {
           }
         />
       ) : (
-        <ClaimsTable claims={claims} />
+        <>
+          <ClaimsTable claims={claimsPage.rows} />
+          <Pager
+            page={claimsPage}
+            baseHref="/siniestros"
+            searchParams={sp}
+            itemLabel="siniestros"
+          />
+        </>
       )}
     </div>
   );

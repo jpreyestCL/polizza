@@ -1,5 +1,6 @@
 import "server-only";
 import { basePrisma, type Db } from "@/server/db";
+import { migrateItemData } from "@/lib/item-data-migration";
 
 import type { ItemCoverageRow } from "@/features/proposal-coverages/queries";
 
@@ -72,7 +73,7 @@ export async function listProposalItems(
       : null,
     identification: r.identification,
     glossNote: r.glossNote,
-    data: r.data as Record<string, unknown>,
+    data: migrateItemData(r.data, r.dataSchemaVersion).data,
     coveragesCount: r.coverages.length,
     totalNetPremium: r.coverages.reduce(
       (sum, c) => sum + (c.premiumNet ? Number(c.premiumNet) : 0),
@@ -156,5 +157,9 @@ export async function getProposalItemsWithCoverages(
       coverages: { orderBy: { order: "asc" } },
     },
   });
-  return rows;
+  // Aplicar migración de `data` al leer.
+  return rows.map((r) => ({
+    ...r,
+    data: migrateItemData(r.data, r.dataSchemaVersion).data,
+  }));
 }

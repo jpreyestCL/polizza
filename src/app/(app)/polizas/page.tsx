@@ -7,11 +7,23 @@ import { PoliciesTable } from "@/features/policies/components/policies-table";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { Pager } from "@/components/pager";
+import { parsePageParams } from "@/lib/pagination";
 
-export default async function PolizasPage() {
+type SearchParams = Promise<
+  Record<string, string | string[] | undefined> | undefined
+>;
+
+export default async function PolizasPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const sp = await searchParams;
+  const page = parsePageParams(sp);
   const { ctx, db } = await requireOrgDb();
-  const [policies, companies] = await Promise.all([
-    listPolicies(ctx, db),
+  const [policiesPage, companies] = await Promise.all([
+    listPolicies(ctx, db, page),
     getCompanies(db),
   ]);
 
@@ -29,7 +41,7 @@ export default async function PolizasPage() {
           </Button>
         }
       />
-      {policies.length === 0 ? (
+      {policiesPage.rows.length === 0 && !policiesPage.prevCursor ? (
         <EmptyState
           icon={Shield}
           title="Aún no hay pólizas"
@@ -44,7 +56,15 @@ export default async function PolizasPage() {
           }
         />
       ) : (
-        <PoliciesTable policies={policies} companies={companies} />
+        <>
+          <PoliciesTable policies={policiesPage.rows} companies={companies} />
+          <Pager
+            page={policiesPage}
+            baseHref="/polizas"
+            searchParams={sp}
+            itemLabel="pólizas"
+          />
+        </>
       )}
     </div>
   );

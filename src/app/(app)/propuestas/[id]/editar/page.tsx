@@ -5,7 +5,7 @@ import {
   getProposalFormCatalog,
 } from "@/features/proposals/queries";
 import { isProposalLocked } from "@/features/proposals/schemas";
-import { listClients, getOrgMembers } from "@/features/clients/queries";
+import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { listActiveBrokers } from "@/features/brokers/queries";
 import { ProposalForm } from "@/features/proposals/components/proposal-form";
 import { PageHeader } from "@/components/page-header";
@@ -32,7 +32,7 @@ export default async function EditarPropuestaPage({
 
   const [clients, members, catalog, brokers, coaseguroPart, brokerPart] =
     await Promise.all([
-      listClients(ctx, db),
+      listClientsForSelect(ctx, db),
       getOrgMembers(ctx.organizationId),
       getProposalFormCatalog(db),
       listActiveBrokers(db),

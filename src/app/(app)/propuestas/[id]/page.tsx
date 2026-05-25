@@ -13,7 +13,7 @@ import {
   getCompanies,
   getReturnReasons,
 } from "@/features/catalog/queries";
-import { listClients, getOrgMembers } from "@/features/clients/queries";
+import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { listDocuments } from "@/features/documents/queries";
 import {
   listProposalItems,
@@ -69,7 +69,7 @@ export default async function PropuestaDetailPage({
     getReturnReasons(db),
     getUfValue(),
     listProposalItems(db, id),
-    listClients(ctx, db),
+    listClientsForSelect(ctx, db),
     basePrisma.branchType.findMany({
       where: { active: true },
       orderBy: { order: "asc" },

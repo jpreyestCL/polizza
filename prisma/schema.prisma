@@ -706,6 +706,9 @@ model ProposalItem {
   identification      String?
   glossNote           String?
   data                Json     @default("{}")
+  // Versión del schema con que se guardó `data`. Permite migrar JSON al leer
+  // cuando el SaaS-admin cambia BranchFieldSchema. Ver src/lib/item-data-migration.ts
+  dataSchemaVersion   Int      @default(1)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

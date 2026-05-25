@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireOrgDb } from "@/server/context";
 import { getPolicyDetail } from "@/features/policies/queries";
-import { listClients, getOrgMembers } from "@/features/clients/queries";
+import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { getCompanies, getLines } from "@/features/catalog/queries";
 import { listOrgBranches } from "@/features/branches/queries";
 import { PolicyForm } from "@/features/policies/components/policy-form";
@@ -25,7 +25,7 @@ export default async function EditarPolizaPage({
   if (!policy) notFound();
 
   const [clients, companies, lines, members, branches] = await Promise.all([
-    listClients(ctx, db),
+    listClientsForSelect(ctx, db),
     getCompanies(db),
     getLines(db),
     getOrgMembers(ctx.organizationId),
