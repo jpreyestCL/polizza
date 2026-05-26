@@ -182,12 +182,101 @@ con un `server.js` autocontenido. **Pero** Next no copia automáticamente
 servicio systemd ejecuta `node /home/ai/apps/poliza/.next/standalone/server.js`,
 no `next start`.
 
-### Verificar logs en staging
+### Logs en staging
+
+Los logs viven en 3 lugares según la capa: app (systemd/journald), nginx
+(archivos en `/var/log/nginx/`) y postgres (archivos en `/var/log/postgresql/`).
+No hay archivo `.log` propio de la app — todo va por journald.
+
+#### 1. App (Polizza) — `journalctl` de systemd
+
+El servicio `poliza` corre vía systemd y escribe stdout/stderr a journald.
+**Acá aparecen los errores de la app, los `console.error`, los unhandled
+rejections, los stack traces de server actions.**
 
 ```bash
+# Últimas N líneas
 ssh root@161.35.229.180 'journalctl -u poliza -n 100 --no-pager'
-ssh root@161.35.229.180 'journalctl -u poliza -f'   # follow
+
+# En vivo (Ctrl-C para salir)
+ssh root@161.35.229.180 'journalctl -u poliza -f'
+
+# Últimas 24 horas
+ssh root@161.35.229.180 'journalctl -u poliza --since "24 hours ago" --no-pager'
+
+# Solo errores y críticos (priority err = level 0–3)
+ssh root@161.35.229.180 'journalctl -u poliza -p err --no-pager -n 200'
+
+# Filtrar por palabra
+ssh root@161.35.229.180 'journalctl -u poliza --no-pager | grep -iE "error|rejection|throw|failed"'
+
+# Logs desde el último reinicio (boot del servicio)
+ssh root@161.35.229.180 'journalctl -u poliza -b --no-pager | tail -100'
 ```
+
+#### 2. Nginx — accesos y errores HTTP
+
+```bash
+# Accesos (todas las requests)
+ssh root@161.35.229.180 'tail -100 /var/log/nginx/access.log'
+
+# Errores (5xx, timeouts, problemas TLS)
+ssh root@161.35.229.180 'tail -100 /var/log/nginx/error.log'
+
+# Acceso en vivo
+ssh root@161.35.229.180 'tail -f /var/log/nginx/access.log'
+
+# Solo 5xx de la última hora
+ssh root@161.35.229.180 'awk -v t=$(date -d "1 hour ago" "+%d/%b/%Y:%H:%M") "\$0>t" /var/log/nginx/access.log | grep " 5[0-9][0-9] "'
+```
+
+#### 3. PostgreSQL
+
+```bash
+# Listar archivos disponibles
+ssh root@161.35.229.180 'ls /var/log/postgresql/'
+
+# Últimas líneas (cambiar versión si aplica)
+ssh root@161.35.229.180 'tail -100 /var/log/postgresql/postgresql-16-main.log'
+
+# Solo errores y fatales
+ssh root@161.35.229.180 'grep -iE "error|fatal" /var/log/postgresql/postgresql-16-main.log | tail -50'
+```
+
+#### Atajos para diagnóstico rápido
+
+| Necesito… | Comando |
+|---|---|
+| Saber si la app está viva | `ssh root@161.35.229.180 'systemctl status poliza --no-pager'` |
+| Ver qué pasó al reiniciar | `ssh root@161.35.229.180 'journalctl -u poliza -b --no-pager \| head -30'` |
+| Stack trace de error reciente | `ssh root@161.35.229.180 'journalctl -u poliza --since "10 min ago" --no-pager \| grep -A 20 Error'` |
+| Memoria/CPU del proceso | `ssh root@161.35.229.180 'systemctl status poliza --no-pager \| grep -E "Memory\|CPU"'` |
+| Restart si quedó colgada | `ssh root@161.35.229.180 'systemctl restart poliza'` |
+
+#### Investigación completa de un incidente
+
+Combina los tres logs de la última hora en un solo snapshot:
+
+```bash
+ssh root@161.35.229.180 '
+  echo "=== APP errors (1h) ===" && \
+  journalctl -u poliza --since "1 hour ago" --no-pager | grep -iE "error|rejection|throw|failed" | tail -20 && \
+  echo "=== NGINX 5xx (1h) ===" && \
+  awk -v t=$(date -d "1 hour ago" "+%d/%b/%Y:%H:%M") "\$0>t" /var/log/nginx/access.log | grep " 5[0-9][0-9] " | tail -20 && \
+  echo "=== POSTGRES errors ===" && \
+  tail -20 /var/log/postgresql/postgresql-16-main.log 2>/dev/null | grep -iE "error|fatal" | tail -10
+'
+```
+
+#### Notas de retención
+
+- journald rota automáticamente (~30 días por defecto, depende de
+  `/etc/systemd/journald.conf` y del espacio libre).
+- nginx rota diariamente vía logrotate; los archivos viejos quedan
+  comprimidos como `access.log.N.gz` y `error.log.N.gz`.
+- No hay logging externo (Sentry/Datadog/Logflare). Si lo necesitas, se
+  agrega un transport en `src/server/email.ts` o un wrapper de
+  `console.error` en `src/server/observability.ts`.
 
 ### Consultar la DB en staging
 
@@ -303,7 +392,8 @@ ssh root@161.35.229.180 'su - postgres -c "psql poliza < /tmp/backup-YYYYMMDD-HH
 1. `ssh root@161.35.229.180 'journalctl -u poliza -n 50 --no-pager'` — ver últimos logs
 2. `ssh root@161.35.229.180 'systemctl status poliza --no-pager'` — estado del servicio
 3. Si el build falló en el deploy, sigue corriendo la versión anterior
-4. Para rollback rápido: vuelve a hacer rsync desde un checkpoint anterior local o `git checkout <sha-anterior>` y redeploy
+4. Para rollback rápido: en el server `cd /home/ai/apps/poliza && git log --oneline -10` (ver SHAs anteriores), luego `git reset --hard <sha-anterior> && pnpm install --frozen-lockfile && pnpm build && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/` y `systemctl restart poliza`. **Ojo con migraciones**: si el rollback va antes de una migración, hay que revertir la DB también (`pg_dump` previo, o crear una migración inversa).
+5. Para investigación completa de logs (app + nginx + postgres) ver sección [Logs en staging](#logs-en-staging) arriba.
 
 ## Routes principales
 
