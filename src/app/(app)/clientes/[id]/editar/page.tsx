@@ -13,14 +13,20 @@ function toDateInput(date: Date | null): string {
 
 export default async function EditarClientePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ activar?: string }>;
 }) {
   const { id } = await params;
+  const { activar } = await searchParams;
   const { ctx, db } = await requireOrgDb();
 
   const client = await getClientDetail(db, id);
   if (!client) notFound();
+
+  // Llegada desde una propuesta con contratante prospecto: se exige activar.
+  const forceActive = activar === "1" && client.status === "PROSPECTO";
 
   const [members, holdings] = await Promise.all([
     getOrgMembers(ctx.organizationId),
@@ -29,7 +35,7 @@ export default async function EditarClientePage({
 
   const defaultValues: ClientFormValues = {
     type: client.type,
-    status: client.status,
+    status: forceActive ? "ACTIVO" : client.status,
     rut: formatRut(client.rut),
     name: client.name,
     firstName: client.firstName ?? "",

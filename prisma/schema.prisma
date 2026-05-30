@@ -672,6 +672,12 @@ model Proposal {
   // PDF generado y almacenado al pasar a POR_ENVIAR. Se borra al reabrir.
   pdfBytes                   Bytes?
   pdfGeneratedAt             DateTime?
+  // Recepción de la póliza emitida por la compañía (flujo post-envío).
+  policyNumberGenerated      String?
+  policyEmissionDate         DateTime?      @db.Date
+  policyReceptionDate        DateTime?      @db.Date
+  emissionErrorReason        String?        // motivo de error de emisión (devuelta a la compañía)
+  emissionErrorDetail        String?
   currentStateStartedAt      DateTime       @default(now())
   createdById                String?
   createdAt                  DateTime       @default(now())
@@ -1139,7 +1145,8 @@ model Document {
   entityType     EntityType
   entityId       String
   fileName       String
-  fileUrl        String
+  fileUrl        String // enlace externo (Drive/Dropbox) o ruta de descarga interna
+  storageKey     String? // si el archivo se subió al servidor: ruta relativa en disco
   documentType   String?
   description    String?
   year           Int?

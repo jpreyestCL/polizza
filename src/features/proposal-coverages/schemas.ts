@@ -31,6 +31,18 @@ export const itemCoverageSchema = z.object({
 
 export type ItemCoverageValues = z.infer<typeof itemCoverageSchema>;
 
+/** Fila del grid inline: cobertura + id opcional (vacío = nueva). */
+export const itemCoverageRowSchema = itemCoverageSchema.extend({
+  id: z.string().optional().default(""),
+});
+export type ItemCoverageRowValues = z.infer<typeof itemCoverageRowSchema>;
+
+/** Payload del grabado masivo del grid de coberturas. */
+export const itemCoveragesBulkSchema = z.object({
+  rows: z.array(itemCoverageRowSchema),
+});
+export type ItemCoveragesBulkValues = z.infer<typeof itemCoveragesBulkSchema>;
+
 /**
  * Cálculo derivado: dada la cobertura, calcula prima neta, IVA, prima bruta
  * y monto comisión. Si `manualPremium` se ignoran las tasas (el usuario ingresa

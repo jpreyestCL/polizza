@@ -154,6 +154,30 @@ export const proposalFormSchema = z.object({
   salespersonId: optionalString,
 })
 .superRefine((val, ctx) => {
+  // Campos obligatorios para poder GUARDAR la propuesta y generar su número
+  // (doc "Observaciones módulo propuestas", punto 2).
+  const requiredFields: { key: keyof typeof val; message: string }[] = [
+    { key: "insuredClientId", message: "Asegurado requerido" },
+    { key: "beneficiaryClientId", message: "Beneficiario requerido" },
+    { key: "insuranceCompanyId", message: "Compañía requerida" },
+    { key: "branchTypeId", message: "Ramo requerido" },
+    { key: "productId", message: "Producto requerido" },
+    { key: "startDate", message: "Inicio de vigencia requerido" },
+    { key: "endDate", message: "Fin de vigencia requerido" },
+    { key: "recipientEmail", message: "Email destinatario requerido" },
+    { key: "commissionAffectPct", message: "Comisión afecta requerida" },
+    { key: "commissionExemptPct", message: "Comisión exenta requerida" },
+  ];
+  for (const { key, message } of requiredFields) {
+    const v = val[key];
+    if (typeof v === "string" && v.trim() === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message,
+      });
+    }
+  }
   if (val.coaseguro && val.coaseguroParticipations.length > 0) {
     if (!sumsTo100(val.coaseguroParticipations)) {
       ctx.addIssue({
@@ -206,6 +230,40 @@ export const proposalDraftSchema = z
   );
 
 export type ProposalDraftValues = z.infer<typeof proposalDraftSchema>;
+
+/**
+ * Recepción de la póliza emitida por la compañía (flujo post-envío).
+ * Si la emisión fue correcta → estado EMITIDA ("póliza"). Si hubo error →
+ * estado DEVUELTA ("devuelta a la compañía") con su motivo.
+ */
+export const EMISSION_ERROR_REASONS = [
+  "Por digitación",
+  "Error en la vigencia",
+  "Error en la prima",
+  "Error en las coberturas",
+  "Error en las condiciones particulares",
+  "Múltiples errores",
+  "Corredor incorrecto",
+  "Otros",
+] as const;
+
+export type EmissionErrorReason = (typeof EMISSION_ERROR_REASONS)[number];
+
+export const policyReceptionSchema = z.object({
+  policyNumber: z.string().trim().min(1, "Número de póliza requerido"),
+  emissionDate: z.string().trim().min(1, "Fecha de emisión requerida"),
+  receptionDate: z.string().trim().min(1, "Fecha de recepción requerida"),
+  note: z.string().trim().max(1000).default(""),
+});
+export type PolicyReceptionValues = z.infer<typeof policyReceptionSchema>;
+
+export const emissionErrorSchema = z.object({
+  reason: z.enum(EMISSION_ERROR_REASONS, {
+    errorMap: () => ({ message: "Selecciona un motivo" }),
+  }),
+  detail: z.string().trim().max(1000).default(""),
+});
+export type EmissionErrorValues = z.infer<typeof emissionErrorSchema>;
 
 export const statusChangeSchema = z.object({
   status: z.enum(PROPOSAL_STATUSES),

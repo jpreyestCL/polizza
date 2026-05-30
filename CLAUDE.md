@@ -311,7 +311,20 @@ EMAIL_FROM="Polizza <no-reply@polizza.cl>"
 
 # Crypto AES-256-GCM para credenciales de portales aseguradoras
 INSURER_CREDS_KEY=<base64 32 bytes>
+
+# Documentos subidos al servidor (propuestas/pólizas). DEBE apuntar a un
+# directorio persistente FUERA de .next/standalone, si no los archivos se
+# pierden en cada deploy. Recomendado: /home/ai/apps/poliza/uploads
+UPLOADS_DIR=/home/ai/apps/poliza/uploads
 ```
+
+> **Importante (UPLOADS_DIR)**: la subida real de documentos guarda los
+> archivos en disco. El default es `<cwd>/uploads`, pero como el servicio
+> systemd corre desde `.next/standalone/`, ese directorio se regenera en cada
+> build. En staging hay que setear `UPLOADS_DIR` a una ruta persistente y crear
+> el directorio una vez:
+> `ssh root@161.35.229.180 'su - ai -c "mkdir -p /home/ai/apps/poliza/uploads"'`.
+> Los archivos se sirven autenticados vía `/api/documents/[id]/download`.
 
 Para agregar/cambiar vars sin tirar el servicio:
 ```bash

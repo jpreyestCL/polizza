@@ -146,6 +146,43 @@ export async function searchClients(
 }
 
 /**
+ * Busca un cliente por RUT (o nombre) devolviendo los campos necesarios para
+ * autocompletar los datos del pagador en el plan de pago. Tenant-safe.
+ */
+export async function findClientForPayer(
+  ctx: SessionContext,
+  db: Db,
+  query: string,
+) {
+  const q = query.trim();
+  if (!q) return null;
+  const baseWhere = canSeeAllClients(ctx.role)
+    ? {}
+    : { assignedUserId: ctx.userId };
+  return db.client.findFirst({
+    where: {
+      ...baseWhere,
+      OR: [
+        { rut: { contains: q, mode: "insensitive" as const } },
+        { name: { contains: q, mode: "insensitive" as const } },
+      ],
+    },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      rut: true,
+      name: true,
+      firstName: true,
+      lastNamePaterno: true,
+      legalName: true,
+      phone: true,
+      celular: true,
+      email: true,
+    },
+  });
+}
+
+/**
  * Re-export por compatibilidad. La fuente de verdad vive en
  * src/server/members.ts (tenant-safe, prohíbe lecturas cross-tenant).
  */

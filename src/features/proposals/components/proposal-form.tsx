@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { CalendarPlus, Loader2, Save } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CalendarPlus, Loader2, Save, UserCheck } from "lucide-react";
 import { QuickClientDialog } from "@/features/clients/components/quick-client-dialog";
 import { FullClientDialog } from "@/features/clients/components/full-client-dialog";
 import { ClientCombobox } from "@/components/ui/client-combobox";
@@ -41,7 +42,13 @@ import {
 } from "@/components/ui/select";
 import { RelationsSection } from "./form/relations-section";
 
-type ClientOpt = { id: string; name: string; rut?: string | null };
+type ClientStatus = "PROSPECTO" | "ACTIVO" | "INACTIVO";
+type ClientOpt = {
+  id: string;
+  name: string;
+  rut?: string | null;
+  status?: ClientStatus | null;
+};
 type BrokerOpt = { id: string; name: string; rut: string | null };
 
 export function ProposalForm({
@@ -82,19 +89,26 @@ export function ProposalForm({
   );
   const lastContratanteRef = useRef<string>(defaultValues.clientId);
   const lastSavedSigRef = useRef<string>("");
+  // Status del contratante seleccionado. Si es PROSPECTO (o no existe ficha),
+  // se exige completar la ficha de cliente ACTIVO antes de continuar (obs. 1).
+  const [contratanteStatus, setContratanteStatus] = useState<
+    ClientStatus | null
+  >(null);
 
   function handleClientCreated(
     field: "clientId" | "insuredClientId" | "beneficiaryClientId",
     id: string,
     name: string,
     rut?: string | null,
+    status?: ClientStatus | null,
   ) {
     setLocalClients((prev) =>
       prev.some((c) => c.id === id)
-        ? prev
-        : [...prev, { id, name, rut: rut ?? null }],
+        ? prev.map((c) => (c.id === id ? { ...c, status: status ?? c.status } : c))
+        : [...prev, { id, name, rut: rut ?? null, status: status ?? null }],
     );
     form.setValue(field, id, { shouldDirty: true });
+    if (field === "clientId" && status) setContratanteStatus(status);
   }
 
   function openCreateDialog(
@@ -165,35 +179,99 @@ export function ProposalForm({
     lastContratanteRef.current = current;
   }, [selectedClientId, form]);
 
+  // Resuelve el status del contratante (para la obligación de ficha activa).
+  useEffect(() => {
+    if (!selectedClientId) {
+      setContratanteStatus(null);
+      return;
+    }
+    const known = localClients.find((c) => c.id === selectedClientId);
+    if (known?.status) {
+      setContratanteStatus(known.status);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/clients/${selectedClientId}/status`)
+      .then((r) => (r.ok ? r.json() : { status: null }))
+      .then((j: { status: ClientStatus | null }) => {
+        if (cancelled) return;
+        setContratanteStatus(j.status);
+        if (j.status) {
+          setLocalClients((prev) =>
+            prev.map((c) =>
+              c.id === selectedClientId ? { ...c, status: j.status } : c,
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setContratanteStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClientId]);
+
+  const contratanteIsProspect = contratanteStatus === "PROSPECTO";
+
   function applyProductCommission(productId: string) {
     const product = catalog.products.find((p) => p.id === productId);
     if (!product) return;
     const cur = form.getValues();
-    if (!cur.commissionAffectPct && product.commissionAffectPct !== null) {
-      form.setValue("commissionAffectPct", String(product.commissionAffectPct));
+    // Comisiones obligatorias: rellena con el default del producto (o 0) si
+    // están vacías, dejándolas siempre editables.
+    if (!cur.commissionAffectPct) {
+      form.setValue(
+        "commissionAffectPct",
+        String(product.commissionAffectPct ?? 0),
+        { shouldValidate: true },
+      );
     }
-    if (!cur.commissionExemptPct && product.commissionExemptPct !== null) {
-      form.setValue("commissionExemptPct", String(product.commissionExemptPct));
+    if (!cur.commissionExemptPct) {
+      form.setValue(
+        "commissionExemptPct",
+        String(product.commissionExemptPct ?? 0),
+        { shouldValidate: true },
+      );
     }
     if (product.branchTypeId && !cur.branchTypeId) {
       form.setValue("branchTypeId", product.branchTypeId);
     }
   }
 
-  function applyCompanyDefaultEmail(companyId: string) {
+  function applyCompanyDefaultEmail(companyId: string, force = true) {
     const company = catalog.companies.find((c) => c.id === companyId);
     if (!company) return;
     const defaultContact = company.contacts.find((c) => c.isDefault);
-    const email = defaultContact?.email ?? company.defaultEmail ?? "";
-    if (email) {
-      form.setValue("recipientEmail", email, { shouldDirty: true });
-      if (defaultContact) {
-        form.setValue("recipientContactId", defaultContact.id, {
-          shouldDirty: true,
-        });
-      }
+    // El "email de envío" configurado en la compañía (defaultEmail) prima; si
+    // no hay, se usa el email del contacto por defecto.
+    const email = company.defaultEmail || defaultContact?.email || "";
+    if (email && (force || !form.getValues("recipientEmail"))) {
+      form.setValue("recipientEmail", email, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+    if (defaultContact && !form.getValues("recipientContactId")) {
+      form.setValue("recipientContactId", defaultContact.id, {
+        shouldDirty: true,
+      });
     }
   }
+
+  // Al montar (p.ej. en edición o con compañía preseleccionada) rellena el
+  // email destinatario desde la compañía si viene vacío.
+  const didInitEmail = useRef(false);
+  useEffect(() => {
+    if (didInitEmail.current) return;
+    didInitEmail.current = true;
+    const companyId = form.getValues("insuranceCompanyId");
+    if (companyId && !form.getValues("recipientEmail")) {
+      applyCompanyDefaultEmail(companyId, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function addOneYear() {
     const start = form.getValues("startDate");
@@ -259,13 +337,22 @@ export function ProposalForm({
   async function maybeAssignNumber(id: string) {
     if (proposalNumber) return;
     const v = form.getValues();
+    // El número de propuesta solo se genera cuando están TODOS los campos
+    // obligatorios del punto 2 (incl. vigencia, email y comisiones).
     if (
       !v.clientId ||
       !v.insuredClientId ||
       !v.beneficiaryClientId ||
       !v.insuranceCompanyId ||
       !v.branchTypeId ||
-      !v.productId
+      !v.productId ||
+      !v.startDate ||
+      !v.endDate ||
+      !v.currency ||
+      !v.recipientEmail ||
+      v.commissionAffectPct === "" ||
+      v.commissionExemptPct === "" ||
+      contratanteIsProspect
     ) {
       return;
     }
@@ -300,6 +387,12 @@ export function ProposalForm({
   }
 
   async function onSubmit(values: ProposalFormValues) {
+    if (contratanteIsProspect) {
+      toast.error(
+        "Completa la ficha de cliente activo del contratante antes de continuar.",
+      );
+      return;
+    }
     const result: ActionResult =
       currentMode === "create"
         ? await createProposalAction(values)
@@ -408,18 +501,49 @@ export function ProposalForm({
               </FormItem>
             )}
           />
+          {contratanteIsProspect && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200 sm:col-span-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <div className="space-y-2">
+                  <p className="font-medium">
+                    El contratante es un prospecto.
+                  </p>
+                  <p className="text-amber-800 dark:text-amber-300">
+                    No es posible elaborar la propuesta hasta completar la ficha
+                    de cliente activo. Completa la información y actívalo.
+                  </p>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/clientes/${selectedClientId}/editar?activar=1`}
+                      target="_blank"
+                    >
+                      <UserCheck className="size-4" /> Completar ficha y activar
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
         </Section>
 
         {createDialog?.mode === "full" && (
           <FullClientDialog
             open
+            createAsActive={createDialog.field === "clientId"}
             onOpenChange={(v) => {
               if (!v) setCreateDialog(null);
             }}
             defaultRut={createDialog.defaultRut}
             defaultName={createDialog.defaultName}
             onCreated={(id, name, rut) => {
-              handleClientCreated(createDialog.field, id, name, rut);
+              handleClientCreated(
+                createDialog.field,
+                id,
+                name,
+                rut,
+                createDialog.field === "clientId" ? "ACTIVO" : null,
+              );
               setCreateDialog(null);
             }}
           />
@@ -806,7 +930,10 @@ export function ProposalForm({
         </Section>
 
         <div className="flex flex-wrap items-center gap-3 border-t pt-5">
-          <Button type="submit" disabled={isSubmitting}>
+          <Button
+            type="submit"
+            disabled={isSubmitting || contratanteIsProspect}
+          >
             {isSubmitting && <Loader2 className="animate-spin" />}
             {currentMode === "create" ? "Crear propuesta" : "Guardar cambios"}
           </Button>

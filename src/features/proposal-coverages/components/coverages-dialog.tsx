@@ -1,21 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Copy, Pencil, Plus, Receipt, Trash2 } from "lucide-react";
+import { Copy, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import {
   upsertItemCoverageAction,
   deleteItemCoverageAction,
   copyProductCoveragesAction,
+  saveItemCoveragesAction,
 } from "../actions";
 import {
   itemCoverageSchema,
   computeCoverage,
   type ItemCoverageValues,
+  type ItemCoverageRowValues,
 } from "../schemas";
 import type { ItemCoverageRow } from "../queries";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -56,6 +57,44 @@ const EMPTY: ItemCoverageValues = {
   manualPremium: false,
 };
 
+/** Fila editable del grid (valores + id de la cobertura si ya existe). */
+type EditRow = ItemCoverageRowValues;
+
+function rowFromCoverage(c: ItemCoverageRow): EditRow {
+  return {
+    id: c.id,
+    order: String(c.order),
+    name: c.name,
+    polCad: c.polCad ?? "",
+    type: c.type as "COBERTURA" | "ADICIONAL",
+    isCommercialValue: c.isCommercialValue,
+    insuredAmount: c.insuredAmount !== null ? String(c.insuredAmount) : "",
+    insuredCurrency: c.insuredCurrency,
+    affectedByIva: c.affectedByIva,
+    taxRateAffect: c.taxRateAffect !== null ? String(c.taxRateAffect) : "",
+    taxRateExempt: c.taxRateExempt !== null ? String(c.taxRateExempt) : "",
+    premiumAffect: c.premiumAffect !== null ? String(c.premiumAffect) : "",
+    premiumExempt: c.premiumExempt !== null ? String(c.premiumExempt) : "",
+    commissionAffectPct:
+      c.commissionAffectPct !== null ? String(c.commissionAffectPct) : "",
+    commissionExemptPct:
+      c.commissionExemptPct !== null ? String(c.commissionExemptPct) : "",
+    sumsToTotal: c.sumsToTotal,
+    manualPremium: c.manualPremium,
+  };
+}
+
+function blankRow(
+  defaults: { commissionAffectPct?: string; commissionExemptPct?: string } = {},
+): EditRow {
+  return {
+    ...EMPTY,
+    id: "",
+    commissionAffectPct: defaults.commissionAffectPct ?? "",
+    commissionExemptPct: defaults.commissionExemptPct ?? "",
+  };
+}
+
 export function ItemCoveragesDialog({
   itemId,
   itemLabel,
@@ -87,6 +126,73 @@ export function ItemCoveragesDialog({
   };
   const [editing, setEditing] = useState<ItemCoverageRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const defaultComm = {
+    commissionAffectPct:
+      defaultCommissionAffectPct != null
+        ? String(defaultCommissionAffectPct)
+        : "",
+    commissionExemptPct:
+      defaultCommissionExemptPct != null
+        ? String(defaultCommissionExemptPct)
+        : "",
+  };
+
+  // Grid editable. Se re-sincroniza cuando cambian las coberturas del servidor
+  // (tras copiar del producto, editar en el modal, etc.).
+  const [rows, setRows] = useState<EditRow[]>(() =>
+    coverages.map(rowFromCoverage),
+  );
+  const serverSig = coverages
+    .map(
+      (c) =>
+        `${c.id}:${c.name}:${c.insuredAmount}:${c.taxRateAffect}:${c.taxRateExempt}:${c.premiumNet}:${c.commissionAmount}`,
+    )
+    .join("|");
+  useEffect(() => {
+    setRows(coverages.map(rowFromCoverage));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverSig]);
+
+  function patchRow(idx: number, patch: Partial<EditRow>) {
+    setRows((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)),
+    );
+  }
+
+  function addRow() {
+    setRows((prev) => [...prev, blankRow(defaultComm)]);
+  }
+
+  function removeRow(idx: number) {
+    setRows((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  async function handleSave() {
+    // Descarta filas totalmente vacías (sin nombre).
+    const clean = rows.filter((r) => r.name.trim() !== "");
+    for (const r of clean) {
+      const parsed = itemCoverageSchema.safeParse(r);
+      if (!parsed.success) {
+        toast.error(
+          `Revisa la cobertura "${r.name || "(sin nombre)"}": ${
+            parsed.error.issues[0]?.message ?? "datos inválidos"
+          }`,
+        );
+        return;
+      }
+    }
+    setSaving(true);
+    const res = await saveItemCoveragesAction(itemId, { rows: clean });
+    setSaving(false);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success("Coberturas guardadas");
+    router.refresh();
+  }
 
   async function handleCopyFromProduct() {
     if (!productId) {
@@ -113,12 +219,15 @@ export function ItemCoveragesDialog({
     router.refresh();
   }
 
-  const totals = coverages.reduce(
-    (acc, c) => {
-      acc.net += c.premiumNet ?? 0;
-      acc.iva += c.ivaAmount ?? 0;
-      acc.gross += c.premiumGross ?? 0;
-      acc.commission += c.commissionAmount ?? 0;
+  // Totales en vivo desde el grid.
+  const totals = rows.reduce(
+    (acc, r) => {
+      if (!r.sumsToTotal) return acc;
+      const c = computeCoverage(r);
+      acc.net += c.premiumNet;
+      acc.iva += c.ivaAmount;
+      acc.gross += c.premiumGross;
+      acc.commission += c.commissionAmount;
       return acc;
     },
     { net: 0, iva: 0, gross: 0, commission: 0 },
@@ -128,14 +237,16 @@ export function ItemCoveragesDialog({
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>{trigger}</DialogTrigger>
-        <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] max-h-[88vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Coberturas · {itemLabel}</DialogTitle>
             <DialogDescription>
-              Las coberturas calculan prima neta = afecta + exenta; IVA = afecta × 19% (si aplica); prima bruta = neta + IVA; comisión = afecta×%afecta + exenta×%exenta.
+              Edita el monto asegurado y las tasas directamente en la tabla.
+              Prima afecta = (tasa afecta × monto) / 1000; exenta = (tasa exenta
+              × monto) / 1000. IVA = afecta × 19% (si aplica).
             </DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -144,151 +255,283 @@ export function ItemCoveragesDialog({
             >
               <Copy className="size-4" /> Copiar del producto
             </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                setEditing(null);
-                setFormOpen(true);
-              }}
-            >
+            <Button variant="outline" size="sm" onClick={addRow}>
               <Plus className="size-4" /> Agregar cobertura
             </Button>
           </div>
+
           <div className="overflow-x-auto rounded-lg border bg-card">
-            <table className="w-full text-xs">
+            <table className="w-full min-w-[1100px] text-xs">
               <thead className="border-b bg-muted/40 uppercase text-muted-foreground">
                 <tr>
-                  <th className="px-2 py-1.5 text-left">Tipo</th>
-                  <th className="px-2 py-1.5 text-left">Cobertura</th>
-                  <th className="px-2 py-1.5 text-right">Mto. aseg.</th>
-                  <th className="px-2 py-1.5 text-right">T. afe</th>
-                  <th className="px-2 py-1.5 text-right">T. exe</th>
-                  <th className="px-2 py-1.5 text-right">P. afe</th>
-                  <th className="px-2 py-1.5 text-right">P. exe</th>
-                  <th className="px-2 py-1.5 text-right">Neta</th>
-                  <th className="px-2 py-1.5 text-right">IVA</th>
-                  <th className="px-2 py-1.5 text-right">Bruta</th>
-                  <th className="px-2 py-1.5 text-right">% c.afe</th>
-                  <th className="px-2 py-1.5 text-right">% c.exe</th>
-                  <th className="px-2 py-1.5 text-right">Mto. com.</th>
-                  <th className="px-2 py-1.5"></th>
+                  <th className="px-1.5 py-1.5 text-left">Tipo</th>
+                  <th className="px-1.5 py-1.5 text-left">Cobertura</th>
+                  <th className="px-1.5 py-1.5 text-center">Val.</th>
+                  <th className="px-1.5 py-1.5 text-right">Mto. aseg.</th>
+                  <th className="px-1.5 py-1.5 text-center">Suma</th>
+                  <th className="px-1.5 py-1.5 text-center">IVA</th>
+                  <th className="px-1.5 py-1.5 text-right">T. afe ‰</th>
+                  <th className="px-1.5 py-1.5 text-right">T. exe ‰</th>
+                  <th className="px-1.5 py-1.5 text-right">P. afe</th>
+                  <th className="px-1.5 py-1.5 text-right">P. exe</th>
+                  <th className="px-1.5 py-1.5 text-right">Neta</th>
+                  <th className="px-1.5 py-1.5 text-right">IVA $</th>
+                  <th className="px-1.5 py-1.5 text-right">Bruta</th>
+                  <th className="px-1.5 py-1.5 text-right">% c.afe</th>
+                  <th className="px-1.5 py-1.5 text-right">% c.exe</th>
+                  <th className="px-1.5 py-1.5 text-right">Comisión</th>
+                  <th className="px-1.5 py-1.5"></th>
                 </tr>
               </thead>
               <tbody>
-                {coverages.length === 0 ? (
+                {rows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={14}
+                      colSpan={17}
                       className="px-3 py-10 text-center text-muted-foreground"
                     >
-                      Sin coberturas. Copia las del producto o agrega manualmente.
+                      Sin coberturas. Copia las del producto o agrega filas.
                     </td>
                   </tr>
                 ) : (
-                  coverages.map((c) => (
-                    <tr
-                      key={c.id}
-                      className={
-                        "border-b last:border-0" +
-                        (c.autoLoaded ? " bg-muted/30" : "")
-                      }
-                      title={c.autoLoaded ? "Cobertura cargada automáticamente" : undefined}
-                    >
-                      <td className="px-2 py-1.5">
-                        <Badge
-                          variant={c.type === "COBERTURA" ? "default" : "secondary"}
-                          className="text-[10px]"
-                        >
-                          {c.type === "COBERTURA" ? "Cob" : "Adi"}
-                        </Badge>
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <div className="font-medium">{c.name}</div>
-                        {c.polCad && (
-                          <div className="text-[10px] font-mono text-muted-foreground">
-                            {c.polCad}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmt(c.insuredAmount)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmtPct(c.taxRateAffect, 4)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmtPct(c.taxRateExempt, 4)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmt(c.premiumAffect)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmt(c.premiumExempt)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">
-                        {fmt(c.premiumNet)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmt(c.ivaAmount)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">
-                        {fmt(c.premiumGross)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmtPct(c.commissionAffectPct)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmtPct(c.commissionExemptPct)}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">
-                        {fmt(c.commissionAmount)}
-                      </td>
-                      <td className="px-2 py-1.5">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Editar"
-                            className="size-7"
-                            onClick={() => {
-                              setEditing(c);
-                              setFormOpen(true);
+                  rows.map((row, idx) => {
+                    const calc = computeCoverage(row);
+                    return (
+                      <tr key={row.id || `new-${idx}`} className="border-b last:border-0">
+                        <td className="px-1 py-1">
+                          <Select
+                            value={row.type}
+                            onValueChange={(v) =>
+                              patchRow(idx, {
+                                type: v as "COBERTURA" | "ADICIONAL",
+                              })
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-[72px] px-1.5 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="COBERTURA">Cob</SelectItem>
+                              <SelectItem value="ADICIONAL">Adi</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-1 py-1">
+                          <Input
+                            value={row.name}
+                            onChange={(e) =>
+                              patchRow(idx, { name: e.target.value })
+                            }
+                            placeholder="Cobertura"
+                            className="h-8 min-w-[150px] text-xs"
+                          />
+                          {row.polCad && (
+                            <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                              {row.polCad}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-1 py-1 text-center">
+                          <Checkbox
+                            checked={row.isCommercialValue}
+                            onCheckedChange={(v) => {
+                              const com = v === true;
+                              patchRow(idx, {
+                                isCommercialValue: com,
+                                insuredAmount: com ? "0" : row.insuredAmount,
+                              });
                             }}
-                          >
-                            <Pencil className="size-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label="Eliminar"
-                            className="size-7"
-                            onClick={() => handleDelete(c.id)}
-                          >
-                            <Trash2 className="size-3.5 text-destructive" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          {row.isCommercialValue ? (
+                            <span className="block text-right text-[11px] text-muted-foreground">
+                              Valor comercial
+                            </span>
+                          ) : (
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={row.insuredAmount}
+                              onChange={(e) =>
+                                patchRow(idx, { insuredAmount: e.target.value })
+                              }
+                              className="h-8 w-[110px] text-right text-xs tabular-nums"
+                            />
+                          )}
+                        </td>
+                        <td className="px-1 py-1 text-center">
+                          <Checkbox
+                            checked={row.sumsToTotal}
+                            onCheckedChange={(v) =>
+                              patchRow(idx, { sumsToTotal: v === true })
+                            }
+                          />
+                        </td>
+                        <td className="px-1 py-1 text-center">
+                          <Checkbox
+                            checked={row.affectedByIva}
+                            onCheckedChange={(v) =>
+                              patchRow(idx, { affectedByIva: v === true })
+                            }
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <Input
+                            type="number"
+                            step="0.0001"
+                            value={row.taxRateAffect}
+                            disabled={row.manualPremium}
+                            onChange={(e) =>
+                              patchRow(idx, { taxRateAffect: e.target.value })
+                            }
+                            className="h-8 w-[72px] text-right text-xs tabular-nums"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <Input
+                            type="number"
+                            step="0.0001"
+                            value={row.taxRateExempt}
+                            disabled={row.manualPremium}
+                            onChange={(e) =>
+                              patchRow(idx, { taxRateExempt: e.target.value })
+                            }
+                            className="h-8 w-[72px] text-right text-xs tabular-nums"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={
+                              row.manualPremium
+                                ? row.premiumAffect
+                                : fmtNum(premiumAffectOf(row))
+                            }
+                            disabled={!row.manualPremium}
+                            onChange={(e) =>
+                              patchRow(idx, { premiumAffect: e.target.value })
+                            }
+                            className="h-8 w-[90px] text-right text-xs tabular-nums"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={
+                              row.manualPremium
+                                ? row.premiumExempt
+                                : fmtNum(premiumExemptOf(row))
+                            }
+                            disabled={!row.manualPremium}
+                            onChange={(e) =>
+                              patchRow(idx, { premiumExempt: e.target.value })
+                            }
+                            className="h-8 w-[90px] text-right text-xs tabular-nums"
+                          />
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums font-medium">
+                          {fmt(calc.premiumNet)}
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">
+                          {fmt(calc.ivaAmount)}
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums font-medium">
+                          {fmt(calc.premiumGross)}
+                        </td>
+                        <td className="px-1 py-1">
+                          <Input
+                            type="number"
+                            step="0.001"
+                            value={row.commissionAffectPct}
+                            onChange={(e) =>
+                              patchRow(idx, {
+                                commissionAffectPct: e.target.value,
+                              })
+                            }
+                            className="h-8 w-[64px] text-right text-xs tabular-nums"
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          <Input
+                            type="number"
+                            step="0.001"
+                            value={row.commissionExemptPct}
+                            onChange={(e) =>
+                              patchRow(idx, {
+                                commissionExemptPct: e.target.value,
+                              })
+                            }
+                            className="h-8 w-[64px] text-right text-xs tabular-nums"
+                          />
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">
+                          {fmt(calc.commissionAmount)}
+                        </td>
+                        <td className="px-1 py-1">
+                          <div className="flex justify-end gap-0.5">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Edición avanzada"
+                              title="Edición avanzada (POL/CAD, manual…)"
+                              className="size-7"
+                              onClick={() => {
+                                if (row.id) {
+                                  const src = coverages.find(
+                                    (c) => c.id === row.id,
+                                  );
+                                  if (src) {
+                                    setEditing(src);
+                                    setFormOpen(true);
+                                    return;
+                                  }
+                                }
+                                // Fila nueva sin guardar: alterna manual inline.
+                                patchRow(idx, {
+                                  manualPremium: !row.manualPremium,
+                                });
+                              }}
+                            >
+                              <Pencil className="size-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label="Eliminar"
+                              className="size-7"
+                              onClick={() =>
+                                row.id ? handleDelete(row.id) : removeRow(idx)
+                              }
+                            >
+                              <Trash2 className="size-3.5 text-destructive" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
-              {coverages.length > 0 && (
+              {rows.length > 0 && (
                 <tfoot className="border-t bg-muted/30">
                   <tr>
-                    <td colSpan={7} className="px-2 py-1.5 text-right font-medium">
+                    <td colSpan={10} className="px-2 py-1.5 text-right font-medium">
                       Totales:
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
+                    <td className="px-1.5 py-1.5 text-right tabular-nums font-semibold">
                       {fmt(totals.net)}
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">
+                    <td className="px-1.5 py-1.5 text-right tabular-nums">
                       {fmt(totals.iva)}
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
+                    <td className="px-1.5 py-1.5 text-right tabular-nums font-semibold">
                       {fmt(totals.gross)}
                     </td>
                     <td colSpan={2}></td>
-                    <td className="px-2 py-1.5 text-right tabular-nums font-medium">
+                    <td className="px-1.5 py-1.5 text-right tabular-nums font-medium">
                       {fmt(totals.commission)}
                     </td>
                     <td></td>
@@ -297,9 +540,14 @@ export function ItemCoveragesDialog({
               )}
             </table>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="gap-2">
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Cerrar
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              <Save className="size-4" />
+              {saving ? "Grabando…" : "Grabar"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -308,21 +556,7 @@ export function ItemCoveragesDialog({
         itemId={itemId}
         open={formOpen}
         onOpenChange={setFormOpen}
-        initial={
-          editing
-            ? rowToValues(editing)
-            : {
-                ...EMPTY,
-                commissionAffectPct:
-                  defaultCommissionAffectPct != null
-                    ? String(defaultCommissionAffectPct)
-                    : "",
-                commissionExemptPct:
-                  defaultCommissionExemptPct != null
-                    ? String(defaultCommissionExemptPct)
-                    : "",
-              }
-        }
+        initial={editing ? rowToValues(editing) : { ...EMPTY, ...defaultComm }}
         coverageId={editing?.id ?? null}
       />
     </>
@@ -370,7 +604,6 @@ function CoverageFormDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Recompute preview
   const calc = computeCoverage(values);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -498,8 +731,6 @@ function CoverageFormDialog({
                     setValues({
                       ...values,
                       isCommercialValue: isCommercial,
-                      // Valor comercial implica que el monto asegurado se
-                      // determina al momento del siniestro, no por suma fija.
                       insuredAmount: isCommercial ? "0" : values.insuredAmount,
                     });
                   }}
@@ -531,8 +762,6 @@ function CoverageFormDialog({
                     setValues({
                       ...values,
                       manualPremium: isManual,
-                      // Al pasar a manual limpiamos las tasas para evitar que
-                      // queden valores fantasma que no se usan en el cálculo.
                       taxRateAffect: isManual ? "" : values.taxRateAffect,
                       taxRateExempt: isManual ? "" : values.taxRateExempt,
                     });
@@ -657,14 +886,27 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
+/** Prima afecta calculada de una fila (para mostrar cuando no es manual). */
+function premiumAffectOf(row: ItemCoverageRowValues): number {
+  if (row.manualPremium) return Number(row.premiumAffect) || 0;
+  const insured = Number(row.insuredAmount) || 0;
+  return (insured * (Number(row.taxRateAffect) || 0)) / 1000;
+}
+
+function premiumExemptOf(row: ItemCoverageRowValues): number {
+  if (row.manualPremium) return Number(row.premiumExempt) || 0;
+  const insured = Number(row.insuredAmount) || 0;
+  return (insured * (Number(row.taxRateExempt) || 0)) / 1000;
+}
+
 function fmt(v: number | null): string {
   if (v === null || v === 0) return "—";
   return v.toLocaleString("es-CL", { maximumFractionDigits: 2 });
 }
 
-function fmtPct(v: number | null, decimals = 2): string {
-  if (v === null || v === 0) return "—";
-  return v.toLocaleString("es-CL", { maximumFractionDigits: decimals });
+function fmtNum(v: number): string {
+  if (!v) return "";
+  return String(Math.round(v * 100) / 100);
 }
 
 export { fmt as formatCoverageAmount };

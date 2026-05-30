@@ -187,13 +187,21 @@ export type PdfProposal = {
       polCad: string | null;
       type: string;
       insuredAmount: number | null;
+      isCommercialValue: boolean;
+      taxRateAffect: number | null;
+      taxRateExempt: number | null;
+      premiumAffect: number | null;
+      premiumExempt: number | null;
       premiumNet: number | null;
+      ivaAmount: number | null;
       premiumGross: number | null;
       commissionAmount: number | null;
     }>;
   }>;
   totals: {
     insured: number;
+    premiumAffect: number;
+    premiumExempt: number;
     premiumNet: number;
     iva: number;
     premiumGross: number;
@@ -499,37 +507,60 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
                   Coberturas Ítem {idx + 1}
                 </Text>
                 <View style={styles.tableHeader}>
-                  <Text style={[styles.th, { width: "32%" }]}>Cobertura</Text>
-                  <Text style={[styles.th, { width: "10%" }]}>POL/CAD</Text>
-                  <Text style={[styles.th, { width: "14%", textAlign: "right" }]}>
+                  <Text style={[styles.th, { width: "24%" }]}>Cobertura</Text>
+                  <Text style={[styles.th, { width: "11%", textAlign: "right" }]}>
                     Mto Aseg
                   </Text>
-                  <Text style={[styles.th, { width: "14%", textAlign: "right" }]}>
-                    Prima Neta
+                  <Text style={[styles.th, { width: "8%", textAlign: "right" }]}>
+                    T.Afe
                   </Text>
-                  <Text style={[styles.th, { width: "14%", textAlign: "right" }]}>
-                    Prima Bruta
+                  <Text style={[styles.th, { width: "8%", textAlign: "right" }]}>
+                    T.Exe
                   </Text>
-                  <Text style={[styles.th, { width: "16%", textAlign: "right" }]}>
+                  <Text style={[styles.th, { width: "11%", textAlign: "right" }]}>
+                    P.Afecta
+                  </Text>
+                  <Text style={[styles.th, { width: "11%", textAlign: "right" }]}>
+                    P.Exenta
+                  </Text>
+                  <Text style={[styles.th, { width: "9%", textAlign: "right" }]}>
+                    IVA
+                  </Text>
+                  <Text style={[styles.th, { width: "9%", textAlign: "right" }]}>
+                    Bruta
+                  </Text>
+                  <Text style={[styles.th, { width: "9%", textAlign: "right" }]}>
                     Comisión
                   </Text>
                 </View>
                 {item.coverages.map((c, i) => (
                   <View key={i} style={styles.tableRow}>
-                    <Text style={[styles.td, { width: "32%" }]}>{c.name}</Text>
-                    <Text style={[styles.td, { width: "10%" }]}>
-                      {c.polCad ?? ""}
+                    <Text style={[styles.td, { width: "24%" }]}>
+                      {c.name}
+                      {c.polCad ? ` (${c.polCad})` : ""}
                     </Text>
-                    <Text style={[styles.td, { width: "14%", textAlign: "right" }]}>
-                      {fmtN(c.insuredAmount)}
+                    <Text style={[styles.td, { width: "11%", textAlign: "right" }]}>
+                      {c.isCommercialValue ? "Valor Com." : fmtN(c.insuredAmount)}
                     </Text>
-                    <Text style={[styles.td, { width: "14%", textAlign: "right" }]}>
-                      {fmtN(c.premiumNet)}
+                    <Text style={[styles.td, { width: "8%", textAlign: "right" }]}>
+                      {fmtRate(c.taxRateAffect)}
                     </Text>
-                    <Text style={[styles.td, { width: "14%", textAlign: "right" }]}>
+                    <Text style={[styles.td, { width: "8%", textAlign: "right" }]}>
+                      {fmtRate(c.taxRateExempt)}
+                    </Text>
+                    <Text style={[styles.td, { width: "11%", textAlign: "right" }]}>
+                      {fmtN(c.premiumAffect)}
+                    </Text>
+                    <Text style={[styles.td, { width: "11%", textAlign: "right" }]}>
+                      {fmtN(c.premiumExempt)}
+                    </Text>
+                    <Text style={[styles.td, { width: "9%", textAlign: "right" }]}>
+                      {fmtN(c.ivaAmount)}
+                    </Text>
+                    <Text style={[styles.td, { width: "9%", textAlign: "right" }]}>
                       {fmtN(c.premiumGross)}
                     </Text>
-                    <Text style={[styles.td, { width: "16%", textAlign: "right" }]}>
+                    <Text style={[styles.td, { width: "9%", textAlign: "right" }]}>
                       {fmtN(c.commissionAmount)}
                     </Text>
                   </View>
@@ -569,10 +600,10 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
             {fmtN(data.totals.insured)}
           </Text>
           <Text style={[styles.td, { width: "17%", textAlign: "right" }]}>
-            {fmtN(data.totals.premiumNet)}
+            {fmtN(data.totals.premiumAffect)}
           </Text>
           <Text style={[styles.td, { width: "17%", textAlign: "right" }]}>
-            0,00
+            {fmtN(data.totals.premiumExempt)}
           </Text>
           <Text style={[styles.td, { width: "12%", textAlign: "right" }]}>
             {fmtN(data.totals.premiumNet)}
@@ -656,4 +687,9 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
 function fmtPct(v: number | null): string {
   if (v === null) return "—";
   return `${v.toLocaleString("es-CL", { maximumFractionDigits: 3 })}%`;
+}
+
+function fmtRate(v: number | null): string {
+  if (v === null || v === 0) return "0";
+  return v.toLocaleString("es-CL", { maximumFractionDigits: 4 });
 }

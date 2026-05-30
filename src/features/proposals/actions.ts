@@ -19,11 +19,15 @@ import {
   proposalFormSchema,
   proposalDraftSchema,
   statusChangeSchema,
+  policyReceptionSchema,
+  emissionErrorSchema,
   STATUS_LABELS,
   isProposalLocked,
   type ProposalFormValues,
   type ProposalDraftValues,
   type StatusChangeValues,
+  type PolicyReceptionValues,
+  type EmissionErrorValues,
 } from "./schemas";
 
 function decimalOrNull(value: string): Prisma.Decimal | null {
@@ -561,6 +565,160 @@ export async function assignProposalNumber(
     }
     throw error;
   }
+}
+
+/**
+ * Registra la recepción de la póliza emitida correctamente por la compañía:
+ * Nº de póliza, fecha de emisión y de recepción. La propuesta pasa a EMITIDA
+ * ("póliza"). El documento PDF de la póliza se adjunta aparte (Documentos).
+ */
+export async function registerPolicyEmissionAction(
+  proposalId: string,
+  values: PolicyReceptionValues,
+): Promise<ActionResult> {
+  const parsed = policyReceptionSchema.safeParse(values);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Datos inválidos.",
+    };
+  }
+  const data = parsed.data;
+  const { ctx, db } = await requireOrgDb();
+
+  const proposal = await db.proposal.findFirst({
+    where: { id: proposalId },
+    select: { id: true, proposalNumber: true },
+  });
+  if (!proposal) {
+    return { ok: false, error: "La propuesta no existe o no tienes acceso." };
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.proposal.update({
+      where: { id: proposalId },
+      data: {
+        status: "EMITIDA",
+        currentStateStartedAt: new Date(),
+        policyNumberGenerated: data.policyNumber.trim(),
+        policyEmissionDate: parseDate(data.emissionDate),
+        policyReceptionDate: parseDate(data.receptionDate),
+        emissionErrorReason: null,
+        emissionErrorDetail: null,
+      },
+    });
+    await tx.proposalStatusHistory.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        status: "EMITIDA",
+        note:
+          emptyToNull(data.note) ??
+          `Póliza N° ${data.policyNumber.trim()} emitida por la compañía`,
+        changedById: ctx.userId,
+      },
+    });
+    await tx.proposalLog.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        action: "POLICY_EMITTED",
+        summary: `Póliza N° ${data.policyNumber.trim()} emitida por la compañía`,
+        payload: {
+          policyNumber: data.policyNumber.trim(),
+          emissionDate: data.emissionDate,
+          receptionDate: data.receptionDate,
+        },
+        userId: ctx.userId,
+      },
+    });
+  });
+
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "PROPOSAL",
+    entityId: proposalId,
+    action: "policy_emitted",
+    summary: `Propuesta ${proposal.proposalNumber}: póliza N° ${data.policyNumber.trim()} emitida`,
+    userId: ctx.userId,
+  });
+
+  revalidatePath("/propuestas");
+  revalidatePath(`/propuestas/${proposalId}`);
+  return { ok: true, id: proposalId };
+}
+
+/**
+ * Registra que la compañía emitió la póliza con un error: la propuesta queda
+ * DEVUELTA ("devuelta a la compañía") con el motivo del error de emisión.
+ */
+export async function registerEmissionErrorAction(
+  proposalId: string,
+  values: EmissionErrorValues,
+): Promise<ActionResult> {
+  const parsed = emissionErrorSchema.safeParse(values);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Datos inválidos.",
+    };
+  }
+  const data = parsed.data;
+  const { ctx, db } = await requireOrgDb();
+
+  const proposal = await db.proposal.findFirst({
+    where: { id: proposalId },
+    select: { id: true, proposalNumber: true },
+  });
+  if (!proposal) {
+    return { ok: false, error: "La propuesta no existe o no tienes acceso." };
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.proposal.update({
+      where: { id: proposalId },
+      data: {
+        status: "DEVUELTA",
+        currentStateStartedAt: new Date(),
+        emissionErrorReason: data.reason,
+        emissionErrorDetail: emptyToNull(data.detail),
+      },
+    });
+    await tx.proposalStatusHistory.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        status: "DEVUELTA",
+        note: `Devuelta a la compañía · ${data.reason}${
+          data.detail ? ` — ${data.detail}` : ""
+        }`,
+        changedById: ctx.userId,
+      },
+    });
+    await tx.proposalLog.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        action: "EMISSION_ERROR",
+        summary: `Devuelta a la compañía por error de emisión: ${data.reason}`,
+        payload: { reason: data.reason, detail: data.detail },
+        userId: ctx.userId,
+      },
+    });
+  });
+
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "PROPOSAL",
+    entityId: proposalId,
+    action: "emission_error",
+    summary: `Propuesta ${proposal.proposalNumber}: devuelta a la compañía (${data.reason})`,
+    userId: ctx.userId,
+  });
+
+  revalidatePath("/propuestas");
+  revalidatePath(`/propuestas/${proposalId}`);
+  return { ok: true, id: proposalId };
 }
 
 export type SendReservationResult =
