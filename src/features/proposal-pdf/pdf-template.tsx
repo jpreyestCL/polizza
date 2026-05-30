@@ -150,7 +150,11 @@ export type PdfProposal = {
   quotationNumberRef: string | null;
   organizationName: string;
   // Cliente / Contratante
+  clientType: string;
   clientName: string;
+  clientFirstName: string | null;
+  clientLastNamePaterno: string | null;
+  clientLastNameMaterno: string | null;
   clientLegalName: string | null;
   clientRut: string | null;
   clientEmail: string | null;
@@ -164,6 +168,7 @@ export type PdfProposal = {
   companyRut: string | null;
   companyLogoUrl: string | null;
   brokerCode: string | null;
+  accountExecName: string | null;
   contactName: string | null;
   contactEmail: string | null;
   // Producto / ramo
@@ -364,6 +369,10 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
             <Text>{data.brokerCode ?? "—"}</Text>
           </View>
           <View style={styles.cell2}>
+            <Text style={styles.labelMuted}>Ejecutivo de Cuentas</Text>
+            <Text>{data.accountExecName ?? "—"}</Text>
+          </View>
+          <View style={styles.cell2}>
             <Text style={styles.labelMuted}>Comisión Corredor</Text>
             <Text>
               Afecto: {fmtPct(data.commissionAffectPct)} · Exento:{" "}
@@ -388,7 +397,7 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
         <Text style={styles.sectionBar}>Identificación Contratante</Text>
         <View style={styles.borderRow}>
           <View style={styles.cell2}>
-            <Text style={styles.labelMuted}>Razón Social o Nombre</Text>
+            <Text style={styles.labelMuted}>Razón Social o Nombre Completo</Text>
             <Text style={styles.labelBold}>
               {data.clientLegalName ?? data.clientName}
             </Text>
@@ -397,6 +406,22 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
             <Text style={styles.labelMuted}>RUT Contratante</Text>
             <Text>{data.clientRut ?? "—"}</Text>
           </View>
+          {data.clientType === "PERSONA" && (
+            <>
+              <View style={styles.cell3}>
+                <Text style={styles.labelMuted}>Apellido Paterno</Text>
+                <Text>{data.clientLastNamePaterno ?? "—"}</Text>
+              </View>
+              <View style={styles.cell3}>
+                <Text style={styles.labelMuted}>Apellido Materno</Text>
+                <Text>{data.clientLastNameMaterno ?? "—"}</Text>
+              </View>
+              <View style={styles.cell3}>
+                <Text style={styles.labelMuted}>Nombres</Text>
+                <Text>{data.clientFirstName ?? "—"}</Text>
+              </View>
+            </>
+          )}
           <View style={styles.cell3}>
             <Text style={styles.labelMuted}>Email</Text>
             <Text>{data.clientEmail ?? "—"}</Text>
