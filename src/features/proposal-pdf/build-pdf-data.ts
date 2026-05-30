@@ -13,7 +13,11 @@ export async function buildProposalPdfData(
     include: {
       client: {
         select: {
+          type: true,
           name: true,
+          firstName: true,
+          lastNamePaterno: true,
+          lastNameMaterno: true,
           legalName: true,
           rut: true,
           email: true,
@@ -130,6 +134,14 @@ export async function buildProposalPdfData(
   const companyRut = company?.globalCompany?.rut ?? company?.rut ?? null;
   const companyLogo = company?.globalCompany?.logoUrl ?? company?.logoUrl ?? null;
 
+  // Ejecutivo de cuentas del corredor (usuario asignado a la propuesta).
+  const accountExec = proposal.assignedUserId
+    ? await basePrisma.user.findUnique({
+        where: { id: proposal.assignedUserId },
+        select: { name: true },
+      })
+    : null;
+
   // Renovación
   const previousPolicy = proposal.previousPolicyId
     ? await db.policy.findFirst({
@@ -194,7 +206,11 @@ export async function buildProposalPdfData(
     previousPolicyNumber: previousPolicy?.policyNumber ?? null,
     quotationNumberRef: proposal.quotationNumberRef ?? null,
     organizationName: organization?.name ?? "Polizza",
+    clientType: proposal.client.type,
     clientName: proposal.client.name,
+    clientFirstName: proposal.client.firstName,
+    clientLastNamePaterno: proposal.client.lastNamePaterno,
+    clientLastNameMaterno: proposal.client.lastNameMaterno,
     clientLegalName: proposal.client.legalName,
     clientRut: proposal.client.rut,
     clientEmail: proposal.client.email,
@@ -207,6 +223,7 @@ export async function buildProposalPdfData(
     companyRut,
     companyLogoUrl: companyLogo,
     brokerCode: company?.brokerCode ?? null,
+    accountExecName: accountExec?.name ?? null,
     contactName: contact
       ? `${contact.name}${contact.lastName ? " " + contact.lastName : ""}`
       : null,
