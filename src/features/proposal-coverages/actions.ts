@@ -5,8 +5,10 @@ import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import {
   itemCoverageSchema,
+  itemCoveragesBulkSchema,
   computeCoverage,
   type ItemCoverageValues,
+  type ItemCoveragesBulkValues,
 } from "./schemas";
 import { getProductCoverages } from "./queries";
 
@@ -89,6 +91,109 @@ export async function upsertItemCoverageAction(
   }
   revalidatePath(`/propuestas/${item.proposalId}`);
   return { ok: true };
+}
+
+/** Construye los datos persistibles (con primas calculadas) de una cobertura. */
+function buildCoverageData(
+  organizationId: string,
+  itemId: string,
+  v: ItemCoverageValues,
+) {
+  const calc = computeCoverage(v);
+  const insured = Number(v.insuredAmount) || 0;
+  return {
+    organizationId,
+    itemId,
+    order: Number(v.order) || 0,
+    name: v.name,
+    polCad: toNullableString(v.polCad),
+    type: v.type,
+    isCommercialValue: v.isCommercialValue,
+    insuredAmount: toDecimal(v.insuredAmount),
+    insuredCurrency: v.insuredCurrency,
+    affectedByIva: v.affectedByIva,
+    taxRateAffect: toDecimal(v.taxRateAffect),
+    taxRateExempt: toDecimal(v.taxRateExempt),
+    premiumAffect: toDecimal(
+      v.manualPremium
+        ? v.premiumAffect
+        : String((insured * (Number(v.taxRateAffect) || 0)) / 1000),
+    ),
+    premiumExempt: toDecimal(
+      v.manualPremium
+        ? v.premiumExempt
+        : String((insured * (Number(v.taxRateExempt) || 0)) / 1000),
+    ),
+    premiumNet: toDecimal(calc.premiumNet),
+    ivaAmount: toDecimal(calc.ivaAmount),
+    premiumGross: toDecimal(calc.premiumGross),
+    commissionAffectPct: toDecimal(v.commissionAffectPct),
+    commissionExemptPct: toDecimal(v.commissionExemptPct),
+    commissionAmount: toDecimal(calc.commissionAmount),
+    sumsToTotal: v.sumsToTotal,
+    manualPremium: v.manualPremium,
+  };
+}
+
+/**
+ * Grabado masivo del grid inline de coberturas: crea/actualiza las filas
+ * recibidas y elimina las que ya no están. Editar NO borra los datos de la
+ * cobertura (obs. 6): se preservan todos los campos enviados.
+ */
+export async function saveItemCoveragesAction(
+  itemId: string,
+  raw: ItemCoveragesBulkValues,
+): Promise<ActionResult<{ count: number }>> {
+  const parsed = itemCoveragesBulkSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Datos inválidos",
+    };
+  }
+  const { ctx, db } = await requireOrgDb();
+  const item = await db.proposalItem.findFirst({
+    where: { id: itemId },
+    select: { id: true, proposalId: true },
+  });
+  if (!item) return { ok: false, error: "Ítem no existe." };
+
+  const existing = await db.proposalItemCoverage.findMany({
+    where: { itemId },
+    select: { id: true },
+  });
+  const existingIds = new Set(existing.map((c) => c.id));
+  const keptIds = new Set<string>();
+
+  // Reordena según la posición del grid (order = índice * 10).
+  let order = 0;
+  for (const row of parsed.data.rows) {
+    order += 10;
+    const data = buildCoverageData(ctx.organizationId, itemId, {
+      ...row,
+      order: String(order),
+    });
+    if (row.id && existingIds.has(row.id)) {
+      keptIds.add(row.id);
+      await db.proposalItemCoverage.update({
+        where: { id: row.id },
+        data: { ...data, autoLoaded: false },
+      });
+    } else {
+      await db.proposalItemCoverage.create({ data });
+    }
+  }
+
+  // Elimina las coberturas que el usuario quitó del grid.
+  const toDelete = [...existingIds].filter((id) => !keptIds.has(id));
+  if (toDelete.length > 0) {
+    await db.proposalItemCoverage.deleteMany({
+      where: { id: { in: toDelete } },
+    });
+  }
+
+  revalidatePath(`/propuestas/${item.proposalId}`);
+  return { ok: true, data: { count: parsed.data.rows.length } };
 }
 
 export async function deleteItemCoverageAction(

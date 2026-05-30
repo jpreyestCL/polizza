@@ -41,6 +41,7 @@ export function FullClientDialog({
   defaultName,
   open: controlledOpen,
   onOpenChange,
+  createAsActive = false,
 }: {
   trigger?: React.ReactNode;
   onCreated: (id: string, name: string, rut: string | null) => void;
@@ -48,6 +49,11 @@ export function FullClientDialog({
   defaultName?: string;
   open?: boolean;
   onOpenChange?: (v: boolean) => void;
+  /**
+   * Cuando se crea el contratante desde una propuesta, la ficha debe quedar
+   * como cliente ACTIVO (no prospecto): es obligatorio para elaborar la póliza.
+   */
+  createAsActive?: boolean;
 }) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
@@ -132,7 +138,7 @@ export function FullClientDialog({
     setSubmitting(true);
     const r = await createClientAction({
       type,
-      status: "PROSPECTO",
+      status: createAsActive ? "ACTIVO" : "PROSPECTO",
       rut: formatRut(rut),
       name: composedName,
       firstName: type === "PERSONA" ? firstName.trim() : "",
@@ -173,11 +179,13 @@ export function FullClientDialog({
       {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nuevo cliente</DialogTitle>
+          <DialogTitle>
+            {createAsActive ? "Ficha de cliente activo" : "Nuevo cliente"}
+          </DialogTitle>
           <DialogDescription>
-            Ficha completa: los datos quedarán disponibles en la propuesta y en
-            el PDF. El cliente queda como prospecto y lo puedes activar más
-            tarde desde el módulo de Clientes.
+            {createAsActive
+              ? "Completa la ficha del contratante. Quedará como cliente ACTIVO para poder elaborar la propuesta."
+              : "Ficha completa: los datos quedarán disponibles en la propuesta y en el PDF. El cliente queda como prospecto y lo puedes activar más tarde desde el módulo de Clientes."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">

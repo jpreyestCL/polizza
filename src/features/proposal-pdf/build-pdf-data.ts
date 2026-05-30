@@ -81,6 +81,8 @@ export async function buildProposalPdfData(
 
   // Totales
   let totalInsured = 0;
+  let totalAffect = 0;
+  let totalExempt = 0;
   let totalNet = 0;
   let totalIva = 0;
   let totalGross = 0;
@@ -89,6 +91,8 @@ export async function buildProposalPdfData(
     const coverages = it.coverages.map((c) => {
       if (c.sumsToTotal) {
         totalInsured += c.insuredAmount ? Number(c.insuredAmount) : 0;
+        totalAffect += c.premiumAffect ? Number(c.premiumAffect) : 0;
+        totalExempt += c.premiumExempt ? Number(c.premiumExempt) : 0;
         totalNet += c.premiumNet ? Number(c.premiumNet) : 0;
         totalIva += c.ivaAmount ? Number(c.ivaAmount) : 0;
         totalGross += c.premiumGross ? Number(c.premiumGross) : 0;
@@ -99,7 +103,13 @@ export async function buildProposalPdfData(
         polCad: c.polCad,
         type: c.type,
         insuredAmount: c.insuredAmount ? Number(c.insuredAmount) : null,
+        isCommercialValue: c.isCommercialValue,
+        taxRateAffect: c.taxRateAffect ? Number(c.taxRateAffect) : null,
+        taxRateExempt: c.taxRateExempt ? Number(c.taxRateExempt) : null,
+        premiumAffect: c.premiumAffect ? Number(c.premiumAffect) : null,
+        premiumExempt: c.premiumExempt ? Number(c.premiumExempt) : null,
         premiumNet: c.premiumNet ? Number(c.premiumNet) : null,
+        ivaAmount: c.ivaAmount ? Number(c.ivaAmount) : null,
         premiumGross: c.premiumGross ? Number(c.premiumGross) : null,
         commissionAmount: c.commissionAmount
           ? Number(c.commissionAmount)
@@ -226,6 +236,8 @@ export async function buildProposalPdfData(
     items: itemsData,
     totals: {
       insured: totalInsured,
+      premiumAffect: totalAffect,
+      premiumExempt: totalExempt,
       premiumNet: totalNet,
       iva: totalIva,
       premiumGross: totalGross,

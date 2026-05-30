@@ -159,6 +159,37 @@ export function ProposalDetailTabs({
               <Field label="Vigencia" value={vigencia} />
               <Field label="Ejecutivo" value={assignedUserName} />
               <Field label="Creada" value={formatDate(proposal.createdAt)} />
+              {proposal.policyNumberGenerated && (
+                <Field
+                  label="N° póliza emitida"
+                  value={proposal.policyNumberGenerated}
+                />
+              )}
+              {proposal.policyEmissionDate && (
+                <Field
+                  label="Emisión póliza"
+                  value={formatDate(proposal.policyEmissionDate)}
+                />
+              )}
+              {proposal.policyReceptionDate && (
+                <Field
+                  label="Recepción póliza"
+                  value={formatDate(proposal.policyReceptionDate)}
+                />
+              )}
+              {proposal.emissionErrorReason && (
+                <Field
+                  label="Devuelta · motivo"
+                  value={
+                    <span className="text-destructive">
+                      {proposal.emissionErrorReason}
+                      {proposal.emissionErrorDetail
+                        ? ` — ${proposal.emissionErrorDetail}`
+                        : ""}
+                    </span>
+                  }
+                />
+              )}
             </dl>
           </div>
         </div>

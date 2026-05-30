@@ -6,10 +6,17 @@ import {
 
 const base = {
   clientId: "c1",
+  insuredClientId: "c1",
+  beneficiaryClientId: "c1",
   insuranceCompanyId: "co1",
   branchTypeId: "bt1",
   productId: "p1",
   currency: "UF" as const,
+  startDate: "2026-01-01",
+  endDate: "2026-12-31",
+  recipientEmail: "destino@cia.cl",
+  commissionAffectPct: "16",
+  commissionExemptPct: "9",
 };
 
 describe("proposalFormSchema — participaciones", () => {

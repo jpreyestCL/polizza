@@ -128,7 +128,12 @@ export default async function EditarPropuestaPage({
             ? null
             : proposal.proposalNumber
         }
-        clients={clients.map((c) => ({ id: c.id, name: c.name, rut: c.rut ?? null }))}
+        clients={clients.map((c) => ({
+          id: c.id,
+          name: c.name,
+          rut: c.rut ?? null,
+          status: c.status,
+        }))}
         members={members}
         brokers={brokers}
         catalog={catalog}

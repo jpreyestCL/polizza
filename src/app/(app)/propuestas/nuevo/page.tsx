@@ -22,6 +22,7 @@ export default async function NuevaPropuestaPage() {
     id: c.id,
     name: c.name,
     rut: c.rut ?? null,
+    status: c.status,
   }));
 
   const defaultValues: ProposalFormValues = {

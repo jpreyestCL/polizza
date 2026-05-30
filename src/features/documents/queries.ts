@@ -6,7 +6,9 @@ export type DocumentItem = {
   id: string;
   fileName: string;
   fileUrl: string;
+  storageKey: string | null;
   documentType: string | null;
+  sizeBytes: number | null;
   createdAt: Date;
 };
 
@@ -23,7 +25,9 @@ export async function listDocuments(
       id: true,
       fileName: true,
       fileUrl: true,
+      storageKey: true,
       documentType: true,
+      sizeBytes: true,
       createdAt: true,
     },
   });

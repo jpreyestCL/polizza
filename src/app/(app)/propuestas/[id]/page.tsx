@@ -27,11 +27,12 @@ import {
 } from "@/features/payment-plan/queries";
 import { PaymentPlanPanel } from "@/features/payment-plan/components/payment-plan-panel";
 import { PdfAndEmailButtons } from "@/features/proposal-pdf/components/pdf-and-email-buttons";
-import { getUfValue } from "@/server/uf";
+import { getUfValue, getIndicatorValues } from "@/server/uf";
 import { ProposalDetailTabs } from "@/features/proposals/components/proposal-detail-tabs";
 import { BitacoraPanel } from "@/features/payment-plan/components/bitacora-panel";
 import { ProposalStatusBadge } from "@/features/proposals/components/proposal-badges";
 import { ProposalStatusButton } from "@/features/proposals/components/proposal-status-button";
+import { PolicyReceptionPanel } from "@/features/proposals/components/policy-reception-panel";
 import { DeleteProposalDialog } from "@/features/proposals/components/delete-proposal-dialog";
 import { canDeleteProposal } from "@/lib/roles";
 import { ClientAlertBanner } from "@/components/alert-banner";
@@ -78,6 +79,25 @@ export default async function PropuestaDetailPage({
     getPaymentPlan(db, id),
     listProposalLogs(db, id),
     getProposalPremiumTotals(db, id),
+  ]);
+
+  // Indicadores (UF/Dólar/Euro) y ficha del contratante para autocompletar el
+  // plan de pago (tipo de cambio + datos del pagador).
+  const [indicators, contratante] = await Promise.all([
+    getIndicatorValues(),
+    db.client.findFirst({
+      where: { id: proposal.clientId },
+      select: {
+        rut: true,
+        name: true,
+        firstName: true,
+        lastNamePaterno: true,
+        legalName: true,
+        phone: true,
+        celular: true,
+        email: true,
+      },
+    }),
   ]);
 
   // Pre-cargar field schemas para todos los ramos (cliente los necesita para
@@ -196,6 +216,8 @@ export default async function PropuestaDetailPage({
         timezone={ctx.organizationTimezone}
       />
 
+      <PolicyReceptionPanel proposalId={id} status={proposal.status} />
+
       <ProposalItemsPanel
         proposalId={id}
         productId={proposal.productId ?? null}
@@ -218,6 +240,29 @@ export default async function PropuestaDetailPage({
       <PaymentPlanPanel
         proposalId={id}
         currency={proposal.currency}
+        proposalGrossPremium={premiumTotals.gross}
+        indicators={{
+          uf: indicators.uf?.value ?? null,
+          usdObs: indicators.usdObs?.value ?? null,
+          euro: indicators.euro?.value ?? null,
+        }}
+        contratante={
+          contratante
+            ? {
+                rut: contratante.rut,
+                name:
+                  [contratante.firstName, contratante.lastNamePaterno]
+                    .filter(Boolean)
+                    .join(" ") || contratante.name,
+                firstName: contratante.firstName,
+                lastName: contratante.lastNamePaterno,
+                legalName: contratante.legalName,
+                phone: contratante.phone,
+                celular: contratante.celular,
+                email: contratante.email,
+              }
+            : null
+        }
         plan={
           paymentPlan
             ? {

@@ -1,9 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { CreditCard, Pencil } from "lucide-react";
+import {
+  CreditCard,
+  Loader2,
+  Pencil,
+  RefreshCw,
+  Search,
+  UserCheck,
+} from "lucide-react";
 import { upsertPaymentPlanAction } from "../actions";
 import {
   paymentPlanSchema,
@@ -58,14 +65,57 @@ type Plan = {
   payerEmail: string | null;
 };
 
+export type PaymentIndicators = {
+  uf: number | null;
+  usdObs: number | null;
+  euro: number | null;
+};
+
+export type PayerContratante = {
+  rut: string | null;
+  name: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  legalName: string | null;
+  phone: string | null;
+  celular: string | null;
+  email: string | null;
+};
+
+/** Tipo de cambio (a pesos) según la moneda de la propuesta y los indicadores. */
+export function exchangeRateForCurrency(
+  currency: string,
+  indicators: PaymentIndicators,
+): number | null {
+  switch (currency) {
+    case "CLP":
+      return 1;
+    case "UF":
+      return indicators.uf;
+    case "USD":
+    case "USD_OBS":
+      return indicators.usdObs;
+    case "EUR":
+      return indicators.euro;
+    default:
+      return null;
+  }
+}
+
 export function PaymentPlanPanel({
   proposalId,
   plan,
   currency,
+  proposalGrossPremium = 0,
+  indicators = { uf: null, usdObs: null, euro: null },
+  contratante = null,
 }: {
   proposalId: string;
   plan: Plan | null;
   currency: string;
+  proposalGrossPremium?: number;
+  indicators?: PaymentIndicators;
+  contratante?: PayerContratante | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -117,6 +167,9 @@ export function PaymentPlanPanel({
           initial={initial}
           currency={currency}
           isNew={!plan}
+          proposalGrossPremium={proposalGrossPremium}
+          indicators={indicators}
+          contratante={contratante}
         />
       </div>
       {plan ? (
@@ -196,6 +249,9 @@ function PaymentPlanDialog({
   initial,
   currency,
   isNew,
+  proposalGrossPremium,
+  indicators,
+  contratante,
 }: {
   proposalId: string;
   open: boolean;
@@ -203,11 +259,103 @@ function PaymentPlanDialog({
   initial: PaymentPlanValues;
   currency: string;
   isNew: boolean;
+  proposalGrossPremium: number;
+  indicators: PaymentIndicators;
+  contratante: PayerContratante | null;
 }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rutQuery, setRutQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+
+  const autoRate = exchangeRateForCurrency(currency, indicators);
+
+  // Al abrir, autocompleta tipo de cambio (según moneda + indicador SII) y
+  // prima bruta (total de la propuesta) si vienen vacíos.
+  useEffect(() => {
+    if (!open) return;
+    setValues((prev) => {
+      const next = { ...prev };
+      if ((!prev.cambio || prev.cambio === "") && autoRate != null) {
+        next.cambio = String(autoRate);
+      }
+      if (
+        (!prev.primaBruta || prev.primaBruta === "") &&
+        proposalGrossPremium > 0
+      ) {
+        next.primaBruta = String(round2(proposalGrossPremium));
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Prima total en pesos = prima bruta × tipo de cambio (cálculo en vivo).
+  const primaTotalCalc =
+    Number(values.primaBruta || 0) * Number(values.cambio || 0);
+
+  function copyFromContratante() {
+    if (!contratante) return;
+    setValues((v) => ({
+      ...v,
+      payerRut: contratante.rut ?? "",
+      payerName: contratante.firstName ?? contratante.name ?? "",
+      payerLastName: contratante.lastName ?? "",
+      payerLegalName: contratante.legalName ?? "",
+      payerPhone: contratante.phone ?? "",
+      payerCelular: contratante.celular ?? "",
+      payerEmail: contratante.email ?? "",
+    }));
+    toast.success("Datos del contratante copiados");
+  }
+
+  async function searchPayerByRut() {
+    const q = rutQuery.trim() || values.payerRut.trim();
+    if (!q) {
+      toast.error("Ingresa un RUT para buscar.");
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await fetch(
+        `/api/clients/payer-search?q=${encodeURIComponent(q)}`,
+      );
+      const json = (await res.json()) as {
+        items: {
+          rut?: string | null;
+          name?: string | null;
+          firstName?: string | null;
+          lastNamePaterno?: string | null;
+          legalName?: string | null;
+          phone?: string | null;
+          celular?: string | null;
+          email?: string | null;
+        }[];
+      };
+      const match = json.items?.[0];
+      if (!match) {
+        toast.error("No se encontró un cliente con ese RUT.");
+        return;
+      }
+      setValues((v) => ({
+        ...v,
+        payerRut: match.rut ?? v.payerRut,
+        payerName: match.firstName ?? match.name ?? v.payerName,
+        payerLastName: match.lastNamePaterno ?? v.payerLastName,
+        payerLegalName: match.legalName ?? v.payerLegalName,
+        payerPhone: match.phone ?? v.payerPhone,
+        payerCelular: match.celular ?? v.payerCelular,
+        payerEmail: match.email ?? v.payerEmail,
+      }));
+      toast.success(`Cliente encontrado: ${match.name ?? match.rut}`);
+    } catch {
+      toast.error("Error al buscar el cliente.");
+    } finally {
+      setSearching(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -344,7 +492,24 @@ function PaymentPlanDialog({
               />
             </div>
             <div>
-              <Label className="text-xs">Cambio</Label>
+              <div className="flex items-end justify-between">
+                <Label className="text-xs">Cambio</Label>
+                {autoRate != null && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setValues({ ...values, cambio: String(autoRate) })
+                    }
+                    className="-mb-0.5 flex items-center gap-1 text-[11px] text-primary hover:underline"
+                    title={`Tipo de cambio ${currency} de hoy`}
+                  >
+                    <RefreshCw className="size-3" /> Hoy:{" "}
+                    {autoRate.toLocaleString("es-CL", {
+                      maximumFractionDigits: 2,
+                    })}
+                  </button>
+                )}
+              </div>
               <Input
                 type="number"
                 step="0.0001"
@@ -355,7 +520,26 @@ function PaymentPlanDialog({
               />
             </div>
             <div>
-              <Label className="text-xs">Prima total $</Label>
+              <div className="flex items-end justify-between">
+                <Label className="text-xs">Prima total $</Label>
+                {primaTotalCalc > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setValues({
+                        ...values,
+                        primaTotalPesos: String(round2(primaTotalCalc)),
+                      })
+                    }
+                    className="-mb-0.5 text-[11px] text-primary hover:underline"
+                    title="Prima bruta × cambio"
+                  >
+                    = {primaTotalCalc.toLocaleString("es-CL", {
+                      maximumFractionDigits: 0,
+                    })}
+                  </button>
+                )}
+              </div>
               <Input
                 type="number"
                 step="0.01"
@@ -418,8 +602,53 @@ function PaymentPlanDialog({
           </div>
 
           <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Datos del pagador
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Datos del pagador
+              </div>
+              <div className="flex items-center gap-1.5">
+                {contratante && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={copyFromContratante}
+                  >
+                    <UserCheck className="size-3.5" /> Copiar contratante
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <Label className="text-xs">Buscar cliente por RUT</Label>
+                <Input
+                  value={rutQuery}
+                  onChange={(e) => setRutQuery(e.target.value)}
+                  placeholder="Ej: 12.345.678-9"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void searchPayerByRut();
+                    }
+                  }}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={searchPayerByRut}
+                disabled={searching}
+              >
+                {searching ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Search className="size-3.5" />
+                )}
+                Buscar
+              </Button>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <div>
@@ -539,4 +768,8 @@ function fmt(v: number | null): string {
 function dateInput(d: Date | null): string {
   if (!d) return "";
   return d.toISOString().slice(0, 10);
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
