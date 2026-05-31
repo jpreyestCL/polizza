@@ -193,17 +193,37 @@ export function ProposalForm({
     let cancelled = false;
     fetch(`/api/clients/${selectedClientId}/status`)
       .then((r) => (r.ok ? r.json() : { status: null }))
-      .then((j: { status: ClientStatus | null }) => {
-        if (cancelled) return;
-        setContratanteStatus(j.status);
-        if (j.status) {
-          setLocalClients((prev) =>
-            prev.map((c) =>
-              c.id === selectedClientId ? { ...c, status: j.status } : c,
-            ),
-          );
-        }
-      })
+      .then(
+        (j: {
+          status: ClientStatus | null;
+          email?: string | null;
+          phone?: string | null;
+          celular?: string | null;
+        }) => {
+          if (cancelled) return;
+          setContratanteStatus(j.status);
+          if (j.status) {
+            setLocalClients((prev) =>
+              prev.map((c) =>
+                c.id === selectedClientId ? { ...c, status: j.status } : c,
+              ),
+            );
+          }
+          // Obs 4: precarga el contacto del contratante desde la ficha si los
+          // campos de la propuesta están vacíos (el corredor puede editarlos).
+          if (!form.getValues("contratanteEmail") && j.email) {
+            form.setValue("contratanteEmail", j.email, { shouldDirty: false });
+          }
+          if (!form.getValues("contratantePhone") && j.phone) {
+            form.setValue("contratantePhone", j.phone, { shouldDirty: false });
+          }
+          if (!form.getValues("contratanteCelular") && j.celular) {
+            form.setValue("contratanteCelular", j.celular, {
+              shouldDirty: false,
+            });
+          }
+        },
+      )
       .catch(() => {
         if (!cancelled) setContratanteStatus(null);
       });
@@ -677,6 +697,19 @@ export function ProposalForm({
           />
           <FormField
             control={form.control}
+            name="startTime"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Hora inicio</FormLabel>
+                <FormControl>
+                  <Input type="time" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
             name="endDate"
             render={({ field }) => (
               <FormItem>
@@ -694,6 +727,19 @@ export function ProposalForm({
                 </div>
                 <FormControl>
                   <Input type="date" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="endTime"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Hora fin</FormLabel>
+                <FormControl>
+                  <Input type="time" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -837,6 +883,51 @@ export function ProposalForm({
           />
         </Section>
 
+        <Section
+          title="Contacto del contratante (para la propuesta)"
+          description="Se precargan desde la ficha del contratante, pero puedes editarlos: estos son los datos que aparecerán en el PDF de la propuesta (por ejemplo, los de la corredora como contacto frente a la compañía)."
+        >
+          <FormField
+            control={form.control}
+            name="contratanteEmail"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Email contratante</FormLabel>
+                <FormControl>
+                  <Input type="email" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="contratantePhone"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Teléfono contratante</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="contratanteCelular"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Celular contratante</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </Section>
+
         <Section title="Comisión">
           <FormField
             control={form.control}
@@ -961,10 +1052,12 @@ export function ProposalForm({
 
 function Section({
   title,
+  description,
   children,
   cols = 3,
 }: {
   title: string;
+  description?: string;
   children: React.ReactNode;
   cols?: 2 | 3;
 }) {
@@ -973,6 +1066,9 @@ function Section({
       <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </h2>
+      {description && (
+        <p className="-mt-2 text-xs text-muted-foreground">{description}</p>
+      )}
       <div
         className={
           cols === 2

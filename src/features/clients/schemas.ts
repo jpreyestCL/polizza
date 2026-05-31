@@ -56,6 +56,7 @@ export const clientFormSchema = z
     address: z.string().trim().max(200).default(""),
     region: z.string().trim().default(""),
     commune: z.string().trim().default(""),
+    city: z.string().trim().max(120).default(""),
     assignedUserId: z.string().trim().default(""),
     vendedor: z.string().trim().max(120).default(""),
     cobranzaUserId: z.string().trim().default(""),

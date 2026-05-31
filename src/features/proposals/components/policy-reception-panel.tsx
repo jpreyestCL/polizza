@@ -38,7 +38,10 @@ export function PolicyReceptionPanel({
   status: string;
 }) {
   const router = useRouter();
+  // Tras una devolución (obs 17) el flujo natural es registrar la emisión
+  // corregida, así que arrancamos en "emisión correcta".
   const [mode, setMode] = useState<"ok" | "error">("ok");
+  const isReturned = status === "DEVUELTA";
 
   // Emisión correcta
   const [policyNumber, setPolicyNumber] = useState("");
@@ -49,11 +52,15 @@ export function PolicyReceptionPanel({
   // Error de emisión
   const [reason, setReason] = useState<EmissionErrorReason | "">("");
   const [detail, setDetail] = useState("");
+  const [errPolicyNumber, setErrPolicyNumber] = useState("");
+  const [errReceptionDate, setErrReceptionDate] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
 
-  // Solo se muestra mientras se espera la emisión.
-  if (status !== "ENVIADA_COMPANIA") return null;
+  // Se muestra mientras se espera la emisión (ENVIADA_COMPANIA) o cuando la
+  // póliza fue devuelta con error y se está a la espera de la corrección
+  // (DEVUELTA, obs 17).
+  if (status !== "ENVIADA_COMPANIA" && status !== "DEVUELTA") return null;
 
   async function submitOk() {
     const parsed = policyReceptionSchema.safeParse({
@@ -78,7 +85,12 @@ export function PolicyReceptionPanel({
   }
 
   async function submitError() {
-    const parsed = emissionErrorSchema.safeParse({ reason, detail });
+    const parsed = emissionErrorSchema.safeParse({
+      reason,
+      detail,
+      policyNumber: errPolicyNumber,
+      receptionDate: errReceptionDate,
+    });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Datos inválidos");
       return;
@@ -99,15 +111,30 @@ export function PolicyReceptionPanel({
       <div className="flex items-center gap-2 border-b p-4">
         <FileCheck2 className="size-4 text-muted-foreground" />
         <h2 className="text-base font-semibold">
-          Recepción de la póliza
+          {isReturned
+            ? "Corrección de la póliza devuelta"
+            : "Recepción de la póliza"}
         </h2>
       </div>
       <div className="space-y-4 p-4">
         <p className="text-sm text-muted-foreground">
-          A la espera de que la compañía emita la póliza. Registra la emisión
-          correcta (la propuesta pasa a <strong>Emitida</strong>) o el error de
-          emisión (queda <strong>Devuelta a la compañía</strong>). El PDF de la
-          póliza se adjunta en la pestaña Documentos.
+          {isReturned ? (
+            <>
+              La póliza fue devuelta a la compañía por un error de emisión.
+              Cuando envíen la póliza corregida, registra aquí la{" "}
+              <strong>emisión correcta</strong> con el número de póliza
+              definitivo y sus fechas (la propuesta pasa a{" "}
+              <strong>Emitida</strong>). Sube el PDF definitivo en la pestaña
+              Documentos.
+            </>
+          ) : (
+            <>
+              A la espera de que la compañía emita la póliza. Registra la emisión
+              correcta (la propuesta pasa a <strong>Emitida</strong>) o el error
+              de emisión (queda <strong>Devuelta a la compañía</strong>). El PDF
+              de la póliza se adjunta en la pestaña Documentos.
+            </>
+          )}
         </p>
 
         <div className="inline-flex rounded-md border p-0.5 text-sm">
@@ -184,7 +211,23 @@ export function PolicyReceptionPanel({
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <Label className="text-xs">N° de póliza generado *</Label>
+                <Input
+                  value={errPolicyNumber}
+                  onChange={(e) => setErrPolicyNumber(e.target.value)}
+                  placeholder="Ej: 25048843"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Fecha de recepción *</Label>
+                <Input
+                  type="date"
+                  value={errReceptionDate}
+                  onChange={(e) => setErrReceptionDate(e.target.value)}
+                />
+              </div>
               <div>
                 <Label className="text-xs">Motivo del error *</Label>
                 <Select

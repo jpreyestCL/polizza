@@ -142,6 +142,8 @@ export type PdfProposal = {
   sentAt: Date | null;
   startDate: Date | null;
   endDate: Date | null;
+  startTime: string | null;
+  endTime: string | null;
   status: string;
   currency: string;
   observations: string | null;
@@ -162,6 +164,7 @@ export type PdfProposal = {
   clientCelular: string | null;
   clientAddress: string | null;
   clientCommune: string | null;
+  clientCity: string | null;
   clientRegion: string | null;
   // Compañía
   companyName: string | null;
@@ -226,6 +229,16 @@ export type PdfProposal = {
 
 function fmtDate(d: Date | null): string {
   return d ? d.toLocaleDateString("es-CL") : "";
+}
+
+/**
+ * Vigencia con fecha y hora (obs 10). La hora se guarda como "HH:mm" a nivel
+ * propuesta; por defecto se asume mediodía (convención CL) si no se especificó.
+ */
+function fmtDateTime(d: Date | null, time: string | null): string {
+  if (!d) return "—";
+  const hhmm = (time && time.trim()) || "12:00";
+  return `${d.toLocaleDateString("es-CL")} ${hhmm} hrs`;
 }
 
 function fmtN(v: number | null | undefined): string {
@@ -309,20 +322,16 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
           </View>
         </View>
         <View style={styles.borderRow}>
-          <View style={styles.cell3}>
+          <View style={styles.cell2}>
             <Text style={styles.labelMuted}>Desde</Text>
-            <Text>{fmtDate(data.startDate)}</Text>
+            <Text>{fmtDateTime(data.startDate, data.startTime)}</Text>
           </View>
-          <View style={styles.cell3}>
+          <View style={styles.cell2}>
             <Text style={styles.labelMuted}>Hasta</Text>
             <Text>
-              {fmtDate(data.endDate)}
+              {fmtDateTime(data.endDate, data.endTime)}
               {totalDays !== null ? ` (${totalDays} días)` : ""}
             </Text>
-          </View>
-          <View style={styles.cell3}>
-            <Text style={styles.labelMuted}>Envío a Cía</Text>
-            <Text>{fmtDate(data.sentAt) || "—"}</Text>
           </View>
         </View>
 
@@ -434,15 +443,19 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
             <Text style={styles.labelMuted}>Celular</Text>
             <Text>{data.clientCelular ?? "—"}</Text>
           </View>
-          <View style={styles.cell2}>
+          <View style={styles.cell3}>
             <Text style={styles.labelMuted}>Dirección</Text>
             <Text>{data.clientAddress ?? "—"}</Text>
           </View>
-          <View style={styles.cell4}>
+          <View style={styles.cell6}>
             <Text style={styles.labelMuted}>Comuna</Text>
             <Text>{data.clientCommune ?? "—"}</Text>
           </View>
-          <View style={styles.cell4}>
+          <View style={styles.cell6}>
+            <Text style={styles.labelMuted}>Ciudad</Text>
+            <Text>{data.clientCity ?? "—"}</Text>
+          </View>
+          <View style={styles.cell3}>
             <Text style={styles.labelMuted}>Región</Text>
             <Text>{data.clientRegion ?? "—"}</Text>
           </View>

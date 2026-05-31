@@ -33,6 +33,7 @@ import { BitacoraPanel } from "@/features/payment-plan/components/bitacora-panel
 import { ProposalStatusBadge } from "@/features/proposals/components/proposal-badges";
 import { ProposalStatusButton } from "@/features/proposals/components/proposal-status-button";
 import { PolicyReceptionPanel } from "@/features/proposals/components/policy-reception-panel";
+import { PolicyDispatchPanel } from "@/features/proposals/components/policy-dispatch-panel";
 import { DeleteProposalDialog } from "@/features/proposals/components/delete-proposal-dialog";
 import { canDeleteProposal } from "@/lib/roles";
 import { ClientAlertBanner } from "@/components/alert-banner";
@@ -217,6 +218,18 @@ export default async function PropuestaDetailPage({
       />
 
       <PolicyReceptionPanel proposalId={id} status={proposal.status} />
+
+      <PolicyDispatchPanel
+        proposalId={id}
+        status={proposal.status}
+        defaultEmail={
+          proposal.contratanteEmail ?? proposal.client?.email ?? null
+        }
+        documents={documents.map((d) => ({
+          id: d.id,
+          fileName: d.fileName,
+        }))}
+      />
 
       <ProposalItemsPanel
         proposalId={id}

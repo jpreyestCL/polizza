@@ -296,6 +296,20 @@ function PaymentPlanDialog({
   const primaTotalCalc =
     Number(values.primaBruta || 0) * Number(values.cambio || 0);
 
+  // Obs 9: la prima total en $ se calcula automáticamente al cambiar la prima
+  // bruta (UF) o el tipo de cambio. El campo queda editable, pero se recalcula
+  // solo cuando cambian sus insumos.
+  useEffect(() => {
+    if (!open) return;
+    const bruta = Number(values.primaBruta || 0);
+    const cambio = Number(values.cambio || 0);
+    if (bruta <= 0 || cambio <= 0) return;
+    const calc = String(round2(bruta * cambio));
+    setValues((prev) =>
+      prev.primaTotalPesos === calc ? prev : { ...prev, primaTotalPesos: calc },
+    );
+  }, [values.primaBruta, values.cambio, open]);
+
   function copyFromContratante() {
     if (!contratante) return;
     setValues((v) => ({

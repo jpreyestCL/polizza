@@ -50,6 +50,7 @@ export default async function EditarClientePage({
     address: client.address ?? "",
     region: client.region ?? "",
     commune: client.commune ?? "",
+    city: client.city ?? "",
     assignedUserId: client.assignedUserId ?? "",
     vendedor: client.vendedor ?? "",
     cobranzaUserId: client.cobranzaUserId ?? "",

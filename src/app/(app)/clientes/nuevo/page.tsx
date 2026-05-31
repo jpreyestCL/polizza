@@ -29,6 +29,7 @@ export default async function NuevoClientePage() {
     address: "",
     region: "",
     commune: "",
+    city: "",
     assignedUserId: ctx.userId,
     vendedor: "",
     cobranzaUserId: "",

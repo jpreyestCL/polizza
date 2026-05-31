@@ -502,8 +502,14 @@ function CustomProductDialog({
       setError(r.error);
       return;
     }
-    toast.success("Producto creado");
+    toast.success("Producto creado. Ahora define sus coberturas.");
     onOpenChange(false);
+    // Obs 2: tras guardar el producto custom se pasa de inmediato a la
+    // creación de coberturas del producto.
+    if (r.data?.id) {
+      router.push(`/configuracion/productos/${r.data.id}/coberturas`);
+      return;
+    }
     router.refresh();
   }
 

@@ -153,6 +153,7 @@ export function FullClientDialog({
       address: address.trim(),
       region,
       commune,
+      city: "",
       assignedUserId: "",
       vendedor: "",
       cobranzaUserId: "",

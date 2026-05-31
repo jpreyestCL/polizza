@@ -125,6 +125,7 @@ export async function getProposalDetail(db: Db, id: string) {
           id: true,
           name: true,
           rut: true,
+          email: true,
           comentarioAlerta: true,
         },
       },

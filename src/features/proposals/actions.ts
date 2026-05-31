@@ -7,7 +7,8 @@ import { basePrisma } from "@/server/db";
 import { logActivity } from "@/server/activity";
 import { canDeleteProposal } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/sanitize";
-import { sendEmail } from "@/server/email";
+import { sendEmail, emailLayout } from "@/server/email";
+import { readStoredFile } from "@/server/storage";
 import { formatDate } from "@/lib/utils";
 import {
   cartaReservaHtml,
@@ -21,6 +22,7 @@ import {
   statusChangeSchema,
   policyReceptionSchema,
   emissionErrorSchema,
+  policyDispatchSchema,
   STATUS_LABELS,
   isProposalLocked,
   type ProposalFormValues,
@@ -28,6 +30,7 @@ import {
   type StatusChangeValues,
   type PolicyReceptionValues,
   type EmissionErrorValues,
+  type PolicyDispatchValues,
 } from "./schemas";
 
 function decimalOrNull(value: string): Prisma.Decimal | null {
@@ -117,9 +120,14 @@ export async function createProposalAction(
           currency: data.currency,
           startDate: parseDate(data.startDate),
           endDate: parseDate(data.endDate),
+          startTime: emptyToNull(data.startTime),
+          endTime: emptyToNull(data.endTime),
           sentAt: parseDate(data.sentAt),
           recipientEmail: emptyToNull(data.recipientEmail),
           recipientContactId: emptyToNull(data.recipientContactId),
+          contratanteEmail: emptyToNull(data.contratanteEmail),
+          contratantePhone: emptyToNull(data.contratantePhone),
+          contratanteCelular: emptyToNull(data.contratanteCelular),
           quotationId: emptyToNull(data.quotationId),
           quotationNumberRef: emptyToNull(data.quotationNumberRef),
           previousPolicyId: emptyToNull(data.previousPolicyId),
@@ -241,9 +249,14 @@ export async function updateProposalAction(
       currency: data.currency,
       startDate: parseDate(data.startDate),
       endDate: parseDate(data.endDate),
+      startTime: emptyToNull(data.startTime),
+      endTime: emptyToNull(data.endTime),
       sentAt: parseDate(data.sentAt),
       recipientEmail: emptyToNull(data.recipientEmail),
       recipientContactId: emptyToNull(data.recipientContactId),
+      contratanteEmail: emptyToNull(data.contratanteEmail),
+      contratantePhone: emptyToNull(data.contratantePhone),
+      contratanteCelular: emptyToNull(data.contratanteCelular),
       quotationId: emptyToNull(data.quotationId),
       quotationNumberRef: emptyToNull(data.quotationNumberRef),
       previousPolicyId: emptyToNull(data.previousPolicyId),
@@ -594,6 +607,24 @@ export async function registerPolicyEmissionAction(
     return { ok: false, error: "La propuesta no existe o no tienes acceso." };
   }
 
+  // Obs 15: no se puede dejar la póliza en estado Emitida sin haber subido el
+  // PDF de la póliza (documento de tipo "Póliza" adjunto a la propuesta).
+  const policyDoc = await db.document.findFirst({
+    where: {
+      entityType: "PROPOSAL",
+      entityId: proposalId,
+      documentType: "Póliza",
+    },
+    select: { id: true },
+  });
+  if (!policyDoc) {
+    return {
+      ok: false,
+      error:
+        "Debes subir el PDF de la póliza (documento tipo “Póliza” en la pestaña Documentos) antes de marcarla como Emitida.",
+    };
+  }
+
   await db.$transaction(async (tx) => {
     await tx.proposal.update({
       where: { id: proposalId },
@@ -680,6 +711,10 @@ export async function registerEmissionErrorAction(
       data: {
         status: "DEVUELTA",
         currentStateStartedAt: new Date(),
+        // Obs 16: registra el N° de póliza generado (erróneo) y la fecha de
+        // recepción aun cuando la emisión vino con error.
+        policyNumberGenerated: data.policyNumber.trim(),
+        policyReceptionDate: parseDate(data.receptionDate),
         emissionErrorReason: data.reason,
         emissionErrorDetail: emptyToNull(data.detail),
       },
@@ -689,7 +724,7 @@ export async function registerEmissionErrorAction(
         organizationId: ctx.organizationId,
         proposalId,
         status: "DEVUELTA",
-        note: `Devuelta a la compañía · ${data.reason}${
+        note: `Devuelta a la compañía · Póliza N° ${data.policyNumber.trim()} · ${data.reason}${
           data.detail ? ` — ${data.detail}` : ""
         }`,
         changedById: ctx.userId,
@@ -701,7 +736,12 @@ export async function registerEmissionErrorAction(
         proposalId,
         action: "EMISSION_ERROR",
         summary: `Devuelta a la compañía por error de emisión: ${data.reason}`,
-        payload: { reason: data.reason, detail: data.detail },
+        payload: {
+          reason: data.reason,
+          detail: data.detail,
+          policyNumber: data.policyNumber.trim(),
+          receptionDate: data.receptionDate,
+        },
         userId: ctx.userId,
       },
     });
@@ -719,6 +759,211 @@ export async function registerEmissionErrorAction(
   revalidatePath("/propuestas");
   revalidatePath(`/propuestas/${proposalId}`);
   return { ok: true, id: proposalId };
+}
+
+/**
+ * Despacho de la póliza al contratante (obs 19-20). Cuando la póliza ya está
+ * recepcionada (EMITIDA / POR_DESPACHAR) ofrece dos caminos:
+ *  - enviar la póliza al contratante por email (mail tipo) con la póliza
+ *    adjunta + documentos seleccionados de la carátula, o
+ *  - marcarla como despachada sin enviar.
+ * En ambos casos la propuesta queda en estado DESPACHADA (fin del flujo).
+ */
+export async function dispatchPolicyToContratanteAction(
+  proposalId: string,
+  values: PolicyDispatchValues,
+): Promise<ActionResult> {
+  const parsed = policyDispatchSchema.safeParse(values);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Datos inválidos.",
+    };
+  }
+  const data = parsed.data;
+  const { ctx, db } = await requireOrgDb();
+
+  const proposal = await db.proposal.findFirst({
+    where: { id: proposalId },
+    select: {
+      id: true,
+      proposalNumber: true,
+      status: true,
+      policyNumberGenerated: true,
+      contratanteEmail: true,
+      client: { select: { name: true, email: true } },
+    },
+  });
+  if (!proposal) {
+    return { ok: false, error: "La propuesta no existe o no tienes acceso." };
+  }
+  if (proposal.status !== "EMITIDA" && proposal.status !== "POR_DESPACHAR") {
+    return {
+      ok: false,
+      error: "Solo se puede despachar una póliza emitida o por despachar.",
+    };
+  }
+
+  const org = await basePrisma.organization.findUnique({
+    where: { id: ctx.organizationId },
+    select: { name: true },
+  });
+  const orgName = org?.name ?? "Polizza";
+
+  if (data.send) {
+    const recipient =
+      data.toEmail.trim() ||
+      proposal.contratanteEmail?.trim() ||
+      proposal.client.email?.trim() ||
+      "";
+    if (!recipient) {
+      return {
+        ok: false,
+        error:
+          "No hay email del contratante. Indícalo o agrégalo en la ficha/propuesta.",
+      };
+    }
+
+    // Documentos: la póliza (tipo "Póliza") siempre + los seleccionados de la
+    // carátula. Los subidos al servidor se adjuntan; los de enlace externo se
+    // listan como links en el cuerpo.
+    const policyDocs = await db.document.findMany({
+      where: {
+        entityType: "PROPOSAL",
+        entityId: proposalId,
+        documentType: "Póliza",
+      },
+      select: { id: true, fileName: true, fileUrl: true, storageKey: true, mimeType: true },
+    });
+    const selected = data.documentIds.length
+      ? await db.document.findMany({
+          where: {
+            id: { in: data.documentIds },
+            entityType: "PROPOSAL",
+            entityId: proposalId,
+          },
+          select: { id: true, fileName: true, fileUrl: true, storageKey: true, mimeType: true },
+        })
+      : [];
+    // Une sin duplicar (la póliza puede venir también seleccionada).
+    const byId = new Map<string, (typeof policyDocs)[number]>();
+    for (const d of [...policyDocs, ...selected]) byId.set(d.id, d);
+    const allDocs = Array.from(byId.values());
+
+    const attachments: { filename: string; content: Buffer; contentType?: string }[] = [];
+    const linkDocs: { fileName: string; fileUrl: string }[] = [];
+    for (const d of allDocs) {
+      if (d.storageKey) {
+        const bytes = await readStoredFile(d.storageKey);
+        if (bytes) {
+          attachments.push({
+            filename: d.fileName,
+            content: bytes,
+            contentType: d.mimeType ?? undefined,
+          });
+          continue;
+        }
+      }
+      if (d.fileUrl) linkDocs.push({ fileName: d.fileName, fileUrl: d.fileUrl });
+    }
+
+    const subject =
+      data.subject.trim() ||
+      `Póliza N° ${proposal.policyNumberGenerated ?? proposal.proposalNumber} · ${orgName}`;
+    const bodyText =
+      data.body.trim() ||
+      `Estimado(a) ${proposal.client.name},\n\nAdjuntamos su póliza${
+        proposal.policyNumberGenerated
+          ? ` N° ${proposal.policyNumberGenerated}`
+          : ""
+      }. Ante cualquier consulta, quedamos a su disposición.\n\nLe saluda atentamente,\n${orgName}`;
+    const docsHtml =
+      linkDocs.length > 0
+        ? `<p style="font-size:13px;margin-top:12px"><b>Documentos por enlace:</b></p><ul style="font-size:13px">${linkDocs
+            .map(
+              (d) =>
+                `<li><a href="${d.fileUrl}" target="_blank">${d.fileName}</a></li>`,
+            )
+            .join("")}</ul>`
+        : "";
+    const html = emailLayout(
+      subject,
+      bodyText
+        .split("\n")
+        .map((l) => `<div>${escapeHtmlLite(l) || "&nbsp;"}</div>`)
+        .join("") + docsHtml,
+    );
+
+    try {
+      await sendEmail({
+        to: recipient,
+        subject,
+        text:
+          bodyText +
+          (linkDocs.length > 0
+            ? "\n\nDocumentos por enlace:\n" +
+              linkDocs.map((d) => `- ${d.fileName}: ${d.fileUrl}`).join("\n")
+            : ""),
+        html,
+        attachments,
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "Error al enviar el email.",
+      };
+    }
+  }
+
+  await db.$transaction(async (tx) => {
+    await tx.proposal.update({
+      where: { id: proposalId },
+      data: { status: "DESPACHADA", currentStateStartedAt: new Date() },
+    });
+    await tx.proposalStatusHistory.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        status: "DESPACHADA",
+        note: data.send
+          ? "Póliza despachada al contratante por email"
+          : "Marcada como despachada",
+        changedById: ctx.userId,
+      },
+    });
+    await tx.proposalLog.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        action: "POLICY_DISPATCHED",
+        summary: data.send
+          ? "Póliza enviada al contratante"
+          : "Póliza marcada como despachada",
+        userId: ctx.userId,
+      },
+    });
+  });
+
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "PROPOSAL",
+    entityId: proposalId,
+    action: "policy_dispatched",
+    summary: `Propuesta ${proposal.proposalNumber}: póliza despachada`,
+    userId: ctx.userId,
+  });
+
+  revalidatePath("/propuestas");
+  revalidatePath(`/propuestas/${proposalId}`);
+  return { ok: true, id: proposalId };
+}
+
+function escapeHtmlLite(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export type SendReservationResult =

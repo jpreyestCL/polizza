@@ -55,20 +55,43 @@ export type CoverageCalc = {
   commissionAmount: number;
 };
 
+/**
+ * Resuelve la prima de un eje (afecta o exenta) según la regla del negocio
+ * (obs 5 y 6):
+ *  - `manualPremium` (checkbox "cálculo manual"): siempre se usa la prima
+ *    ingresada a mano, ignorando la tasa.
+ *  - Si hay tasa (> 0): se calcula prima = monto × tasa / 1000 (‰).
+ *  - Si NO hay tasa: se permite ingresar la prima manualmente (fallback).
+ */
+export function resolvePremium(
+  manualPremium: boolean,
+  taxRateRaw: string,
+  premiumRaw: string,
+  insured: number,
+): number {
+  if (manualPremium) return Number(premiumRaw) || 0;
+  const tax = Number(taxRateRaw) || 0;
+  if (tax > 0) return (insured * tax) / 1000;
+  return Number(premiumRaw) || 0;
+}
+
 export function computeCoverage(
   values: ItemCoverageValues,
   ivaRate = 0.19,
 ): CoverageCalc {
   const insured = Number(values.insuredAmount) || 0;
-  let premiumAffect = Number(values.premiumAffect) || 0;
-  let premiumExempt = Number(values.premiumExempt) || 0;
-  if (!values.manualPremium) {
-    const taxAffect = Number(values.taxRateAffect) || 0;
-    const taxExempt = Number(values.taxRateExempt) || 0;
-    // Tasas expresadas en por mil (‰) según convención del mercado chileno.
-    premiumAffect = (insured * taxAffect) / 1000;
-    premiumExempt = (insured * taxExempt) / 1000;
-  }
+  const premiumAffect = resolvePremium(
+    values.manualPremium,
+    values.taxRateAffect,
+    values.premiumAffect,
+    insured,
+  );
+  const premiumExempt = resolvePremium(
+    values.manualPremium,
+    values.taxRateExempt,
+    values.premiumExempt,
+    insured,
+  );
   const premiumNet = premiumAffect + premiumExempt;
   const ivaAmount = values.affectedByIva ? premiumAffect * ivaRate : 0;
   const premiumGross = premiumNet + ivaAmount;

@@ -7,6 +7,7 @@ import {
   itemCoverageSchema,
   itemCoveragesBulkSchema,
   computeCoverage,
+  resolvePremium,
   type ItemCoverageValues,
   type ItemCoveragesBulkValues,
 } from "./schemas";
@@ -59,16 +60,24 @@ export async function upsertItemCoverageAction(
     taxRateAffect: toDecimal(parsed.data.taxRateAffect),
     taxRateExempt: toDecimal(parsed.data.taxRateExempt),
     premiumAffect: toDecimal(
-      parsed.data.manualPremium
-        ? parsed.data.premiumAffect
-        : String(Number(parsed.data.insuredAmount) *
-            (Number(parsed.data.taxRateAffect) || 0) / 1000),
+      String(
+        resolvePremium(
+          parsed.data.manualPremium,
+          parsed.data.taxRateAffect,
+          parsed.data.premiumAffect,
+          Number(parsed.data.insuredAmount) || 0,
+        ),
+      ),
     ),
     premiumExempt: toDecimal(
-      parsed.data.manualPremium
-        ? parsed.data.premiumExempt
-        : String(Number(parsed.data.insuredAmount) *
-            (Number(parsed.data.taxRateExempt) || 0) / 1000),
+      String(
+        resolvePremium(
+          parsed.data.manualPremium,
+          parsed.data.taxRateExempt,
+          parsed.data.premiumExempt,
+          Number(parsed.data.insuredAmount) || 0,
+        ),
+      ),
     ),
     premiumNet: toDecimal(calc.premiumNet),
     ivaAmount: toDecimal(calc.ivaAmount),
@@ -115,14 +124,10 @@ function buildCoverageData(
     taxRateAffect: toDecimal(v.taxRateAffect),
     taxRateExempt: toDecimal(v.taxRateExempt),
     premiumAffect: toDecimal(
-      v.manualPremium
-        ? v.premiumAffect
-        : String((insured * (Number(v.taxRateAffect) || 0)) / 1000),
+      String(resolvePremium(v.manualPremium, v.taxRateAffect, v.premiumAffect, insured)),
     ),
     premiumExempt: toDecimal(
-      v.manualPremium
-        ? v.premiumExempt
-        : String((insured * (Number(v.taxRateExempt) || 0)) / 1000),
+      String(resolvePremium(v.manualPremium, v.taxRateExempt, v.premiumExempt, insured)),
     ),
     premiumNet: toDecimal(calc.premiumNet),
     ivaAmount: toDecimal(calc.ivaAmount),

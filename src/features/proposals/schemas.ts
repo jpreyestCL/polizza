@@ -119,9 +119,16 @@ export const proposalFormSchema = z.object({
   currency: z.enum(CURRENCIES),
   startDate: optionalString,
   endDate: optionalString,
+  startTime: optionalString, // hora de inicio de vigencia "HH:mm" (obs 10)
+  endTime: optionalString, // hora de fin de vigencia "HH:mm" (obs 10)
   sentAt: optionalString, // fecha envío a la cía
   recipientEmail: optionalString,
   recipientContactId: optionalString,
+  // Contacto del contratante a nivel propuesta (obs 4 y 12): default desde la
+  // ficha del cliente, editable por el corredor; el PDF usa estos datos.
+  contratanteEmail: optionalString,
+  contratantePhone: optionalString,
+  contratanteCelular: optionalString,
   quotationId: optionalString,
   quotationNumberRef: optionalString,
   previousPolicyId: optionalString,
@@ -261,6 +268,10 @@ export const emissionErrorSchema = z.object({
   reason: z.enum(EMISSION_ERROR_REASONS, {
     errorMap: () => ({ message: "Selecciona un motivo" }),
   }),
+  // Obs 16: al recibir la póliza con error también se solicita el número de
+  // póliza generado por la compañía y la fecha de recepción.
+  policyNumber: z.string().trim().min(1, "Número de póliza generado requerido"),
+  receptionDate: z.string().trim().min(1, "Fecha de recepción requerida"),
   detail: z.string().trim().max(1000).default(""),
 });
 export type EmissionErrorValues = z.infer<typeof emissionErrorSchema>;
@@ -272,3 +283,18 @@ export const statusChangeSchema = z.object({
 });
 
 export type StatusChangeValues = z.infer<typeof statusChangeSchema>;
+
+/**
+ * Despacho de la póliza al contratante (obs 19-20). `send=true` genera un mail
+ * tipo con la póliza adjunta + documentos seleccionados de la carátula;
+ * `send=false` solo marca la propuesta como Despachada.
+ */
+export const policyDispatchSchema = z.object({
+  send: z.boolean().default(true),
+  toEmail: z.string().trim().default(""),
+  subject: z.string().trim().max(200).default(""),
+  body: z.string().trim().max(5000).default(""),
+  documentIds: z.array(z.string()).default([]),
+});
+
+export type PolicyDispatchValues = z.infer<typeof policyDispatchSchema>;

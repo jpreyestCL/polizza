@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Check, Loader2, Search, TriangleAlert } from "lucide-react";
+import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { REGIONS } from "@/lib/regions-communes";
 import { formatRut, isValidRut } from "@/lib/rut";
 import { roleLabel } from "@/lib/roles";
@@ -58,8 +58,12 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 type EmailCheck =
   | { state: "idle" }
   | { state: "loading" }
+  | { state: "invalid" }
   | { state: "free" }
   | { state: "taken"; name: string | null };
+
+/** Validación de formato de correo (RFC simplificado, suficiente para UI). */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ClientForm({
   mode,
@@ -90,6 +94,11 @@ export function ClientForm({
     const email = form.getValues("email").trim();
     if (!email) {
       setEmailCheck({ state: "idle" });
+      return;
+    }
+    // Validación de formato antes de consultar al servidor.
+    if (!EMAIL_RE.test(email)) {
+      setEmailCheck({ state: "invalid" });
       return;
     }
     setEmailCheck({ state: "loading" });
@@ -340,22 +349,24 @@ export function ClientForm({
                           field.onChange(event);
                           setEmailCheck({ state: "idle" });
                         }}
+                        onBlur={() => {
+                          field.onBlur();
+                          void verifyEmail();
+                        }}
                       />
                     </FormControl>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={verifyEmail}
-                      disabled={emailCheck.state === "loading"}
-                    >
-                      {emailCheck.state === "loading" ? (
+                    {emailCheck.state === "loading" && (
+                      <span className="flex items-center px-2 text-muted-foreground">
                         <Loader2 className="animate-spin" />
-                      ) : (
-                        <Search />
-                      )}
-                      Verificar
-                    </Button>
+                      </span>
+                    )}
                   </div>
+                  {emailCheck.state === "invalid" && (
+                    <p className="flex items-center gap-1.5 text-xs text-destructive">
+                      <TriangleAlert className="size-3.5" />
+                      El correo no tiene un formato válido.
+                    </p>
+                  )}
                   {emailCheck.state === "free" && (
                     <p className="flex items-center gap-1.5 text-xs text-success">
                       <Check className="size-3.5" />
@@ -472,6 +483,19 @@ export function ClientForm({
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="city"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Ciudad</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}

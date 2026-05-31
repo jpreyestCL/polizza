@@ -405,11 +405,11 @@ export function ItemCoveragesDialog({
                             type="number"
                             step="0.01"
                             value={
-                              row.manualPremium
+                              affectIsManual(row)
                                 ? row.premiumAffect
                                 : fmtNum(premiumAffectOf(row))
                             }
-                            disabled={!row.manualPremium}
+                            disabled={!affectIsManual(row)}
                             onChange={(e) =>
                               patchRow(idx, { premiumAffect: e.target.value })
                             }
@@ -421,11 +421,11 @@ export function ItemCoveragesDialog({
                             type="number"
                             step="0.01"
                             value={
-                              row.manualPremium
+                              exemptIsManual(row)
                                 ? row.premiumExempt
                                 : fmtNum(premiumExemptOf(row))
                             }
-                            disabled={!row.manualPremium}
+                            disabled={!exemptIsManual(row)}
                             onChange={(e) =>
                               patchRow(idx, { premiumExempt: e.target.value })
                             }
@@ -803,7 +803,9 @@ function CoverageFormDialog({
                   type="number"
                   step="0.01"
                   value={values.premiumAffect}
-                  disabled={!values.manualPremium}
+                  disabled={
+                    !values.manualPremium && Number(values.taxRateAffect) > 0
+                  }
                   onChange={(e) =>
                     setValues({ ...values, premiumAffect: e.target.value })
                   }
@@ -815,7 +817,9 @@ function CoverageFormDialog({
                   type="number"
                   step="0.01"
                   value={values.premiumExempt}
-                  disabled={!values.manualPremium}
+                  disabled={
+                    !values.manualPremium && Number(values.taxRateExempt) > 0
+                  }
                   onChange={(e) =>
                     setValues({ ...values, premiumExempt: e.target.value })
                   }
@@ -886,15 +890,27 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-/** Prima afecta calculada de una fila (para mostrar cuando no es manual). */
+/**
+ * La prima afecta es editable cuando se marcó "cálculo manual" (obs 6) o
+ * cuando no se ingresó tasa afecta (obs 5: si no hay tasa se ingresa a mano).
+ */
+function affectIsManual(row: ItemCoverageRowValues): boolean {
+  return row.manualPremium || !(Number(row.taxRateAffect) > 0);
+}
+
+function exemptIsManual(row: ItemCoverageRowValues): boolean {
+  return row.manualPremium || !(Number(row.taxRateExempt) > 0);
+}
+
+/** Prima afecta calculada de una fila (para mostrar cuando se deriva de la tasa). */
 function premiumAffectOf(row: ItemCoverageRowValues): number {
-  if (row.manualPremium) return Number(row.premiumAffect) || 0;
+  if (affectIsManual(row)) return Number(row.premiumAffect) || 0;
   const insured = Number(row.insuredAmount) || 0;
   return (insured * (Number(row.taxRateAffect) || 0)) / 1000;
 }
 
 function premiumExemptOf(row: ItemCoverageRowValues): number {
-  if (row.manualPremium) return Number(row.premiumExempt) || 0;
+  if (exemptIsManual(row)) return Number(row.premiumExempt) || 0;
   const insured = Number(row.insuredAmount) || 0;
   return (insured * (Number(row.taxRateExempt) || 0)) / 1000;
 }
