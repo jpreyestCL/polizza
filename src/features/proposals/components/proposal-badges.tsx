@@ -15,10 +15,7 @@ const STATUS_VARIANT: Record<ProposalStatusValue, BadgeVariant> = {
   POR_ENVIAR: "warning",
   ENVIADA_COMPANIA: "default",
   DEVUELTA: "warning",
-  EMITIDA: "success",
-  POR_DESPACHAR: "default",
-  DESPACHADA: "success",
-  RECHAZADA: "destructive",
+  POR_DESPACHAR: "success",
 };
 
 export function ProposalStatusBadge({ status }: { status: string }) {

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Check, Loader2, TriangleAlert } from "lucide-react";
+import { Loader2, TriangleAlert } from "lucide-react";
 import { REGIONS } from "@/lib/regions-communes";
 import { formatRut, isValidRut } from "@/lib/rut";
 import { roleLabel } from "@/lib/roles";
@@ -15,7 +15,6 @@ import {
   CLIENT_STATUSES,
 } from "../schemas";
 import {
-  checkClientEmailAction,
   createClientAction,
   updateClientAction,
   type ActionResult,
@@ -55,12 +54,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-type EmailCheck =
-  | { state: "idle" }
-  | { state: "loading" }
-  | { state: "invalid" }
-  | { state: "free" }
-  | { state: "taken"; name: string | null };
+type EmailCheck = { state: "idle" } | { state: "invalid" };
 
 /** Validación de formato de correo (RFC simplificado, suficiente para UI). */
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -90,24 +84,15 @@ export function ClientForm({
   const region = form.watch("region");
   const communes = REGIONS.find((r) => r.name === region)?.communes ?? [];
 
-  async function verifyEmail() {
-    const email = form.getValues("email").trim();
-    if (!email) {
+  // Obs 1: valida automáticamente solo el FORMATO del correo mientras se
+  // ingresa (sin botón, sin consultar duplicados en el servidor).
+  function validateEmailFormat(value: string) {
+    const email = value.trim();
+    if (!email || EMAIL_RE.test(email)) {
       setEmailCheck({ state: "idle" });
       return;
     }
-    // Validación de formato antes de consultar al servidor.
-    if (!EMAIL_RE.test(email)) {
-      setEmailCheck({ state: "invalid" });
-      return;
-    }
-    setEmailCheck({ state: "loading" });
-    const result = await checkClientEmailAction(email, clientId);
-    setEmailCheck(
-      result.exists
-        ? { state: "taken", name: result.clientName }
-        : { state: "free" },
-    );
+    setEmailCheck({ state: "invalid" });
   }
 
   async function onSubmit(values: ClientFormValues) {
@@ -340,44 +325,24 @@ export function ClientForm({
               render={({ field }) => (
                 <FormItem className="sm:col-span-2">
                   <FormLabel>Correo</FormLabel>
-                  <div className="flex gap-2">
-                    <FormControl>
-                      <Input
-                        type="email"
-                        {...field}
-                        onChange={(event) => {
-                          field.onChange(event);
-                          setEmailCheck({ state: "idle" });
-                        }}
-                        onBlur={() => {
-                          field.onBlur();
-                          void verifyEmail();
-                        }}
-                      />
-                    </FormControl>
-                    {emailCheck.state === "loading" && (
-                      <span className="flex items-center px-2 text-muted-foreground">
-                        <Loader2 className="animate-spin" />
-                      </span>
-                    )}
-                  </div>
+                  <FormControl>
+                    <Input
+                      type="email"
+                      {...field}
+                      onChange={(event) => {
+                        field.onChange(event);
+                        validateEmailFormat(event.target.value);
+                      }}
+                      onBlur={() => {
+                        field.onBlur();
+                        validateEmailFormat(field.value);
+                      }}
+                    />
+                  </FormControl>
                   {emailCheck.state === "invalid" && (
                     <p className="flex items-center gap-1.5 text-xs text-destructive">
                       <TriangleAlert className="size-3.5" />
                       El correo no tiene un formato válido.
-                    </p>
-                  )}
-                  {emailCheck.state === "free" && (
-                    <p className="flex items-center gap-1.5 text-xs text-success">
-                      <Check className="size-3.5" />
-                      No hay otro cliente con ese correo.
-                    </p>
-                  )}
-                  {emailCheck.state === "taken" && (
-                    <p className="flex items-center gap-1.5 text-xs text-destructive">
-                      <TriangleAlert className="size-3.5" />
-                      Ya existe un cliente con ese correo
-                      {emailCheck.name ? `: ${emailCheck.name}` : ""}.
                     </p>
                   )}
                   <FormMessage />

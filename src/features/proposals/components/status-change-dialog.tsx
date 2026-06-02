@@ -108,7 +108,11 @@ export function StatusChangeDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {PROPOSAL_STATUSES.map((s) => (
+                  {PROPOSAL_STATUSES.filter(
+                    // "Por despachar" se asigna automáticamente al recibir la
+                    // póliza emitida; no es un destino manual (review #2).
+                    (s) => s !== "POR_DESPACHAR",
+                  ).map((s) => (
                     <SelectItem key={s} value={s}>
                       {STATUS_LABELS[s]}
                     </SelectItem>

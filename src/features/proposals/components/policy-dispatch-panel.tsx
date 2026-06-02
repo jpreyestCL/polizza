@@ -14,9 +14,10 @@ import { Textarea } from "@/components/ui/textarea";
 type DocOption = { id: string; fileName: string };
 
 /**
- * Despacho de la póliza al contratante (obs 19-20). Visible cuando la póliza
- * ya está recepcionada (EMITIDA o POR_DESPACHAR). Permite enviar la póliza por
- * email con documentos de la carátula, o marcarla como despachada.
+ * Despacho de la póliza al contratante (obs 9, 19-20). Visible cuando la póliza
+ * ya está recepcionada (POR_DESPACHAR). Permite enviar la póliza por email con
+ * documentos de la carátula, o marcarla como despachada. Al despachar se crea
+ * la póliza en la cartera y la propuesta sale del flujo de propuestas.
  */
 export function PolicyDispatchPanel({
   proposalId,
@@ -37,7 +38,7 @@ export function PolicyDispatchPanel({
   const [selected, setSelected] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  if (status !== "EMITIDA" && status !== "POR_DESPACHAR") return null;
+  if (status !== "POR_DESPACHAR") return null;
 
   function toggleDoc(id: string) {
     setSelected((prev) =>

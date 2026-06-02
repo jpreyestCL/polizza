@@ -344,24 +344,6 @@ export async function deleteClientAction(id: string): Promise<ActionResult> {
   return { ok: true, id };
 }
 
-/** Verifica si un correo ya está usado por otro cliente de la corredora. */
-export async function checkClientEmailAction(
-  email: string,
-  excludeId?: string,
-): Promise<{ exists: boolean; clientName: string | null }> {
-  const trimmed = email.trim();
-  if (!trimmed) return { exists: false, clientName: null };
-  const { db } = await requireOrgDb();
-  const match = await db.client.findFirst({
-    where: {
-      email: { equals: trimmed, mode: "insensitive" },
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-    },
-    select: { name: true },
-  });
-  return { exists: Boolean(match), clientName: match?.name ?? null };
-}
-
 /** Registra una gestión (correo, WhatsApp, llamada o nota) en la bitácora. */
 export async function logClientInteractionAction(
   clientId: string,

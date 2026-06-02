@@ -22,6 +22,7 @@ export type ProposalListItem = {
   companyId: string | null;
   lineId: string | null;
   assignedUserId: string | null;
+  policyNumberGenerated: string | null;
   currentStateStartedAt: Date;
   createdAt: Date;
   client: { id: string; name: string };
@@ -36,7 +37,12 @@ export async function listProposals(
   holidays: Set<string>,
   page: PageParams,
 ): Promise<Paginated<ProposalListItem>> {
-  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  // Excluye las propuestas ya despachadas (con póliza vinculada): viven en la
+  // sección "Pólizas", no en el flujo de propuestas (obs 9).
+  const where = {
+    ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
+    policies: { none: {} },
+  };
   const [rows, total] = await Promise.all([
     db.proposal.findMany({
       where,
@@ -53,6 +59,7 @@ export async function listProposals(
         companyId: true,
         lineId: true,
         assignedUserId: true,
+        policyNumberGenerated: true,
         currentStateStartedAt: true,
         createdAt: true,
         client: { select: { id: true, name: true } },
@@ -83,7 +90,10 @@ export async function listAllProposalsForKanban(
   db: Db,
   holidays: Set<string>,
 ): Promise<ProposalListItem[]> {
-  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  const where = {
+    ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
+    policies: { none: {} },
+  };
   const rows = await db.proposal.findMany({
     where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
@@ -99,6 +109,7 @@ export async function listAllProposalsForKanban(
       companyId: true,
       lineId: true,
       assignedUserId: true,
+      policyNumberGenerated: true,
       currentStateStartedAt: true,
       createdAt: true,
       client: { select: { id: true, name: true } },
@@ -131,11 +142,20 @@ export async function getProposalDetail(db: Db, id: string) {
       },
       branchType: { select: { id: true, name: true } },
       statusHistory: { orderBy: { createdAt: "desc" } },
+      // Póliza vinculada (si ya fue despachada): se usa para ocultar los
+      // paneles de recepción/despacho y mostrar el acceso a la cartera.
+      policies: {
+        select: { id: true, policyNumber: true },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+      },
     },
   });
   if (!proposal) return null;
+  const dispatchedPolicy = proposal.policies[0] ?? null;
   return {
     ...proposal,
+    dispatchedPolicy,
     pdfBytes: undefined, // No filtramos los bytes hacia el cliente.
     hasStoredPdf: Boolean(proposal.pdfBytes),
     premiumNet: proposal.premiumNet ? Number(proposal.premiumNet) : null,

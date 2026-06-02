@@ -61,6 +61,22 @@ export async function createPolicyAction(
     };
   }
 
+  // No crear una segunda póliza para una propuesta que ya tiene una vinculada
+  // (review #6): el despacho ya la crea automáticamente.
+  const linkedProposalId = emptyToNull(data.proposalId);
+  if (linkedProposalId) {
+    const existing = await db.policy.findFirst({
+      where: { proposalId: linkedProposalId },
+      select: { policyNumber: true },
+    });
+    if (existing) {
+      return {
+        ok: false,
+        error: `La propuesta ya tiene una póliza vinculada (N° ${existing.policyNumber}).`,
+      };
+    }
+  }
+
   try {
     const policy = await db.$transaction(async (tx) => {
       const created = await tx.policy.create({
@@ -131,16 +147,17 @@ export async function createPolicyAction(
             data: { policyId: created.id },
           });
         }
-        // Marcar la propuesta como emitida y registrar bitácora
+        // La propuesta queda vinculada a la póliza (sale del flujo de
+        // propuestas). Se mantiene en POR_DESPACHAR y se registra la bitácora.
         await tx.proposal.update({
           where: { id: proposalId },
-          data: { status: "EMITIDA" },
+          data: { status: "POR_DESPACHAR" },
         });
         await tx.proposalStatusHistory.create({
           data: {
             organizationId: ctx.organizationId,
             proposalId,
-            status: "EMITIDA",
+            status: "POR_DESPACHAR",
             note: `Convertida en póliza ${created.policyNumber}`,
             changedById: ctx.userId,
           },
