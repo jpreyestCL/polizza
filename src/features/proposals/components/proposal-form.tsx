@@ -179,17 +179,18 @@ export function ProposalForm({
     lastContratanteRef.current = current;
   }, [selectedClientId, form]);
 
-  // Resuelve el status del contratante (para la obligación de ficha activa).
+  // Resuelve el status del contratante (para la obligación de ficha activa) y
+  // precarga su contacto en la propuesta. Siempre consulta la ficha del cliente
+  // (obs 3): aunque el status ya sea conocido localmente, los datos de contacto
+  // email/teléfono/celular hay que traerlos del servidor para precargarlos.
   useEffect(() => {
     if (!selectedClientId) {
       setContratanteStatus(null);
       return;
     }
     const known = localClients.find((c) => c.id === selectedClientId);
-    if (known?.status) {
-      setContratanteStatus(known.status);
-      return;
-    }
+    if (known?.status) setContratanteStatus(known.status);
+
     let cancelled = false;
     fetch(`/api/clients/${selectedClientId}/status`)
       .then((r) => (r.ok ? r.json() : { status: null }))
@@ -209,7 +210,7 @@ export function ProposalForm({
               ),
             );
           }
-          // Obs 4: precarga el contacto del contratante desde la ficha si los
+          // Obs 3: precarga el contacto del contratante desde la ficha si los
           // campos de la propuesta están vacíos (el corredor puede editarlos).
           if (!form.getValues("contratanteEmail") && j.email) {
             form.setValue("contratanteEmail", j.email, { shouldDirty: false });
@@ -225,7 +226,7 @@ export function ProposalForm({
         },
       )
       .catch(() => {
-        if (!cancelled) setContratanteStatus(null);
+        if (!cancelled && !known?.status) setContratanteStatus(null);
       });
     return () => {
       cancelled = true;
@@ -584,6 +585,51 @@ export function ProposalForm({
           />
         )}
 
+        <Section
+          title="Contacto del contratante (para la propuesta)"
+          description="Se precargan desde la ficha del contratante, pero puedes editarlos: estos son los datos que aparecerán en el PDF de la propuesta (por ejemplo, los de la corredora como contacto frente a la compañía)."
+        >
+          <FormField
+            control={form.control}
+            name="contratanteEmail"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Email contratante</FormLabel>
+                <FormControl>
+                  <Input type="email" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="contratantePhone"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Teléfono contratante</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="contratanteCelular"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Celular contratante</FormLabel>
+                <FormControl>
+                  <Input {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </Section>
+
         <Section title="Compañía, ramo y producto">
           <FormField
             control={form.control}
@@ -681,7 +727,10 @@ export function ProposalForm({
           />
         </Section>
 
-        <Section title="Vigencia y moneda">
+        <Section
+          title="Vigencia y moneda"
+          description="La vigencia rige por defecto a las 12:00 hrs; la hora se muestra solo en el PDF de la propuesta."
+        >
           <FormField
             control={form.control}
             name="startDate"
@@ -690,19 +739,6 @@ export function ProposalForm({
                 <FormLabel>Inicio de vigencia</FormLabel>
                 <FormControl>
                   <Input type="date" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="startTime"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Hora inicio</FormLabel>
-                <FormControl>
-                  <Input type="time" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -727,19 +763,6 @@ export function ProposalForm({
                 </div>
                 <FormControl>
                   <Input type="date" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="endTime"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Hora fin</FormLabel>
-                <FormControl>
-                  <Input type="time" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -876,51 +899,6 @@ export function ProposalForm({
                 <FormLabel>Email destinatario</FormLabel>
                 <FormControl>
                   <Input type="email" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </Section>
-
-        <Section
-          title="Contacto del contratante (para la propuesta)"
-          description="Se precargan desde la ficha del contratante, pero puedes editarlos: estos son los datos que aparecerán en el PDF de la propuesta (por ejemplo, los de la corredora como contacto frente a la compañía)."
-        >
-          <FormField
-            control={form.control}
-            name="contratanteEmail"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Email contratante</FormLabel>
-                <FormControl>
-                  <Input type="email" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="contratantePhone"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Teléfono contratante</FormLabel>
-                <FormControl>
-                  <Input {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="contratanteCelular"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Celular contratante</FormLabel>
-                <FormControl>
-                  <Input {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

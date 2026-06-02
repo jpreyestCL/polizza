@@ -40,6 +40,14 @@ export function ProposalsKanban({
 
   async function move(item: Dragged, to: ProposalStatusValue) {
     if (item.status === to) return;
+    // "Por despachar" se asigna al registrar la recepción de la póliza, no por
+    // arrastre manual (review #2).
+    if (to === "POR_DESPACHAR") {
+      toast.error(
+        "“Por despachar” se asigna al registrar la recepción de la póliza emitida, no arrastrando la tarjeta.",
+      );
+      return;
+    }
     if (to === "DEVUELTA") {
       setReturnDialog({ proposalId: item.id, currentStatus: item.status });
       return;
@@ -109,6 +117,11 @@ export function ProposalsKanban({
                         days={proposal.daysInState}
                       />
                     </div>
+                    {proposal.policyNumberGenerated && (
+                      <p className="mt-0.5 text-xs font-medium text-success">
+                        Póliza N° {proposal.policyNumberGenerated}
+                      </p>
+                    )}
                     <p className="mt-1 truncate text-sm">
                       {proposal.client.name}
                     </p>

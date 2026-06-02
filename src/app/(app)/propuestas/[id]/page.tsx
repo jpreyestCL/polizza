@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil, ShieldCheck } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
 import { basePrisma } from "@/server/db";
 import {
@@ -174,16 +174,6 @@ export default async function PropuestaDetailPage({
             currentStatus={proposal.status}
             returnReasons={returnReasons}
           />
-          {["EMITIDA", "POR_DESPACHAR", "DESPACHADA"].includes(
-            proposal.status,
-          ) && (
-            <Button asChild variant="outline">
-              <Link href={`/polizas/nuevo?fromProposal=${id}`}>
-                <ShieldCheck />
-                Convertir a póliza
-              </Link>
-            </Button>
-          )}
           {!locked && (
             <Button asChild variant="outline">
               <Link href={`/propuestas/${id}/editar`}>
@@ -217,19 +207,38 @@ export default async function PropuestaDetailPage({
         timezone={ctx.organizationTimezone}
       />
 
-      <PolicyReceptionPanel proposalId={id} status={proposal.status} />
+      {proposal.dispatchedPolicy ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4">
+          <div>
+            <h2 className="text-base font-semibold">Póliza despachada</h2>
+            <p className="text-sm text-muted-foreground">
+              Esta propuesta ya fue despachada y vive en la cartera como póliza
+              N° {proposal.dispatchedPolicy.policyNumber}.
+            </p>
+          </div>
+          <Button asChild variant="outline">
+            <Link href={`/polizas/${proposal.dispatchedPolicy.id}`}>
+              Ver póliza
+            </Link>
+          </Button>
+        </div>
+      ) : (
+        <>
+          <PolicyReceptionPanel proposalId={id} status={proposal.status} />
 
-      <PolicyDispatchPanel
-        proposalId={id}
-        status={proposal.status}
-        defaultEmail={
-          proposal.contratanteEmail ?? proposal.client?.email ?? null
-        }
-        documents={documents.map((d) => ({
-          id: d.id,
-          fileName: d.fileName,
-        }))}
-      />
+          <PolicyDispatchPanel
+            proposalId={id}
+            status={proposal.status}
+            defaultEmail={
+              proposal.contratanteEmail ?? proposal.client?.email ?? null
+            }
+            documents={documents.map((d) => ({
+              id: d.id,
+              fileName: d.fileName,
+            }))}
+          />
+        </>
+      )}
 
       <ProposalItemsPanel
         proposalId={id}

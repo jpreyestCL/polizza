@@ -337,6 +337,16 @@ export async function changeProposalStatusAction(
   if (proposal.status === data.status) {
     return { ok: false, error: "La propuesta ya está en ese estado." };
   }
+  // "Por despachar" se asigna automáticamente al registrar la recepción de la
+  // póliza emitida; no es un destino manual (review #2). Evita que un arrastre
+  // en el kanban deje la propuesta sin N° de póliza y atascada en el flujo.
+  if (data.status === "POR_DESPACHAR") {
+    return {
+      ok: false,
+      error:
+        "El estado “Por despachar” se asigna al registrar la recepción de la póliza emitida, no manualmente.",
+    };
+  }
 
   let returnReasonId: string | null = null;
   if (data.status === "DEVUELTA") {
@@ -582,8 +592,9 @@ export async function assignProposalNumber(
 
 /**
  * Registra la recepción de la póliza emitida correctamente por la compañía:
- * Nº de póliza, fecha de emisión y de recepción. La propuesta pasa a EMITIDA
- * ("póliza"). El documento PDF de la póliza se adjunta aparte (Documentos).
+ * Nº de póliza, fecha de emisión y de recepción. La propuesta pasa a
+ * POR_DESPACHAR (obs 8). El documento PDF de la póliza se adjunta aparte
+ * (Documentos).
  */
 export async function registerPolicyEmissionAction(
   proposalId: string,
@@ -621,7 +632,7 @@ export async function registerPolicyEmissionAction(
     return {
       ok: false,
       error:
-        "Debes subir el PDF de la póliza (documento tipo “Póliza” en la pestaña Documentos) antes de marcarla como Emitida.",
+        "Debes subir el PDF de la póliza (documento tipo “Póliza” en la pestaña Documentos) antes de dejarla por despachar.",
     };
   }
 
@@ -629,7 +640,7 @@ export async function registerPolicyEmissionAction(
     await tx.proposal.update({
       where: { id: proposalId },
       data: {
-        status: "EMITIDA",
+        status: "POR_DESPACHAR",
         currentStateStartedAt: new Date(),
         policyNumberGenerated: data.policyNumber.trim(),
         policyEmissionDate: parseDate(data.emissionDate),
@@ -642,7 +653,7 @@ export async function registerPolicyEmissionAction(
       data: {
         organizationId: ctx.organizationId,
         proposalId,
-        status: "EMITIDA",
+        status: "POR_DESPACHAR",
         note:
           emptyToNull(data.note) ??
           `Póliza N° ${data.policyNumber.trim()} emitida por la compañía`,
@@ -762,12 +773,14 @@ export async function registerEmissionErrorAction(
 }
 
 /**
- * Despacho de la póliza al contratante (obs 19-20). Cuando la póliza ya está
- * recepcionada (EMITIDA / POR_DESPACHAR) ofrece dos caminos:
+ * Despacho de la póliza al contratante (obs 9, 19-20). Cuando la póliza está
+ * recepcionada (POR_DESPACHAR) ofrece dos caminos:
  *  - enviar la póliza al contratante por email (mail tipo) con la póliza
  *    adjunta + documentos seleccionados de la carátula, o
  *  - marcarla como despachada sin enviar.
- * En ambos casos la propuesta queda en estado DESPACHADA (fin del flujo).
+ * En ambos casos se crea automáticamente la Policy en la cartera (usando los
+ * datos de la propuesta) y la propuesta sale del flujo de propuestas para
+ * vivir en la sección "Pólizas".
  */
 export async function dispatchPolicyToContratanteAction(
   proposalId: string,
@@ -789,6 +802,15 @@ export async function dispatchPolicyToContratanteAction(
       id: true,
       proposalNumber: true,
       status: true,
+      clientId: true,
+      companyId: true,
+      lineId: true,
+      branchId: true,
+      currency: true,
+      startDate: true,
+      endDate: true,
+      assignedUserId: true,
+      premiumNet: true,
       policyNumberGenerated: true,
       contratanteEmail: true,
       client: { select: { name: true, email: true } },
@@ -797,32 +819,196 @@ export async function dispatchPolicyToContratanteAction(
   if (!proposal) {
     return { ok: false, error: "La propuesta no existe o no tienes acceso." };
   }
-  if (proposal.status !== "EMITIDA" && proposal.status !== "POR_DESPACHAR") {
+  if (proposal.status !== "POR_DESPACHAR") {
     return {
       ok: false,
-      error: "Solo se puede despachar una póliza emitida o por despachar.",
+      error: "Solo se puede despachar una póliza que está por despachar.",
+    };
+  }
+  if (!proposal.policyNumberGenerated) {
+    return {
+      ok: false,
+      error:
+        "Falta el N° de póliza generado. Registra la recepción de la póliza antes de despacharla.",
+    };
+  }
+  const policyNumber = proposal.policyNumberGenerated.trim();
+
+  // Guarda de re-despacho: si la propuesta ya tiene una póliza en la cartera no
+  // se vuelve a crear ni se reenvía el correo (review #4/#7).
+  const alreadyDispatched = await db.policy.findFirst({
+    where: { proposalId },
+    select: { id: true },
+  });
+  if (alreadyDispatched) {
+    return {
+      ok: false,
+      error: "Esta propuesta ya fue despachada y tiene una póliza en la cartera.",
     };
   }
 
-  const org = await basePrisma.organization.findUnique({
-    where: { id: ctx.organizationId },
-    select: { name: true },
-  });
-  const orgName = org?.name ?? "Polizza";
-
-  if (data.send) {
-    const recipient =
-      data.toEmail.trim() ||
+  // El email se valida acá pero se ENVÍA después de crear la póliza (review #3):
+  // así nunca le llega el correo al contratante si la creación de la póliza falla.
+  const recipient = data.send
+    ? data.toEmail.trim() ||
       proposal.contratanteEmail?.trim() ||
       proposal.client.email?.trim() ||
-      "";
-    if (!recipient) {
+      ""
+    : "";
+  if (data.send && !recipient) {
+    return {
+      ok: false,
+      error:
+        "No hay email del contratante. Indícalo o agrégalo en la ficha/propuesta.",
+    };
+  }
+
+  // Datos de ítems/coberturas para crear la póliza (mismo criterio que la
+  // antigua conversión manual en /polizas/nuevo). No se deduplican coberturas
+  // por nombre: cada ítem aporta las suyas con su monto (review #5).
+  const proposalItems = await db.proposalItem.findMany({
+    where: { proposalId },
+    orderBy: { order: "asc" },
+    include: {
+      branchType: { select: { name: true } },
+      coverages: { orderBy: { order: "asc" } },
+    },
+  });
+
+  const totalNet = proposalItems.reduce(
+    (sum, it) =>
+      sum +
+      it.coverages
+        .filter((c) => c.sumsToTotal)
+        .reduce((s, c) => s + (c.premiumNet ? Number(c.premiumNet) : 0), 0),
+    0,
+  );
+
+  let policyId: string;
+  try {
+    policyId = await db.$transaction(async (tx) => {
+      const policy = await tx.policy.create({
+        data: {
+          organizationId: ctx.organizationId,
+          clientId: proposal.clientId,
+          proposalId,
+          policyNumber,
+          companyId: proposal.companyId,
+          lineId: proposal.lineId,
+          branchId: proposal.branchId,
+          status: "VIGENTE",
+          premiumNet:
+            totalNet > 0 ? new Prisma.Decimal(totalNet) : proposal.premiumNet,
+          currency: proposal.currency,
+          startDate: proposal.startDate,
+          endDate: proposal.endDate,
+          assignedUserId: proposal.assignedUserId ?? ctx.userId,
+          createdById: ctx.userId,
+        },
+      });
+
+      const itemsData = proposalItems.map((it) => {
+        const itData = (it.data ?? {}) as Record<string, unknown>;
+        const summary =
+          it.identification ??
+          (typeof itData.patente === "string" ? itData.patente : null) ??
+          (typeof itData.direccion === "string" ? itData.direccion : null) ??
+          it.branchType.name;
+        const insuredAmount = it.coverages
+          .filter((c) => c.sumsToTotal)
+          .reduce((s, c) => s + (c.insuredAmount ? Number(c.insuredAmount) : 0), 0);
+        return {
+          organizationId: ctx.organizationId,
+          policyId: policy.id,
+          description: summary,
+          insuredAmount:
+            insuredAmount > 0 ? new Prisma.Decimal(insuredAmount) : null,
+          currency: proposal.currency,
+        };
+      });
+      if (itemsData.length > 0) {
+        await tx.policyItem.createMany({ data: itemsData });
+      }
+
+      const coveragesData = proposalItems.flatMap((it) =>
+        it.coverages.map((c) => ({
+          organizationId: ctx.organizationId,
+          policyId: policy.id,
+          name: c.name,
+          insuredAmount: c.insuredAmount,
+          currency: proposal.currency,
+        })),
+      );
+      if (coveragesData.length > 0) {
+        await tx.policyCoverage.createMany({ data: coveragesData });
+      }
+
+      await tx.policyStatusHistory.create({
+        data: {
+          organizationId: ctx.organizationId,
+          policyId: policy.id,
+          status: "VIGENTE",
+          note: `Póliza ${policy.policyNumber} despachada desde la propuesta ${proposal.proposalNumber}`,
+          changedById: ctx.userId,
+        },
+      });
+
+      // Plan de pago + cuotas de la propuesta → quedan vinculados a la póliza.
+      const plan = await tx.paymentPlan.findUnique({
+        where: { proposalId },
+        select: { id: true },
+      });
+      if (plan) {
+        await tx.paymentPlan.update({
+          where: { id: plan.id },
+          data: { policyId: policy.id },
+        });
+        await tx.installment.updateMany({
+          where: { paymentPlanId: plan.id, policyId: null },
+          data: { policyId: policy.id },
+        });
+      }
+
+      // La propuesta no cambia de estado (queda POR_DESPACHAR), pero al tener
+      // una póliza vinculada deja de aparecer en el flujo de propuestas.
+      await tx.proposal.update({
+        where: { id: proposalId },
+        data: { currentStateStartedAt: new Date() },
+      });
+      await tx.proposalLog.create({
+        data: {
+          organizationId: ctx.organizationId,
+          proposalId,
+          action: "POLICY_DISPATCHED",
+          summary: data.send
+            ? `Póliza ${policyNumber} enviada al contratante y despachada a la cartera`
+            : `Póliza ${policyNumber} marcada como despachada y registrada en la cartera`,
+          userId: ctx.userId,
+        },
+      });
+      return policy.id;
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
       return {
         ok: false,
-        error:
-          "No hay email del contratante. Indícalo o agrégalo en la ficha/propuesta.",
+        error: `Ya existe una póliza con el número ${policyNumber}. Edítalo en la recepción antes de despachar.`,
       };
     }
+    throw error;
+  }
+
+  // La póliza ya está en la cartera: ahora se envía el correo (review #3). Si el
+  // envío falla, la póliza queda creada igual y el operador reenvía desde ella.
+  if (data.send) {
+    const org = await basePrisma.organization.findUnique({
+      where: { id: ctx.organizationId },
+      select: { name: true },
+    });
+    const orgName = org?.name ?? "Polizza";
 
     // Documentos: la póliza (tipo "Póliza") siempre + los seleccionados de la
     // carátula. Los subidos al servidor se adjuntan; los de enlace externo se
@@ -845,7 +1031,6 @@ export async function dispatchPolicyToContratanteAction(
           select: { id: true, fileName: true, fileUrl: true, storageKey: true, mimeType: true },
         })
       : [];
-    // Une sin duplicar (la póliza puede venir también seleccionada).
     const byId = new Map<string, (typeof policyDocs)[number]>();
     for (const d of [...policyDocs, ...selected]) byId.set(d.id, d);
     const allDocs = Array.from(byId.values());
@@ -868,15 +1053,10 @@ export async function dispatchPolicyToContratanteAction(
     }
 
     const subject =
-      data.subject.trim() ||
-      `Póliza N° ${proposal.policyNumberGenerated ?? proposal.proposalNumber} · ${orgName}`;
+      data.subject.trim() || `Póliza N° ${policyNumber} · ${orgName}`;
     const bodyText =
       data.body.trim() ||
-      `Estimado(a) ${proposal.client.name},\n\nAdjuntamos su póliza${
-        proposal.policyNumberGenerated
-          ? ` N° ${proposal.policyNumberGenerated}`
-          : ""
-      }. Ante cualquier consulta, quedamos a su disposición.\n\nLe saluda atentamente,\n${orgName}`;
+      `Estimado(a) ${proposal.client.name},\n\nAdjuntamos su póliza N° ${policyNumber}. Ante cualquier consulta, quedamos a su disposición.\n\nLe saluda atentamente,\n${orgName}`;
     const docsHtml =
       linkDocs.length > 0
         ? `<p style="font-size:13px;margin-top:12px"><b>Documentos por enlace:</b></p><ul style="font-size:13px">${linkDocs
@@ -908,54 +1088,31 @@ export async function dispatchPolicyToContratanteAction(
         attachments,
       });
     } catch (e) {
+      revalidatePath("/propuestas");
+      revalidatePath("/polizas");
+      revalidatePath(`/propuestas/${proposalId}`);
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "Error al enviar el email.",
+        error: `La póliza N° ${policyNumber} se creó en la cartera, pero falló el envío del correo: ${
+          e instanceof Error ? e.message : "error desconocido"
+        }. Reenvíalo desde la póliza.`,
       };
     }
   }
-
-  await db.$transaction(async (tx) => {
-    await tx.proposal.update({
-      where: { id: proposalId },
-      data: { status: "DESPACHADA", currentStateStartedAt: new Date() },
-    });
-    await tx.proposalStatusHistory.create({
-      data: {
-        organizationId: ctx.organizationId,
-        proposalId,
-        status: "DESPACHADA",
-        note: data.send
-          ? "Póliza despachada al contratante por email"
-          : "Marcada como despachada",
-        changedById: ctx.userId,
-      },
-    });
-    await tx.proposalLog.create({
-      data: {
-        organizationId: ctx.organizationId,
-        proposalId,
-        action: "POLICY_DISPATCHED",
-        summary: data.send
-          ? "Póliza enviada al contratante"
-          : "Póliza marcada como despachada",
-        userId: ctx.userId,
-      },
-    });
-  });
 
   await logActivity(db, {
     organizationId: ctx.organizationId,
     entityType: "PROPOSAL",
     entityId: proposalId,
     action: "policy_dispatched",
-    summary: `Propuesta ${proposal.proposalNumber}: póliza despachada`,
+    summary: `Propuesta ${proposal.proposalNumber}: póliza despachada a la cartera`,
     userId: ctx.userId,
   });
 
   revalidatePath("/propuestas");
+  revalidatePath("/polizas");
   revalidatePath(`/propuestas/${proposalId}`);
-  return { ok: true, id: proposalId };
+  return { ok: true, id: policyId };
 }
 
 function escapeHtmlLite(s: string): string {

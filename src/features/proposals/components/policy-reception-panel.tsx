@@ -80,7 +80,7 @@ export function PolicyReceptionPanel({
       toast.error(r.error);
       return;
     }
-    toast.success("Póliza registrada. Propuesta marcada como Emitida.");
+    toast.success("Póliza registrada. Propuesta lista por despachar.");
     router.refresh();
   }
 
@@ -124,14 +124,14 @@ export function PolicyReceptionPanel({
               Cuando envíen la póliza corregida, registra aquí la{" "}
               <strong>emisión correcta</strong> con el número de póliza
               definitivo y sus fechas (la propuesta pasa a{" "}
-              <strong>Emitida</strong>). Sube el PDF definitivo en la pestaña
-              Documentos.
+              <strong>Por despachar</strong>). Sube el PDF definitivo en la
+              pestaña Documentos.
             </>
           ) : (
             <>
               A la espera de que la compañía emita la póliza. Registra la emisión
-              correcta (la propuesta pasa a <strong>Emitida</strong>) o el error
-              de emisión (queda <strong>Devuelta a la compañía</strong>). El PDF
+              correcta (la propuesta pasa a <strong>Por despachar</strong>) o el
+              error de emisión (queda <strong>Devuelta a la cía</strong>). El PDF
               de la póliza se adjunta en la pestaña Documentos.
             </>
           )}
@@ -205,7 +205,7 @@ export function PolicyReceptionPanel({
                 ) : (
                   <FileCheck2 className="size-4" />
                 )}
-                Dejar póliza emitida
+                Dejar por despachar
               </Button>
             </div>
           </div>

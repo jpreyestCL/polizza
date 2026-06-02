@@ -6,33 +6,24 @@ export const PROPOSAL_STATUSES = [
   "POR_ENVIAR",
   "ENVIADA_COMPANIA",
   "DEVUELTA",
-  "EMITIDA",
   "POR_DESPACHAR",
-  "DESPACHADA",
-  "RECHAZADA",
 ] as const;
 
 export type ProposalStatusValue = (typeof PROPOSAL_STATUSES)[number];
 
 export const STATUS_LABELS: Record<ProposalStatusValue, string> = {
   ELABORACION: "En elaboración",
-  POR_ENVIAR: "Por enviar",
+  POR_ENVIAR: "Por enviar a la cía",
   ENVIADA_COMPANIA: "Enviada a compañía",
-  DEVUELTA: "Devuelta",
-  EMITIDA: "Emitida",
+  DEVUELTA: "Devuelta a la cía",
   POR_DESPACHAR: "Por despachar",
-  DESPACHADA: "Despachada",
-  RECHAZADA: "Rechazada",
 };
 
 /** Estados en los que la propuesta queda bloqueada para edición. */
 export const LOCKED_STATUSES: ProposalStatusValue[] = [
   "POR_ENVIAR",
   "ENVIADA_COMPANIA",
-  "EMITIDA",
   "POR_DESPACHAR",
-  "DESPACHADA",
-  "RECHAZADA",
 ];
 
 export function isProposalLocked(status: string): boolean {
@@ -240,8 +231,8 @@ export type ProposalDraftValues = z.infer<typeof proposalDraftSchema>;
 
 /**
  * Recepción de la póliza emitida por la compañía (flujo post-envío).
- * Si la emisión fue correcta → estado EMITIDA ("póliza"). Si hubo error →
- * estado DEVUELTA ("devuelta a la compañía") con su motivo.
+ * Si la emisión fue correcta → estado POR_DESPACHAR (obs 8). Si hubo error →
+ * estado DEVUELTA ("devuelta a la cía") con su motivo.
  */
 export const EMISSION_ERROR_REASONS = [
   "Por digitación",

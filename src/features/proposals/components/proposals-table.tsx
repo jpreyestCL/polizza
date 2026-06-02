@@ -62,12 +62,19 @@ export function ProposalsTable({
         accessorKey: "proposalNumber",
         header: "Número",
         cell: ({ row }) => (
-          <Link
-            href={`/propuestas/${row.original.id}`}
-            className="font-medium hover:text-primary"
-          >
-            {row.original.proposalNumber}
-          </Link>
+          <div className="space-y-0.5">
+            <Link
+              href={`/propuestas/${row.original.id}`}
+              className="font-medium hover:text-primary"
+            >
+              {row.original.proposalNumber}
+            </Link>
+            {row.original.policyNumberGenerated && (
+              <div className="text-xs font-medium text-success">
+                Póliza N° {row.original.policyNumberGenerated}
+              </div>
+            )}
+          </div>
         ),
       },
       {
