@@ -15,6 +15,7 @@ import {
 import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { formatMoney, type CurrencyCode } from "@/lib/money";
+import { formatProposalNumber } from "@/lib/proposal-number";
 import type { ProposalListItem } from "../queries";
 import type { CatalogItem } from "@/features/catalog/queries";
 import {
@@ -67,7 +68,7 @@ export function ProposalsTable({
               href={`/propuestas/${row.original.id}`}
               className="font-medium hover:text-primary"
             >
-              {row.original.proposalNumber}
+              {formatProposalNumber(row.original.proposalNumber)}
             </Link>
             {row.original.policyNumberGenerated && (
               <div className="text-xs font-medium text-success">
@@ -166,7 +167,7 @@ export function ProposalsTable({
     const lines = filteredRows.map((row) => {
       const p = row.original;
       return [
-        p.proposalNumber,
+        formatProposalNumber(p.proposalNumber),
         p.client.name,
         p.companyId ? (companyName.get(p.companyId) ?? "") : "",
         STATUS_LABELS[p.status as ProposalStatusValue] ?? p.status,

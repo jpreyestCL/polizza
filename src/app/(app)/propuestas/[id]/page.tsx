@@ -9,6 +9,7 @@ import {
   getProposalPremiumTotals,
 } from "@/features/proposals/queries";
 import { isProposalLocked } from "@/features/proposals/schemas";
+import { formatProposalNumber } from "@/lib/proposal-number";
 import {
   getCompanies,
   getReturnReasons,
@@ -132,7 +133,7 @@ export default async function PropuestaDetailPage({
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">
-              {proposal.proposalNumber}
+              {formatProposalNumber(proposal.proposalNumber)}
             </h1>
             <ProposalStatusBadge status={proposal.status} />
           </div>

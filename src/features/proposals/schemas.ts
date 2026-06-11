@@ -218,6 +218,14 @@ export const proposalDraftSchema = z
     branchTypeId: optionalString,
     lineId: optionalString,
     branchId: optionalString,
+    // Carátula que el usuario ya completó: se persiste en el borrador para que
+    // no se pierda cuando el formulario se reconcilia con la propuesta guardada
+    // (asegurado/beneficiario/producto/comisión).
+    productId: optionalString,
+    insuredClientId: optionalString,
+    beneficiaryClientId: optionalString,
+    commissionAffectPct: optionalString,
+    commissionExemptPct: optionalString,
   })
   .refine(
     (v) => v.branchTypeId !== "" || (v.lineId !== "" && v.branchId !== ""),

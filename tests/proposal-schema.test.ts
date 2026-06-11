@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { proposalFormSchema } from "@/features/proposals/schemas";
+import {
+  proposalFormSchema,
+  proposalDraftSchema,
+} from "@/features/proposals/schemas";
 
 // Campos obligatorios del punto 2 (doc "Observaciones módulo propuestas").
 const baseProposal = {
@@ -44,5 +47,36 @@ describe("proposalFormSchema", () => {
       proposalFormSchema.safeParse({ ...baseProposal, premiumNet: "150.5" })
         .success,
     ).toBe(true);
+  });
+});
+
+describe("proposalDraftSchema", () => {
+  const baseDraft = {
+    clientId: "client-1",
+    insuranceCompanyId: "co-1",
+    branchTypeId: "bt-1",
+    lineId: "",
+    branchId: "",
+  };
+
+  it("acepta el borrador mínimo (contratante + compañía + ramo)", () => {
+    expect(proposalDraftSchema.safeParse(baseDraft).success).toBe(true);
+  });
+
+  it("persiste la carátula ya completada para no perderla al reconciliar", () => {
+    const parsed = proposalDraftSchema.safeParse({
+      ...baseDraft,
+      productId: "prod-1",
+      insuredClientId: "client-2",
+      beneficiaryClientId: "client-3",
+      commissionAffectPct: "15",
+      commissionExemptPct: "0",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.insuredClientId).toBe("client-2");
+      expect(parsed.data.beneficiaryClientId).toBe("client-3");
+      expect(parsed.data.commissionAffectPct).toBe("15");
+    }
   });
 });

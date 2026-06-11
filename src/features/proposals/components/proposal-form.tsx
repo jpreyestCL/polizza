@@ -330,6 +330,11 @@ export function ProposalForm({
         branchTypeId: watched.branchTypeId ?? "",
         lineId: watched.lineId ?? "",
         branchId: watched.branchId ?? "",
+        productId: watched.productId ?? "",
+        insuredClientId: watched.insuredClientId ?? "",
+        beneficiaryClientId: watched.beneficiaryClientId ?? "",
+        commissionAffectPct: watched.commissionAffectPct ?? "",
+        commissionExemptPct: watched.commissionExemptPct ?? "",
       });
       if (!result.ok) return;
       lastSavedSigRef.current = sig;
@@ -393,6 +398,11 @@ export function ProposalForm({
       branchTypeId: v.branchTypeId,
       lineId: v.lineId,
       branchId: v.branchId,
+      productId: v.productId,
+      insuredClientId: v.insuredClientId,
+      beneficiaryClientId: v.beneficiaryClientId,
+      commissionAffectPct: v.commissionAffectPct,
+      commissionExemptPct: v.commissionExemptPct,
     });
     if (!r.ok) {
       toast.error(r.error);
@@ -429,6 +439,12 @@ export function ProposalForm({
       return;
     }
     toast.success(currentMode === "create" ? "Propuesta creada" : "Cambios guardados");
+    // Al guardar una propuesta completa, asigna su número definitivo (deja de
+    // ser un borrador "DRAFT-"). createProposalAction ya numera al crear; en
+    // edición hay que promover el borrador si reúne todos los datos.
+    if (currentMode === "edit") {
+      await maybeAssignNumber(result.id as string);
+    }
     router.push(`/propuestas/${result.id}`);
     router.refresh();
   }

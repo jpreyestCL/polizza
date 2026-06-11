@@ -18,6 +18,7 @@ import {
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { formatMoney } from "@/lib/money";
 import { formatRut } from "@/lib/rut";
+import { formatProposalNumber } from "@/lib/proposal-number";
 import type { ClientDetail } from "../queries";
 import { CONTACT_ASSIGNMENT_LABELS } from "../schemas";
 import { RegisterInteraction } from "./register-interaction";
@@ -288,7 +289,7 @@ export function ClientTabs({
                   href={`/propuestas/${proposal.id}`}
                   className="font-medium hover:text-primary"
                 >
-                  {proposal.proposalNumber}
+                  {formatProposalNumber(proposal.proposalNumber)}
                 </Link>
                 <ProposalStatusBadge status={proposal.status} />
               </li>

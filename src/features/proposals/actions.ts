@@ -512,6 +512,11 @@ export async function saveProposalDraft(
         branchTypeId: emptyToNull(data.branchTypeId),
         lineId: emptyToNull(data.lineId),
         branchId: emptyToNull(data.branchId),
+        productId: emptyToNull(data.productId),
+        insuredClientId: emptyToNull(data.insuredClientId),
+        beneficiaryClientId: emptyToNull(data.beneficiaryClientId),
+        commissionAffectPct: decimalOrNull(data.commissionAffectPct),
+        commissionExemptPct: decimalOrNull(data.commissionExemptPct),
       },
     });
     return { ok: true, id: values.proposalId };
@@ -527,6 +532,11 @@ export async function saveProposalDraft(
       branchTypeId: emptyToNull(data.branchTypeId),
       lineId: emptyToNull(data.lineId),
       branchId: emptyToNull(data.branchId),
+      productId: emptyToNull(data.productId),
+      insuredClientId: emptyToNull(data.insuredClientId),
+      beneficiaryClientId: emptyToNull(data.beneficiaryClientId),
+      commissionAffectPct: decimalOrNull(data.commissionAffectPct),
+      commissionExemptPct: decimalOrNull(data.commissionExemptPct),
       status: "ELABORACION",
       currency: "UF",
       currentStateStartedAt: new Date(),

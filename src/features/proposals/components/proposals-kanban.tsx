@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMoney, type CurrencyCode } from "@/lib/money";
+import { formatProposalNumber } from "@/lib/proposal-number";
 import { changeProposalStatusAction } from "../actions";
 import {
   PROPOSAL_STATUSES,
@@ -110,7 +111,7 @@ export function ProposalsKanban({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium">
-                        {proposal.proposalNumber}
+                        {formatProposalNumber(proposal.proposalNumber)}
                       </span>
                       <ProposalSlaBadge
                         level={proposal.slaLevel}

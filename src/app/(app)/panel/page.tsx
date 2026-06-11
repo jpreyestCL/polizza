@@ -7,6 +7,7 @@ import { PolicyRenewalBadge } from "@/features/policies/components/policy-badges
 import { TaskPriorityBadge } from "@/features/tasks/components/task-badges";
 import { PageHeader } from "@/components/page-header";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
+import { formatProposalNumber } from "@/lib/proposal-number";
 
 function entityHref(entityType: string, entityId: string): string | null {
   switch (entityType) {
@@ -112,7 +113,7 @@ export default async function PanelPage() {
                     >
                       <span className="min-w-0">
                         <span className="font-medium">
-                          {proposal.proposalNumber}
+                          {formatProposalNumber(proposal.proposalNumber)}
                         </span>
                         <span className="ml-2 text-sm text-muted-foreground">
                           {proposal.client.name}
