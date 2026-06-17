@@ -467,6 +467,9 @@ model Client {
   lastNamePaterno  String?
   lastNameMaterno  String?
   legalName        String?
+  nombreFantasia   String?
+  esExtranjero     Boolean      @default(false)
+  externalId       String?
   email            String?
   phone            String?
   celular          String?
@@ -501,6 +504,7 @@ model Client {
   holding        Holding?              @relation(fields: [holdingId], references: [id])
 
   @@unique([organizationId, rut])
+  @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([organizationId, assignedUserId])
 }
