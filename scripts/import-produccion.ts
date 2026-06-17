@@ -99,7 +99,9 @@ function canonicalBranchName(raw: string): string | null {
   if (up.includes("TRANSPORTE")) return "Transporte";
   if (up.includes("NOMINADO")) return up.includes("INNOMINADO") ? "Accidentes Personales Innominados" : "Accidentes Personales Nominados";
   if (up.includes("CONSTRUCCIÓN") || up.includes("CONSTRUCCION") || up.includes("MONTAJE")) return "Todo Riesgo Construcción y Montaje";
-  return null; // Robo, Cascos, Objetos Valiosos, Agricola, Equipo Electrónico → sin mapeo seguro
+  if (up.includes("ROBO") || up.includes("OBJETOS VALIOSOS") || up.includes("ELECTRÓNICO") || up.includes("ELECTRONICO")) return "Todo Riesgo de Bienes Físicos";
+  if (up.includes("CASCO")) return "Casco Marítimo";
+  return null; // Agricola, Miscelaneos, Catastrófico → sin mapeo seguro
 }
 
 const POLICY_ESTADOS = new Set(["Póliza", "Cancelada", "Anulada"]); // descarta En Elaboración / Enviada a Cía
@@ -118,6 +120,16 @@ async function main() {
   // --- Catálogos ---
   const clients = await prisma.client.findMany({ where: { organizationId: orgId }, select: { id: true, rut: true } });
   const clientByRut = new Map(clients.map((c) => [c.rut, c.id]));
+  // Fallback por cuerpo (sin DV) para typos de dígito verificador en el legacy.
+  // Solo se usa si el cuerpo identifica a un único cliente.
+  const bodyToIds = new Map<string, Set<string>>();
+  for (const c of clients) {
+    const body = c.rut.split("-")[0];
+    if (!bodyToIds.has(body)) bodyToIds.set(body, new Set());
+    bodyToIds.get(body)!.add(c.id);
+  }
+  const clientByBody = new Map<string, string>();
+  for (const [body, ids] of bodyToIds) if (ids.size === 1) clientByBody.set(body, [...ids][0]);
 
   const companies = await prisma.insuranceCompany.findMany({ where: { organizationId: orgId }, select: { id: true, name: true } });
   const companyByName = new Map(companies.map((c) => [c.name.toUpperCase(), c.id]));
@@ -193,7 +205,7 @@ async function main() {
 
   for (const [num, cara] of caratulaByNum) {
     const rut = normRut(cara.Rut_Contratante);
-    const clientId = rut ? clientByRut.get(rut) : undefined;
+    const clientId = rut ? (clientByRut.get(rut) ?? clientByBody.get(rut.split("-")[0])) : undefined;
     if (!clientId) { report.skippedNoClient.push(`${num} (${cara.Contratante})`); continue; }
 
     const ramoRaw = clean(cara.Ramo);
