@@ -968,10 +968,13 @@ model Policy {
   status           PolicyStatus @default(VIGENTE)
   premiumNet       Decimal?     @db.Decimal(14, 2)
   currency         String       @default("UF")
+  commissionPercent Decimal?    @db.Decimal(7, 4)
+  commissionAmount Decimal?     @db.Decimal(14, 2)
   startDate        DateTime?    @db.Date
   endDate          DateTime?    @db.Date
   previousPolicyId String?
   nextPolicyId     String?
+  externalId       String?
   assignedUserId   String?
   createdById      String?
   createdAt        DateTime     @default(now())
@@ -986,6 +989,7 @@ model Policy {
   endorsements  Endorsement[]
 
   @@unique([organizationId, policyNumber])
+  @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([clientId])
 }
