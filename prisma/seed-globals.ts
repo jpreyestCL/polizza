@@ -311,6 +311,16 @@ const BRANCHES: BranchDef[] = [
     order: 200,
     fields: FIELDS_PERSONA,
   },
+
+  // === Ramos del catálogo legacy de la corredora (Ramos_17-06-2026.xlsx) ===
+  { key: "robo", name: "Robo", category: "GENERALES", order: 210, fields: [] },
+  { key: "cascos", name: "Cascos", category: "GENERALES", order: 211, fields: [] },
+  { key: "agricola", name: "Agrícola", category: "GENERALES", order: 212, fields: [] },
+  { key: "catastrofico", name: "Catastrófico", category: "VIDA_SALUD", order: 213, fields: [] },
+  { key: "equipo_electronico", name: "Equipo Electrónico", category: "GENERALES", order: 214, fields: [] },
+  { key: "averia_maquinaria", name: "Avería Maquinaria", category: "GENERALES", order: 215, fields: [] },
+  { key: "riesgo_ingenieria", name: "Riesgo de Ingeniería", category: "GENERALES", order: 216, fields: [] },
+  { key: "objetos_valiosos", name: "Todo Riesgo Objetos Valiosos", category: "GENERALES", order: 217, fields: [] },
 ];
 
 const GLOBAL_COMPANIES: {

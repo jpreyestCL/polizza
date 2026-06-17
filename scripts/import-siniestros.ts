@@ -81,8 +81,14 @@ function canonicalBranchName(raw: string): string | null {
   if (up.includes("TRANSPORTE")) return "Transporte";
   if (up.includes("NOMINADO")) return up.includes("INNOMINADO") ? "Accidentes Personales Innominados" : "Accidentes Personales Nominados";
   if (up.includes("CONSTRUCCIÓN") || up.includes("CONSTRUCCION") || up.includes("MONTAJE")) return "Todo Riesgo Construcción y Montaje";
-  if (up.includes("ROBO") || up.includes("OBJETOS VALIOSOS") || up.includes("ELECTRÓNICO") || up.includes("ELECTRONICO")) return "Todo Riesgo de Bienes Físicos";
-  if (up.includes("CASCO")) return "Casco Marítimo";
+  if (up.includes("ROBO")) return "Robo";
+  if (up.includes("OBJETOS VALIOSOS")) return "Todo Riesgo Objetos Valiosos";
+  if (up.includes("ELECTRÓNICO") || up.includes("ELECTRONICO")) return "Equipo Electrónico";
+  if (up.includes("CASCO")) return "Cascos";
+  if (up.includes("AGRICOLA") || up.includes("AGRÍCOLA")) return "Agrícola";
+  if (up.includes("CATASTRÓFICO") || up.includes("CATASTROFICO")) return "Catastrófico";
+  if (up.includes("AVERÍA") || up.includes("AVERIA") || up.includes("MAQUINARIA")) return "Avería Maquinaria";
+  if (up.includes("INGENIER")) return "Riesgo de Ingeniería";
   return null;
 }
 function mapStatus(estado: string): "REPORTADO" | "INGRESADO_COMPANIA" | "EN_EVALUACION" | "APROBADO" | "RECHAZADO" | "PAGADO" | "CERRADO" {
