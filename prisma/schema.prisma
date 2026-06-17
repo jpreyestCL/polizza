@@ -518,6 +518,8 @@ model ClientContact {
   email          String?
   phone          String?
   celular        String?
+  notes          String?
+  externalId     String?
   assignmentType ContactAssignment?
   isPrimary      Boolean            @default(false)
   createdAt      DateTime           @default(now())
@@ -525,6 +527,7 @@ model ClientContact {
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
+  @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([clientId])
 }
