@@ -968,7 +968,7 @@ model Policy {
   status           PolicyStatus @default(VIGENTE)
   premiumNet       Decimal?     @db.Decimal(14, 2)
   currency         String       @default("UF")
-  commissionPercent Decimal?    @db.Decimal(7, 4)
+  commissionPercent Decimal?    @db.Decimal(9, 4)
   commissionAmount Decimal?     @db.Decimal(14, 2)
   startDate        DateTime?    @db.Date
   endDate          DateTime?    @db.Date
