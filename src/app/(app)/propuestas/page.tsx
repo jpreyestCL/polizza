@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Pager } from "@/components/pager";
 import { parsePageParams } from "@/lib/pagination";
+import { PROPOSAL_STATUSES, type ProposalStatusValue } from "@/features/proposals/schemas";
 
 type SearchParams = Promise<
   Record<string, string | string[] | undefined> | undefined
@@ -129,8 +130,21 @@ async function ListView({
   searchParams: Record<string, string | string[] | undefined> | undefined;
 }) {
   const page = parsePageParams(searchParams);
-  const proposalsPage = await listProposals(ctx, db, holidays, page);
-  if (proposalsPage.rows.length === 0 && !proposalsPage.prevCursor) {
+  const sp = searchParams ?? {};
+  const statusParam = typeof sp.status === "string" ? sp.status : undefined;
+  const companyParam = typeof sp.company === "string" ? sp.company : undefined;
+  const filters = {
+    q: typeof sp.q === "string" && sp.q.length > 0 ? sp.q : undefined,
+    status:
+      statusParam &&
+      (PROPOSAL_STATUSES as readonly string[]).includes(statusParam)
+        ? (statusParam as ProposalStatusValue)
+        : undefined,
+    companyId: companyParam || undefined,
+  };
+  const hasFilters = Boolean(filters.q || filters.status || filters.companyId);
+  const proposalsPage = await listProposals(ctx, db, holidays, page, filters);
+  if (proposalsPage.rows.length === 0 && !proposalsPage.prevCursor && !hasFilters) {
     return (
       <EmptyState
         icon={FileText}

@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Pager } from "@/components/pager";
 import { parsePageParams } from "@/lib/pagination";
+import { POLICY_STATUSES, type PolicyStatusValue } from "@/features/policies/schemas";
 
 type SearchParams = Promise<
   Record<string, string | string[] | undefined> | undefined
@@ -21,9 +22,20 @@ export default async function PolizasPage({
 }) {
   const sp = await searchParams;
   const page = parsePageParams(sp);
+  const statusParam = typeof sp?.status === "string" ? sp.status : undefined;
+  const companyParam = typeof sp?.company === "string" ? sp.company : undefined;
+  const filters = {
+    q: typeof sp?.q === "string" && sp.q.length > 0 ? sp.q : undefined,
+    status:
+      statusParam && (POLICY_STATUSES as readonly string[]).includes(statusParam)
+        ? (statusParam as PolicyStatusValue)
+        : undefined,
+    companyId: companyParam || undefined,
+  };
+  const hasFilters = Boolean(filters.q || filters.status || filters.companyId);
   const { ctx, db } = await requireOrgDb();
   const [policiesPage, companies] = await Promise.all([
-    listPolicies(ctx, db, page),
+    listPolicies(ctx, db, page, filters),
     getCompanies(db),
   ]);
 
@@ -41,7 +53,7 @@ export default async function PolizasPage({
           </Button>
         }
       />
-      {policiesPage.rows.length === 0 && !policiesPage.prevCursor ? (
+      {policiesPage.rows.length === 0 && !policiesPage.prevCursor && !hasFilters ? (
         <EmptyState
           icon={Shield}
           title="Aún no hay pólizas"
