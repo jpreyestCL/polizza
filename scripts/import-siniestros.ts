@@ -193,7 +193,7 @@ async function main() {
       incidentCity: clean(r.Ciudad),
       incidentNarrative: clean(r.Relato_Denuncio),
       lossType: lossType as any,
-      data,
+      data: data as unknown as Prisma.InputJsonObject,
       createdAt: parseDate(r.Fecha_Creado) ?? parseDate(r.Fecha_Denuncio) ?? undefined,
     };
 
