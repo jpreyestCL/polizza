@@ -30,18 +30,37 @@ export type ProposalListItem = {
   slaLevel: SlaLevel;
 };
 
+export type ProposalListFilters = {
+  /** Texto libre: busca en número de propuesta y nombre del cliente (insensitive). */
+  q?: string;
+  status?: ProposalStatus;
+  companyId?: string;
+};
+
 /** Propuestas paginadas (cursor) acotadas por rol, con SLA calculado. */
 export async function listProposals(
   ctx: SessionContext,
   db: Db,
   holidays: Set<string>,
   page: PageParams,
+  filters: ProposalListFilters = {},
 ): Promise<Paginated<ProposalListItem>> {
+  const q = filters.q?.trim();
   // Excluye las propuestas ya despachadas (con póliza vinculada): viven en la
   // sección "Pólizas", no en el flujo de propuestas (obs 9).
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
     policies: { none: {} },
+    ...(q
+      ? {
+          OR: [
+            { proposalNumber: { contains: q, mode: "insensitive" as const } },
+            { client: { name: { contains: q, mode: "insensitive" as const } } },
+          ],
+        }
+      : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.companyId ? { companyId: filters.companyId } : {}),
   };
   const [rows, total] = await Promise.all([
     db.proposal.findMany({

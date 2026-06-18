@@ -28,13 +28,34 @@ export type PolicyListItem = {
   renewalLevel: RenewalLevel;
 };
 
+export type PolicyListFilters = {
+  /** Texto libre: busca en número de póliza y nombre del cliente (insensitive). */
+  q?: string;
+  status?: PolicyStatus;
+  companyId?: string;
+};
+
 /** Pólizas paginadas (cursor) acotadas por rol, con estado de renovación. */
 export async function listPolicies(
   ctx: SessionContext,
   db: Db,
   page: PageParams,
+  filters: PolicyListFilters = {},
 ): Promise<Paginated<PolicyListItem>> {
-  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  const q = filters.q?.trim();
+  const where = {
+    ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
+    ...(q
+      ? {
+          OR: [
+            { policyNumber: { contains: q, mode: "insensitive" as const } },
+            { client: { name: { contains: q, mode: "insensitive" as const } } },
+          ],
+        }
+      : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.companyId ? { companyId: filters.companyId } : {}),
+  };
   const [rows, total] = await Promise.all([
     db.policy.findMany({
       where,

@@ -1,18 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   type ColumnDef,
-  type ColumnFiltersState,
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react";
+import { Download, Search } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { formatMoney, type CurrencyCode } from "@/lib/money";
 import type { PolicyListItem } from "../queries";
@@ -48,8 +45,43 @@ export function PoliciesTable({
   policies: PolicyListItem[];
   companies: CatalogItem[];
 }) {
-  const [globalFilter, setGlobalFilter] = useState("");
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+
+  const urlQuery = searchParams.get("q") ?? "";
+  const statusFilter = searchParams.get("status") ?? "all";
+  const companyFilter = searchParams.get("company") ?? "all";
+
+  // Aplica cambios de filtro a la URL (server-side). Resetea el cursor para
+  // volver a la primera página cada vez que cambia un filtro.
+  const applyParams = (updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "") params.delete(key);
+      else params.set(key, value);
+    }
+    params.delete("cursor");
+    params.delete("dir");
+    const qs = params.toString();
+    startTransition(() => {
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    });
+  };
+
+  // Input de texto controlado localmente + debounce hacia la URL.
+  const [search, setSearch] = useState(urlQuery);
+  useEffect(() => {
+    setSearch(urlQuery);
+  }, [urlQuery]);
+  useEffect(() => {
+    if (search === urlQuery) return;
+    const timer = setTimeout(() => applyParams({ q: search || null }), 350);
+    return () => clearTimeout(timer);
+    // applyParams/urlQuery se recalculan por render; el disparo lo controla `search`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const companyName = useMemo(
     () => new Map(companies.map((c) => [c.id, c.name])),
@@ -90,7 +122,6 @@ export function PoliciesTable({
         cell: ({ getValue }) => (
           <PolicyStatusBadge status={getValue<string>()} />
         ),
-        filterFn: "equalsString",
       },
       {
         id: "premium",
@@ -127,20 +158,8 @@ export function PoliciesTable({
   const table = useReactTable({
     data: policies,
     columns,
-    state: { globalFilter, columnFilters },
-    onGlobalFilterChange: setGlobalFilter,
-    onColumnFiltersChange: setColumnFilters,
-    globalFilterFn: "includesString",
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 12 } },
   });
-
-  const statusFilter =
-    (table.getColumn("status")?.getFilterValue() as string) ?? "all";
-  const filteredRows = table.getFilteredRowModel().rows;
 
   function exportCsv() {
     const header = [
@@ -153,9 +172,8 @@ export function PoliciesTable({
       "Inicio",
       "Término",
     ];
-    const lines = filteredRows.map((row) => {
-      const p = row.original;
-      return [
+    const lines = policies.map((p) =>
+      [
         p.policyNumber,
         p.client.name,
         p.companyId ? (companyName.get(p.companyId) ?? "") : "",
@@ -166,8 +184,8 @@ export function PoliciesTable({
         formatDate(p.endDate),
       ]
         .map((value) => `"${String(value).replace(/"/g, '""')}"`)
-        .join(",");
-    });
+        .join(","),
+    );
     const csv = [header.join(","), ...lines].join("\n");
     const blob = new Blob([`﻿${csv}`], {
       type: "text/csv;charset=utf-8",
@@ -186,18 +204,16 @@ export function PoliciesTable({
         <div className="relative sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={globalFilter}
-            onChange={(event) => setGlobalFilter(event.target.value)}
-            placeholder="Filtrar pólizas…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por número o cliente…"
             className="pl-8"
           />
         </div>
         <Select
           value={statusFilter}
           onValueChange={(value) =>
-            table
-              .getColumn("status")
-              ?.setFilterValue(value === "all" ? undefined : value)
+            applyParams({ status: value === "all" ? null : value })
           }
         >
           <SelectTrigger className="sm:w-48">
@@ -212,18 +228,39 @@ export function PoliciesTable({
             ))}
           </SelectContent>
         </Select>
+        <Select
+          value={companyFilter}
+          onValueChange={(value) =>
+            applyParams({ company: value === "all" ? null : value })
+          }
+        >
+          <SelectTrigger className="sm:w-52">
+            <SelectValue placeholder="Compañía" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas las compañías</SelectItem>
+            {companies.map((company) => (
+              <SelectItem key={company.id} value={company.id}>
+                {company.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button
           type="button"
           variant="outline"
           onClick={exportCsv}
-          disabled={filteredRows.length === 0}
+          disabled={policies.length === 0}
         >
           <Download />
           Exportar
         </Button>
       </div>
 
-      <div className="rounded-xl border bg-card">
+      <div
+        className="rounded-xl border bg-card transition-opacity"
+        style={{ opacity: isPending ? 0.6 : 1 }}
+      >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
@@ -265,37 +302,6 @@ export function PoliciesTable({
             )}
           </TableBody>
         </Table>
-      </div>
-
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {filteredRows.length}{" "}
-          {filteredRows.length === 1 ? "póliza" : "pólizas"}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            <ChevronLeft />
-          </Button>
-          <span>
-            Página {table.getState().pagination.pageIndex + 1} de{" "}
-            {Math.max(table.getPageCount(), 1)}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            <ChevronRight />
-          </Button>
-        </div>
       </div>
     </div>
   );
