@@ -20,9 +20,30 @@ export default async function ClientesPage({
 }) {
   const sp = await searchParams;
   const page = parsePageParams(sp);
+  const typeParam = typeof sp?.type === "string" ? sp.type : undefined;
+  const statusParam = typeof sp?.status === "string" ? sp.status : undefined;
+  const filters = {
+    q: typeof sp?.q === "string" && sp.q.length > 0 ? sp.q : undefined,
+    type:
+      typeParam === "PERSONA" || typeParam === "EMPRESA"
+        ? (typeParam as "PERSONA" | "EMPRESA")
+        : undefined,
+    status:
+      statusParam === "PROSPECTO" ||
+      statusParam === "ACTIVO" ||
+      statusParam === "INACTIVO"
+        ? (statusParam as "PROSPECTO" | "ACTIVO" | "INACTIVO")
+        : undefined,
+    sort: sp?.sort === "name" ? ("name" as const) : undefined,
+    order:
+      sp?.order === "desc" ? ("desc" as const)
+      : sp?.order === "asc" ? ("asc" as const)
+      : undefined,
+  };
+  const hasFilters = Boolean(filters.q || filters.type || filters.status);
   const { ctx, db } = await requireOrgDb();
   const [clientsPage, members] = await Promise.all([
-    listClients(ctx, db, page),
+    listClients(ctx, db, page, filters),
     getOrgMembers(ctx.organizationId),
   ]);
 
@@ -40,7 +61,7 @@ export default async function ClientesPage({
           </Button>
         }
       />
-      {clientsPage.rows.length === 0 && !clientsPage.prevCursor ? (
+      {clientsPage.rows.length === 0 && !clientsPage.prevCursor && !hasFilters ? (
         <EmptyState
           icon={Users}
           title="Aún no tienes clientes"

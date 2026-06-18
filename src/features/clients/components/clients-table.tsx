@@ -1,23 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   type ColumnDef,
-  type ColumnFiltersState,
-  type SortingState,
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpDown,
   Building2,
-  ChevronLeft,
-  ChevronRight,
   Download,
   Search,
   User,
@@ -98,9 +94,51 @@ export function ClientsTable({
   clients: ClientListItem[];
   members: OrgMember[];
 }) {
-  const [globalFilter, setGlobalFilter] = useState("");
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+
+  const urlQuery = searchParams.get("q") ?? "";
+  const typeFilter = searchParams.get("type") ?? "all";
+  const statusFilter = searchParams.get("status") ?? "all";
+  const sort = searchParams.get("sort");
+  const order = searchParams.get("order") === "desc" ? "desc" : "asc";
+
+  // Aplica cambios de filtro a la URL (server-side). Resetea el cursor para
+  // volver a la primera página cada vez que cambia un filtro u orden.
+  const applyParams = (updates: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "") params.delete(key);
+      else params.set(key, value);
+    }
+    params.delete("cursor");
+    params.delete("dir");
+    const qs = params.toString();
+    startTransition(() => {
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    });
+  };
+
+  // Input de texto controlado localmente + debounce hacia la URL.
+  const [search, setSearch] = useState(urlQuery);
+  useEffect(() => {
+    setSearch(urlQuery);
+  }, [urlQuery]);
+  useEffect(() => {
+    if (search === urlQuery) return;
+    const timer = setTimeout(() => applyParams({ q: search || null }), 350);
+    return () => clearTimeout(timer);
+    // applyParams/urlQuery se recalculan por render; el disparo lo controla `search`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const toggleNameSort = () => {
+    if (sort !== "name") applyParams({ sort: "name", order: "asc" });
+    else if (order === "asc") applyParams({ sort: "name", order: "desc" });
+    else applyParams({ sort: null, order: null });
+  };
 
   const nameByUser = useMemo(
     () => new Map(members.map((m) => [m.userId, m.name])),
@@ -111,16 +149,22 @@ export function ClientsTable({
     () => [
       {
         accessorKey: "name",
-        header: ({ column }) => (
+        header: () => (
           <button
             type="button"
             className="flex items-center gap-1"
-            onClick={() =>
-              column.toggleSorting(column.getIsSorted() === "asc")
-            }
+            onClick={toggleNameSort}
           >
             Cliente
-            <ArrowUpDown className="size-3" />
+            {sort === "name" ? (
+              order === "asc" ? (
+                <ArrowUp className="size-3" />
+              ) : (
+                <ArrowDown className="size-3" />
+              )
+            ) : (
+              <ArrowUpDown className="size-3" />
+            )}
           </button>
         ),
         cell: ({ row }) => (
@@ -141,7 +185,6 @@ export function ClientsTable({
         accessorKey: "type",
         header: "Tipo",
         cell: ({ getValue }) => TYPE_LABELS[getValue<string>()] ?? "—",
-        filterFn: "equalsString",
       },
       {
         accessorKey: "rut",
@@ -154,7 +197,6 @@ export function ClientsTable({
         cell: ({ getValue }) => (
           <ClientStatusBadge status={getValue<string>()} />
         ),
-        filterFn: "equalsString",
       },
       {
         id: "assignee",
@@ -183,29 +225,16 @@ export function ClientsTable({
         cell: ({ getValue }) => getValue<number>(),
       },
     ],
-    [nameByUser],
+    // toggleNameSort/sort/order cambian la cabecera; el resto es estable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [nameByUser, sort, order],
   );
 
   const table = useReactTable({
     data: clients,
     columns,
-    state: { globalFilter, columnFilters, sorting },
-    onGlobalFilterChange: setGlobalFilter,
-    onColumnFiltersChange: setColumnFilters,
-    onSortingChange: setSorting,
-    globalFilterFn: "includesString",
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 12 } },
   });
-
-  const typeFilter =
-    (table.getColumn("type")?.getFilterValue() as string) ?? "all";
-  const statusFilter =
-    (table.getColumn("status")?.getFilterValue() as string) ?? "all";
-  const filteredRows = table.getFilteredRowModel().rows;
 
   return (
     <div className="space-y-4">
@@ -213,18 +242,16 @@ export function ClientsTable({
         <div className="relative sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            value={globalFilter}
-            onChange={(event) => setGlobalFilter(event.target.value)}
-            placeholder="Filtrar clientes…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nombre o RUT…"
             className="pl-8"
           />
         </div>
         <Select
           value={typeFilter}
           onValueChange={(value) =>
-            table
-              .getColumn("type")
-              ?.setFilterValue(value === "all" ? undefined : value)
+            applyParams({ type: value === "all" ? null : value })
           }
         >
           <SelectTrigger className="sm:w-40">
@@ -239,9 +266,7 @@ export function ClientsTable({
         <Select
           value={statusFilter}
           onValueChange={(value) =>
-            table
-              .getColumn("status")
-              ?.setFilterValue(value === "all" ? undefined : value)
+            applyParams({ status: value === "all" ? null : value })
           }
         >
           <SelectTrigger className="sm:w-40">
@@ -257,20 +282,18 @@ export function ClientsTable({
         <Button
           type="button"
           variant="outline"
-          onClick={() =>
-            downloadCsv(
-              filteredRows.map((r) => r.original),
-              nameByUser,
-            )
-          }
-          disabled={filteredRows.length === 0}
+          onClick={() => downloadCsv(clients, nameByUser)}
+          disabled={clients.length === 0}
         >
           <Download />
           Exportar
         </Button>
       </div>
 
-      <div className="rounded-xl border bg-card">
+      <div
+        className="rounded-xl border bg-card transition-opacity"
+        style={{ opacity: isPending ? 0.6 : 1 }}
+      >
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
@@ -312,37 +335,6 @@ export function ClientsTable({
             )}
           </TableBody>
         </Table>
-      </div>
-
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {filteredRows.length}{" "}
-          {filteredRows.length === 1 ? "cliente" : "clientes"}
-        </span>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            <ChevronLeft />
-          </Button>
-          <span>
-            Página {table.getState().pagination.pageIndex + 1} de{" "}
-            {Math.max(table.getPageCount(), 1)}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            <ChevronRight />
-          </Button>
-        </div>
       </div>
     </div>
   );

@@ -10,17 +10,49 @@ import {
 } from "@/lib/pagination";
 import { listOrgMembers } from "@/server/members";
 
-/** Lista paginada de clientes, acotada por rol. Cursor sobre id. */
+export type ClientListFilters = {
+  /** Texto libre: busca en nombre y RUT (insensitive). */
+  q?: string;
+  type?: "PERSONA" | "EMPRESA";
+  status?: import("@prisma/client").ClientStatus;
+  /** Único ordenable server-side por ahora: la columna Cliente (name). */
+  sort?: "name";
+  order?: "asc" | "desc";
+};
+
+/** Lista paginada de clientes, acotada por rol y filtros. Cursor sobre id. */
 export async function listClients(
   ctx: SessionContext,
   db: Db,
   page: PageParams,
+  filters: ClientListFilters = {},
 ): Promise<Paginated<ClientListItem>> {
-  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  const q = filters.q?.trim();
+  // El RUT se almacena normalizado (sin puntos, con guion). Limpiamos el
+  // término para que "7.051.978-K" o "7.051.978" matcheen contra "7051978-K".
+  const rutQ = q ? q.replace(/[.\s]/g, "") : undefined;
+  const where = {
+    ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q, mode: "insensitive" as const } },
+            { rut: { contains: rutQ, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+    ...(filters.type ? { type: filters.type } : {}),
+    ...(filters.status ? { status: filters.status } : {}),
+  };
+  const order = filters.order === "desc" ? ("desc" as const) : ("asc" as const);
+  const orderBy =
+    filters.sort === "name"
+      ? [{ name: order }, { id: order }]
+      : [{ createdAt: "desc" as const }, { id: "desc" as const }];
   const [rows, total] = await Promise.all([
     db.client.findMany({
       where,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy,
       ...cursorArgs(page),
       select: {
         id: true,
