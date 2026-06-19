@@ -73,19 +73,19 @@ model Verification {
 }
 
 model Organization {
-  id                     String   @id @default(cuid())
-  name                   String
-  slug                   String?  @unique
-  logo                   String?
-  metadata               String?
+  id                    String   @id @default(cuid())
+  name                  String
+  slug                  String?  @unique
+  logo                  String?
+  metadata              String?
   // Configuración de propuestas (Polizza)
-  reservaDays            Int      @default(15)
-  proposalNumberPattern  String   @default("{YEAR}-{SEQ:0000}")
-  proposalSequenceYear   Int?
-  proposalSequenceValue  Int      @default(0)
+  reservaDays           Int      @default(15)
+  proposalNumberPattern String   @default("{YEAR}-{SEQ:0000}")
+  proposalSequenceYear  Int?
+  proposalSequenceValue Int      @default(0)
   // Zona horaria IANA usada para formatear fechas/horas en UI y bitácoras.
-  timezone               String   @default("America/Santiago")
-  createdAt              DateTime @default(now())
+  timezone              String   @default("America/Santiago")
+  createdAt             DateTime @default(now())
 
   members     Member[]
   invitations Invitation[]
@@ -693,22 +693,22 @@ model Proposal {
   policyNumberGenerated      String?
   policyEmissionDate         DateTime?      @db.Date
   policyReceptionDate        DateTime?      @db.Date
-  emissionErrorReason        String?        // motivo de error de emisión (devuelta a la compañía)
+  emissionErrorReason        String? // motivo de error de emisión (devuelta a la compañía)
   emissionErrorDetail        String?
   currentStateStartedAt      DateTime       @default(now())
   createdById                String?
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
 
-  client                    Client                              @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  branchType                BranchType?                         @relation(fields: [branchTypeId], references: [id])
-  statusHistory             ProposalStatusHistory[]
-  items                     ProposalItem[]
-  paymentPlan               PaymentPlan?
-  logs                      ProposalLog[]
-  brokerParticipations      ProposalBrokerParticipation[]
-  coaseguroParticipations   ProposalCoaseguroParticipation[]
-  policies                  Policy[]
+  client                  Client                           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  branchType              BranchType?                      @relation(fields: [branchTypeId], references: [id])
+  statusHistory           ProposalStatusHistory[]
+  items                   ProposalItem[]
+  paymentPlan             PaymentPlan?
+  logs                    ProposalLog[]
+  brokerParticipations    ProposalBrokerParticipation[]
+  coaseguroParticipations ProposalCoaseguroParticipation[]
+  policies                Policy[]
 
   @@unique([organizationId, proposalNumber])
   @@index([organizationId])
@@ -957,41 +957,51 @@ enum PolicyStatus {
 }
 
 model Policy {
-  id               String       @id @default(cuid())
-  organizationId   String
-  clientId         String
-  proposalId       String?
-  policyNumber     String
-  companyId        String?
-  lineId           String?
-  branchId         String?
-  status           PolicyStatus @default(VIGENTE)
-  premiumNet       Decimal?     @db.Decimal(14, 2)
-  currency         String       @default("UF")
-  commissionPercent Decimal?    @db.Decimal(9, 4)
-  commissionAmount Decimal?     @db.Decimal(14, 2)
-  startDate        DateTime?    @db.Date
-  endDate          DateTime?    @db.Date
-  previousPolicyId String?
-  nextPolicyId     String?
-  externalId       String?
-  assignedUserId   String?
-  createdById      String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  id                 String       @id @default(cuid())
+  organizationId     String
+  clientId           String
+  proposalId         String?
+  policyNumber       String
+  companyId          String?
+  lineId             String?
+  branchId           String?
+  status             PolicyStatus @default(VIGENTE)
+  premiumNet         Decimal?     @db.Decimal(14, 2)
+  currency           String       @default("UF")
+  commissionPercent  Decimal?     @db.Decimal(9, 4)
+  commissionAmount   Decimal?     @db.Decimal(14, 2)
+  startDate          DateTime?    @db.Date
+  endDate            DateTime?    @db.Date
+  previousPolicyId   String?
+  nextPolicyId       String?
+  externalId         String?
+  assignedUserId     String?
+  // Vendedor (ejecutivo comercial) asociado a la póliza para liquidar su
+  // comisión. Precargado desde Proposal.salespersonId al convertir, editable.
+  salespersonId      String?
+  // Override de la tasa de comisión del vendedor PARA ESTA PÓLIZA. null = usa
+  // la tasa default configurada del vendedor (SalespersonCommissionRate). El
+  // admin la baja aquí cuando se negocia un acuerdo para cerrar un deal.
+  salesCommissionPct Decimal?     @db.Decimal(6, 3)
+  createdById        String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
-  client        Client                @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  proposal      Proposal?             @relation(fields: [proposalId], references: [id])
-  items         PolicyItem[]
-  coverages     PolicyCoverage[]
-  statusHistory PolicyStatusHistory[]
-  installments  Installment[]
-  endorsements  Endorsement[]
+  client                    Client                          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  proposal                  Proposal?                       @relation(fields: [proposalId], references: [id])
+  items                     PolicyItem[]
+  coverages                 PolicyCoverage[]
+  statusHistory             PolicyStatusHistory[]
+  installments              Installment[]
+  endorsements              Endorsement[]
+  companyCommissionPayments CompanyCommissionPayment[]
+  sellerCommissionItem      SellerCommissionSettlementItem?
 
   @@unique([organizationId, policyNumber])
   @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([clientId])
+  @@index([organizationId, salespersonId])
 }
 
 model PolicyItem {
@@ -1003,7 +1013,7 @@ model PolicyItem {
   currency       String   @default("UF")
   createdAt      DateTime @default(now())
 
-  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  policy Policy  @relation(fields: [policyId], references: [id], onDelete: Cascade)
   claims Claim[]
 
   @@index([organizationId])
@@ -1039,6 +1049,101 @@ model PolicyStatusHistory {
 
   @@index([organizationId])
   @@index([policyId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Comisiones: pagos de compañía a la corredora y liquidación a vendedores
+// ─────────────────────────────────────────────────────────────
+
+// Tasa default de comisión que gana un vendedor, como % de la comisión que
+// cobra la corredora. La edita el admin. Override por póliza en
+// Policy.salesCommissionPct.
+model SalespersonCommissionRate {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String // miembro/usuario vendedor
+  defaultPct     Decimal  @db.Decimal(6, 3)
+  isActive       Boolean  @default(true)
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+}
+
+// Pago recibido de la compañía por la comisión de una póliza. Permite pagos
+// parciales / varias facturas por póliza. La póliza se considera "pagada por la
+// compañía" cuando la suma de pagos cubre Policy.commissionAmount.
+model CompanyCommissionPayment {
+  id             String   @id @default(cuid())
+  organizationId String
+  policyId       String
+  paymentDate    DateTime @db.Date
+  amount         Decimal  @db.Decimal(14, 2)
+  currency       String   @default("CLP")
+  invoiceNumber  String?
+  // Factor de conversión a CLP usado al registrar (UF→$, USD→$, etc.).
+  exchangeFactor Decimal? @db.Decimal(14, 4)
+  notes          String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([policyId])
+}
+
+enum SellerSettlementStatus {
+  PENDIENTE
+  PAGADA
+}
+
+// Liquidación de comisiones a un vendedor: agrupa las pólizas pagadas por la
+// compañía y aún no liquidadas, calculando el pago al vendedor.
+model SellerCommissionSettlement {
+  id             String                 @id @default(cuid())
+  organizationId String
+  salespersonId  String
+  number         Int // correlativo por organización
+  status         SellerSettlementStatus @default(PENDIENTE)
+  // Moneda de la liquidación. Una liquidación agrupa solo pólizas de una misma
+  // moneda (la comisión del vendedor se calcula en la moneda de la póliza).
+  currency       String                 @default("CLP")
+  totalAmount    Decimal                @db.Decimal(14, 2)
+  notes          String?
+  paidAt         DateTime?
+  createdById    String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  items SellerCommissionSettlementItem[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId])
+  @@index([organizationId, salespersonId])
+}
+
+// Detalle de una liquidación: una póliza, su comisión corredora base, la tasa
+// aplicada y el pago resultante al vendedor. policyId único por org: una póliza
+// solo puede liquidarse una vez.
+model SellerCommissionSettlementItem {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  settlementId         String
+  policyId             String   @unique
+  baseCommissionAmount Decimal  @db.Decimal(14, 2)
+  appliedPct           Decimal  @db.Decimal(6, 3)
+  amount               Decimal  @db.Decimal(14, 2)
+  currency             String   @default("CLP")
+  createdAt            DateTime @default(now())
+
+  settlement SellerCommissionSettlement @relation(fields: [settlementId], references: [id], onDelete: Cascade)
+  policy     Policy                     @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([settlementId])
 }
 
 // ─────────────────────────────────────────────────────────────

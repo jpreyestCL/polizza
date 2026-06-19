@@ -64,6 +64,7 @@ export async function createPolicyAction(
   // No crear una segunda póliza para una propuesta que ya tiene una vinculada
   // (review #6): el despacho ya la crea automáticamente.
   const linkedProposalId = emptyToNull(data.proposalId);
+  let proposalSalespersonId: string | null = null;
   if (linkedProposalId) {
     const existing = await db.policy.findFirst({
       where: { proposalId: linkedProposalId },
@@ -75,6 +76,13 @@ export async function createPolicyAction(
         error: `La propuesta ya tiene una póliza vinculada (N° ${existing.policyNumber}).`,
       };
     }
+    // El vendedor de la póliza se precarga desde la propuesta de origen
+    // (override de tasa por póliza se gestiona en /comisiones).
+    const sourceProposal = await db.proposal.findFirst({
+      where: { id: linkedProposalId },
+      select: { salespersonId: true },
+    });
+    proposalSalespersonId = sourceProposal?.salespersonId ?? null;
   }
 
   try {
@@ -94,6 +102,7 @@ export async function createPolicyAction(
           startDate: parseDate(data.startDate),
           endDate: parseDate(data.endDate),
           assignedUserId: emptyToNull(data.assignedUserId) ?? ctx.userId,
+          salespersonId: proposalSalespersonId,
           createdById: ctx.userId,
         },
       });

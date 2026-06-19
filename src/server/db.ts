@@ -67,6 +67,10 @@ const TENANT_MODELS = new Set<string>([
   "Broker",
   "ProposalBrokerParticipation",
   "ProposalCoaseguroParticipation",
+  "SalespersonCommissionRate",
+  "CompanyCommissionPayment",
+  "SellerCommissionSettlement",
+  "SellerCommissionSettlementItem",
 ]);
 
 // Operaciones cuyo `where` debe filtrarse por organizationId.

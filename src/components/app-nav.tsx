@@ -10,6 +10,7 @@ import {
   RefreshCw,
   TriangleAlert,
   Wallet,
+  Percent,
   ListChecks,
   LayoutDashboard,
   Car,
@@ -28,6 +29,8 @@ type NavItem = {
   icon: LucideIcon;
   available: boolean;
   adminOnly?: boolean;
+  /** Visible para gerente y admin (cartera global). */
+  managerOnly?: boolean;
 };
 
 const NAV_ITEMS: NavItem[] = [
@@ -50,6 +53,13 @@ const NAV_ITEMS: NavItem[] = [
     available: true,
   },
   { href: "/cobranza", label: "Cobranza", icon: Wallet, available: true },
+  {
+    href: "/comisiones",
+    label: "Comisiones",
+    icon: Percent,
+    available: true,
+    managerOnly: true,
+  },
   { href: "/tareas", label: "Tareas", icon: ListChecks, available: true },
   {
     href: "/configuracion/companias",
@@ -80,6 +90,13 @@ const NAV_ITEMS: NavItem[] = [
     adminOnly: true,
   },
   {
+    href: "/configuracion/comisiones-vendedores",
+    label: "Comisiones vendedores",
+    icon: Percent,
+    available: true,
+    adminOnly: true,
+  },
+  {
     href: "/configuracion/propuestas",
     label: "Ajustes propuestas",
     icon: Settings,
@@ -96,9 +113,13 @@ export function AppNav({
   role?: string;
 }) {
   const pathname = usePathname();
-  const items = NAV_ITEMS.filter(
-    (item) => !item.adminOnly || role === "admin",
-  );
+  const items = NAV_ITEMS.filter((item) => {
+    if (item.adminOnly && role !== "admin") return false;
+    if (item.managerOnly && role !== "admin" && role !== "gerente") {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <nav className="flex flex-col gap-0.5">
