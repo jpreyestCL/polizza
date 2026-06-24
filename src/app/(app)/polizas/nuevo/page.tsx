@@ -106,15 +106,15 @@ export default async function NuevaPolizaPage({
         }
       }
 
+      // La prima neta SIEMPRE suma todas las coberturas; la casilla "Suma"
+      // solo afecta el monto asegurado (ver obs).
       const totalPremiumNet = proposalItems.reduce(
         (sum, it) =>
           sum +
-          it.coverages
-            .filter((c) => c.sumsToTotal)
-            .reduce(
-              (s, c) => s + (c.premiumNet ? Number(c.premiumNet) : 0),
-              0,
-            ),
+          it.coverages.reduce(
+            (s, c) => s + (c.premiumNet ? Number(c.premiumNet) : 0),
+            0,
+          ),
         0,
       );
 

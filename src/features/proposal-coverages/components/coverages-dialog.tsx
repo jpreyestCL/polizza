@@ -219,10 +219,10 @@ export function ItemCoveragesDialog({
     router.refresh();
   }
 
-  // Totales en vivo desde el grid.
+  // Totales en vivo desde el grid. Las primas (afecta + exenta) SIEMPRE se
+  // suman; la casilla "Suma" solo controla el monto asegurado (ver obs).
   const totals = rows.reduce(
     (acc, r) => {
-      if (!r.sumsToTotal) return acc;
       const c = computeCoverage(r);
       acc.net += c.premiumNet;
       acc.iva += c.ivaAmount;
@@ -268,7 +268,12 @@ export function ItemCoveragesDialog({
                   <th className="px-1.5 py-1.5 text-left">Cobertura</th>
                   <th className="px-1.5 py-1.5 text-center">Val.</th>
                   <th className="px-1.5 py-1.5 text-right">Mto. aseg.</th>
-                  <th className="px-1.5 py-1.5 text-center">Suma</th>
+                  <th
+                    className="px-1.5 py-1.5 text-center"
+                    title="Suma el monto asegurado de esta cobertura al monto asegurado total. Las primas siempre se suman."
+                  >
+                    Suma M.A.
+                  </th>
                   <th className="px-1.5 py-1.5 text-center">IVA</th>
                   <th className="px-1.5 py-1.5 text-right">T. afe ‰</th>
                   <th className="px-1.5 py-1.5 text-right">T. exe ‰</th>
@@ -744,7 +749,7 @@ function CoverageFormDialog({
                     setValues({ ...values, sumsToTotal: v === true })
                   }
                 />
-                Suma al total
+                Suma monto asegurado al total
               </label>
             </div>
           </div>
