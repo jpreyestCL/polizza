@@ -286,9 +286,8 @@ export function ProposalItemsPanel({
                   locked={locked}
                   coveragesOpen={pendingCoveragesItemId === item.id}
                   onCoveragesOpenChange={(v) => {
-                    if (!v && pendingCoveragesItemId === item.id) {
-                      setPendingCoveragesItemId(null);
-                    }
+                    // Abrir: marca este ítem como activo. Cerrar: limpia.
+                    setPendingCoveragesItemId(v ? item.id : null);
                   }}
                 />
               ))
@@ -423,12 +422,19 @@ function ItemRow({
             onOpenChange={onCoveragesOpenChange}
             trigger={
               <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Coberturas"
-                title="Coberturas"
+                variant="outline"
+                size="sm"
+                aria-label="Ver y editar coberturas"
+                title="Ver y editar coberturas"
+                className="h-8 gap-1.5"
               >
                 <Receipt className="size-3.5" />
+                Coberturas
+                {item.coverages.length > 0 && (
+                  <span className="rounded-full bg-primary/10 px-1.5 text-[11px] font-medium tabular-nums text-primary">
+                    {item.coverages.length}
+                  </span>
+                )}
               </Button>
             }
           />

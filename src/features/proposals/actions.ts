@@ -885,12 +885,15 @@ export async function dispatchPolicyToContratanteAction(
     },
   });
 
+  // La prima neta SIEMPRE suma todas las coberturas; la casilla "Suma" solo
+  // afecta el monto asegurado del ítem (ver obs).
   const totalNet = proposalItems.reduce(
     (sum, it) =>
       sum +
-      it.coverages
-        .filter((c) => c.sumsToTotal)
-        .reduce((s, c) => s + (c.premiumNet ? Number(c.premiumNet) : 0), 0),
+      it.coverages.reduce(
+        (s, c) => s + (c.premiumNet ? Number(c.premiumNet) : 0),
+        0,
+      ),
     0,
   );
 

@@ -94,15 +94,17 @@ export async function buildProposalPdfData(
   let totalCommission = 0;
   const itemsData = items.map((it) => {
     const coverages = it.coverages.map((c) => {
+      // El monto asegurado solo suma si la casilla "Suma" está marcada; las
+      // primas (afecta + exenta) y comisiones SIEMPRE suman (ver obs).
       if (c.sumsToTotal) {
         totalInsured += c.insuredAmount ? Number(c.insuredAmount) : 0;
-        totalAffect += c.premiumAffect ? Number(c.premiumAffect) : 0;
-        totalExempt += c.premiumExempt ? Number(c.premiumExempt) : 0;
-        totalNet += c.premiumNet ? Number(c.premiumNet) : 0;
-        totalIva += c.ivaAmount ? Number(c.ivaAmount) : 0;
-        totalGross += c.premiumGross ? Number(c.premiumGross) : 0;
-        totalCommission += c.commissionAmount ? Number(c.commissionAmount) : 0;
       }
+      totalAffect += c.premiumAffect ? Number(c.premiumAffect) : 0;
+      totalExempt += c.premiumExempt ? Number(c.premiumExempt) : 0;
+      totalNet += c.premiumNet ? Number(c.premiumNet) : 0;
+      totalIva += c.ivaAmount ? Number(c.ivaAmount) : 0;
+      totalGross += c.premiumGross ? Number(c.premiumGross) : 0;
+      totalCommission += c.commissionAmount ? Number(c.commissionAmount) : 0;
       return {
         name: c.name,
         polCad: c.polCad,

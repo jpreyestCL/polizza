@@ -33,6 +33,7 @@ const FIELDS_INMUEBLE: FieldDef[] = [
       { value: "CASA", label: "Casa" },
       { value: "DEPARTAMENTO", label: "Departamento" },
       { value: "LOCAL", label: "Local" },
+      { value: "OFICINAS", label: "Oficinas" },
       { value: "FABRICA", label: "Fábrica" },
       { value: "EDIFICIO", label: "Edificio" },
       { value: "CENTRO_COMERCIAL", label: "Centro Comercial" },
