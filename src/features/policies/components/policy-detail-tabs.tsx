@@ -46,6 +46,10 @@ export function PolicyDetailTabs({
   ufValue: number | null;
 }) {
   const currency = policy.currency as CurrencyCode;
+  const insuredTotal = policy.items.reduce(
+    (sum, item) => sum + (item.insuredAmount ?? 0),
+    0,
+  );
   const vigencia =
     policy.startDate || policy.endDate
       ? `${formatDate(policy.startDate)} — ${formatDate(policy.endDate)}`
@@ -92,6 +96,16 @@ export function PolicyDetailTabs({
               value={
                 <MoneyValue
                   amount={policy.premiumNet}
+                  currency={policy.currency}
+                  ufValue={ufValue}
+                />
+              }
+            />
+            <Field
+              label="Prima bruta"
+              value={
+                <MoneyValue
+                  amount={policy.premiumGross}
                   currency={policy.currency}
                   ufValue={ufValue}
                 />
@@ -151,24 +165,68 @@ export function PolicyDetailTabs({
             description="Edita la póliza para registrar los bienes asegurados."
           />
         ) : (
-          <ul className="divide-y rounded-xl border bg-card">
-            {policy.items.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center justify-between gap-4 p-3.5"
-              >
-                <span className="text-sm">{item.description}</span>
-                <span className="text-sm font-medium">
-                  {item.insuredAmount !== null
-                    ? formatMoney(
-                        item.insuredAmount,
-                        item.currency as CurrencyCode,
-                      )
-                    : "—"}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto rounded-xl border bg-card">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="border-b bg-muted/40 text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2.5 text-left font-medium">Item</th>
+                  <th className="px-3 py-2.5 text-left font-medium">
+                    Identificación del Riesgo
+                  </th>
+                  <th className="px-3 py-2.5 text-left font-medium">Moneda</th>
+                  <th className="px-3 py-2.5 text-right font-medium">
+                    Monto Asegurado
+                  </th>
+                  <th className="px-3 py-2.5 text-right font-medium">
+                    Prima Bruta
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {policy.items.map((item, idx) => (
+                  <tr key={item.id} className="border-b last:border-0 align-top">
+                    <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
+                      {idx + 1}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-pre-line">
+                      {item.description}
+                    </td>
+                    <td className="px-3 py-2.5">{item.currency}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {item.insuredAmount !== null
+                        ? formatMoney(
+                            item.insuredAmount,
+                            item.currency as CurrencyCode,
+                          )
+                        : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      {/* La prima no se desglosa por ítem; con un único ítem
+                          equivale a la prima bruta de la póliza. */}
+                      {policy.items.length === 1 && policy.premiumGross != null
+                        ? formatMoney(policy.premiumGross, currency)
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t bg-muted/30 font-medium">
+                <tr>
+                  <td className="px-3 py-2.5" colSpan={3}>
+                    Total
+                  </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {formatMoney(insuredTotal, currency)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {policy.premiumGross != null
+                      ? formatMoney(policy.premiumGross, currency)
+                      : "—"}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         )}
       </TabsContent>
 
