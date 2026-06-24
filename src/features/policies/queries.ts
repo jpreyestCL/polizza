@@ -232,17 +232,146 @@ export type PolicyDetail = NonNullable<
   Awaited<ReturnType<typeof getPolicyDetail>>
 >;
 
-/** Pólizas de un cliente, para la ficha 360°. */
-export async function listClientPolicies(db: Db, clientId: string) {
-  return db.policy.findMany({
-    where: { clientId },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      policyNumber: true,
-      status: true,
-      endDate: true,
-    },
+export type ClientPolicyRow = {
+  id: string;
+  policyNumber: string;
+  status: string;
+  startDate: Date | null;
+  endDate: Date | null;
+  currency: string;
+  ramo: string | null;
+  company: string | null;
+  product: string | null;
+  premiumNet: number | null;
+  /** Prima bruta = (afecta × 1.19) + exenta. Si no hay desglose, neta × 1.19. */
+  premiumGross: number | null;
+};
+
+/**
+ * Calcula la prima bruta de una póliza. Si proviene de una propuesta con
+ * coberturas, usa el desglose afecta/exenta: bruta = afecta×1.19 + exenta.
+ * Si no (póliza importada sin desglose), asume afecta: neta × 1.19.
+ */
+function computeGross(
+  net: number | null,
+  proposal: {
+    items: { coverages: { premiumAffect: unknown; premiumExempt: unknown }[] }[];
+  } | null,
+): number | null {
+  if (proposal) {
+    let affect = 0;
+    let exempt = 0;
+    let hasSplit = false;
+    for (const it of proposal.items) {
+      for (const c of it.coverages) {
+        if (c.premiumAffect != null) {
+          affect += Number(c.premiumAffect);
+          hasSplit = true;
+        }
+        if (c.premiumExempt != null) {
+          exempt += Number(c.premiumExempt);
+          hasSplit = true;
+        }
+      }
+    }
+    if (hasSplit && affect + exempt > 0) return affect * 1.19 + exempt;
+  }
+  return net != null ? net * 1.19 : null;
+}
+
+/** Pólizas de un cliente, para la ficha 360°. Enriquece ramo, producto,
+ * compañía, vigencia y prima bruta (calculada). */
+export async function listClientPolicies(
+  db: Db,
+  clientId: string,
+): Promise<ClientPolicyRow[]> {
+  const [policies, companies, lines, branchTypes, products] = await Promise.all(
+    [
+      db.policy.findMany({
+        where: { clientId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          policyNumber: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+          currency: true,
+          premiumNet: true,
+          companyId: true,
+          lineId: true,
+          branchId: true,
+          proposal: {
+            select: {
+              productId: true,
+              items: {
+                select: {
+                  coverages: {
+                    select: { premiumAffect: true, premiumExempt: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+      db.insuranceCompany.findMany({ select: { id: true, name: true } }),
+      db.insuranceLine.findMany({ select: { id: true, name: true } }),
+      db.branchType.findMany({ select: { id: true, name: true } }),
+      db.insuranceProduct.findMany({
+        select: {
+          id: true,
+          name: true,
+          branchTypeId: true,
+          insuranceCompanyId: true,
+        },
+      }),
+    ],
+  );
+
+  const companyById = new Map(companies.map((c) => [c.id, c.name]));
+  const lineById = new Map(lines.map((l) => [l.id, l.name]));
+  const branchById = new Map(branchTypes.map((b) => [b.id, b.name]));
+  const productById = new Map(products.map((p) => [p.id, p.name]));
+
+  // Producto derivado por (ramo + compañía), solo cuando hay UNO inequívoco.
+  const productByRamoCompany = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const p of products) {
+    if (!p.branchTypeId) continue;
+    const key = `${p.branchTypeId}|${p.insuranceCompanyId}`;
+    if (productByRamoCompany.has(key)) ambiguous.add(key);
+    else productByRamoCompany.set(key, p.name);
+  }
+  for (const key of ambiguous) productByRamoCompany.delete(key);
+
+  return policies.map((p) => {
+    const net = p.premiumNet != null ? Number(p.premiumNet) : null;
+    const ramo =
+      (p.lineId ? lineById.get(p.lineId) : null) ??
+      (p.branchId ? branchById.get(p.branchId) : null) ??
+      null;
+    const product =
+      (p.proposal?.productId
+        ? productById.get(p.proposal.productId)
+        : null) ??
+      (p.branchId && p.companyId
+        ? productByRamoCompany.get(`${p.branchId}|${p.companyId}`)
+        : null) ??
+      null;
+    return {
+      id: p.id,
+      policyNumber: p.policyNumber,
+      status: p.status,
+      startDate: p.startDate,
+      endDate: p.endDate,
+      currency: p.currency,
+      ramo,
+      company: p.companyId ? (companyById.get(p.companyId) ?? null) : null,
+      product,
+      premiumNet: net,
+      premiumGross: computeGross(net, p.proposal),
+    };
   });
 }
 

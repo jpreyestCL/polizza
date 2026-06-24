@@ -10,7 +10,6 @@ import {
   MessageCircle,
   Phone,
   Plus,
-  ShieldCheck,
   Star,
   TriangleAlert,
   Users,
@@ -25,7 +24,8 @@ import { RegisterInteraction } from "./register-interaction";
 import { BranchesPanel } from "@/features/branches/components/branches-panel";
 import type { BranchItem } from "@/features/branches/queries";
 import { ProposalStatusBadge } from "@/features/proposals/components/proposal-badges";
-import { PolicyStatusBadge } from "@/features/policies/components/policy-badges";
+import { ClientPoliciesPanel } from "@/features/policies/components/client-policies-panel";
+import type { ClientPolicyRow } from "@/features/policies/queries";
 import { ClaimStatusBadge } from "@/features/claims/components/claim-badges";
 import { QuotationStatusBadge } from "@/features/car-quotes/components/quotation-badges";
 import { DocumentsPanel } from "@/features/documents/components/documents-panel";
@@ -42,12 +42,7 @@ type ClientProposal = {
   createdAt: Date;
 };
 
-type ClientPolicy = {
-  id: string;
-  policyNumber: string;
-  status: string;
-  endDate: Date | null;
-};
+type ClientPolicy = ClientPolicyRow;
 
 type ClientClaim = {
   id: string;
@@ -240,35 +235,7 @@ export function ClientTabs({
       </TabsContent>
 
       <TabsContent value="polizas">
-        {clientPolicies.length === 0 ? (
-          <EmptyState
-            icon={ShieldCheck}
-            title="Sin pólizas"
-            description="Este cliente aún no tiene pólizas registradas."
-          />
-        ) : (
-          <ul className="divide-y rounded-xl border bg-card">
-            {clientPolicies.map((policy) => (
-              <li
-                key={policy.id}
-                className="flex items-center justify-between gap-3 p-3.5"
-              >
-                <Link
-                  href={`/polizas/${policy.id}`}
-                  className="font-medium hover:text-primary"
-                >
-                  {policy.policyNumber}
-                </Link>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground">
-                    Vence {formatDate(policy.endDate)}
-                  </span>
-                  <PolicyStatusBadge status={policy.status} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <ClientPoliciesPanel policies={clientPolicies} />
       </TabsContent>
 
       <TabsContent value="propuestas">
