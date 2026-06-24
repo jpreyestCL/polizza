@@ -209,12 +209,25 @@ export async function getPolicyDetail(db: Db, id: string) {
       items: { orderBy: { createdAt: "asc" } },
       coverages: { orderBy: { createdAt: "asc" } },
       statusHistory: { orderBy: { createdAt: "desc" } },
+      proposal: {
+        select: {
+          items: {
+            select: {
+              coverages: {
+                select: { premiumAffect: true, premiumExempt: true },
+              },
+            },
+          },
+        },
+      },
     },
   });
   if (!policy) return null;
+  const premiumNet = policy.premiumNet ? Number(policy.premiumNet) : null;
   return {
     ...policy,
-    premiumNet: policy.premiumNet ? Number(policy.premiumNet) : null,
+    premiumNet,
+    premiumGross: computeGross(premiumNet, policy.proposal),
     items: policy.items.map((item) => ({
       ...item,
       insuredAmount: item.insuredAmount ? Number(item.insuredAmount) : null,
