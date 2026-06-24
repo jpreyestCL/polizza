@@ -957,35 +957,51 @@ enum PolicyStatus {
 }
 
 model Policy {
-  id                 String       @id @default(cuid())
-  organizationId     String
-  clientId           String
-  proposalId         String?
-  policyNumber       String
-  companyId          String?
-  lineId             String?
-  branchId           String?
-  status             PolicyStatus @default(VIGENTE)
-  premiumNet         Decimal?     @db.Decimal(14, 2)
-  currency           String       @default("UF")
-  commissionPercent  Decimal?     @db.Decimal(9, 4)
-  commissionAmount   Decimal?     @db.Decimal(14, 2)
-  startDate          DateTime?    @db.Date
-  endDate            DateTime?    @db.Date
-  previousPolicyId   String?
-  nextPolicyId       String?
-  externalId         String?
-  assignedUserId     String?
+  id                     String       @id @default(cuid())
+  organizationId         String
+  clientId               String
+  proposalId             String?
+  policyNumber           String
+  companyId              String?
+  lineId                 String?
+  branchId               String?
+  status                 PolicyStatus @default(VIGENTE)
+  premiumNet             Decimal?     @db.Decimal(14, 2) // total = afecta + exenta
+  // Desglose de prima neta: afecta (gravada con IVA) vs exenta. premiumNet es la suma.
+  premiumAffect          Decimal?     @db.Decimal(14, 2)
+  premiumExempt          Decimal?     @db.Decimal(14, 2)
+  currency               String       @default("UF")
+  commissionPercent      Decimal?     @db.Decimal(9, 4)
+  commissionAmount       Decimal?     @db.Decimal(14, 2)
+  // Desglose de comisión: monto calculado, afecta/exenta (montos y %),
+  // comisión final de la compañía y flag de pagada.
+  commissionCalculated   Decimal?     @db.Decimal(14, 4)
+  commissionAffect       Decimal?     @db.Decimal(14, 4)
+  commissionExempt       Decimal?     @db.Decimal(14, 4)
+  commissionAffectPct    Decimal?     @db.Decimal(6, 3)
+  commissionExemptPct    Decimal?     @db.Decimal(6, 3)
+  commissionFinalCompany Decimal?     @db.Decimal(14, 2)
+  commissionPaid         Boolean?
+  // Snapshot del tipo de cambio al momento de la póliza: valor en pesos de la
+  // moneda de la póliza (Cambio) y de la UF. Permite re-expresar montos históricos.
+  exchangeRate           Decimal?     @db.Decimal(14, 4)
+  ufValue                Decimal?     @db.Decimal(14, 4)
+  startDate              DateTime?    @db.Date
+  endDate                DateTime?    @db.Date
+  previousPolicyId       String?
+  nextPolicyId           String?
+  externalId             String?
+  assignedUserId         String?
   // Vendedor (ejecutivo comercial) asociado a la póliza para liquidar su
   // comisión. Precargado desde Proposal.salespersonId al convertir, editable.
-  salespersonId      String?
+  salespersonId          String?
   // Override de la tasa de comisión del vendedor PARA ESTA PÓLIZA. null = usa
   // la tasa default configurada del vendedor (SalespersonCommissionRate). El
   // admin la baja aquí cuando se negocia un acuerdo para cerrar un deal.
-  salesCommissionPct Decimal?     @db.Decimal(6, 3)
-  createdById        String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  salesCommissionPct     Decimal?     @db.Decimal(6, 3)
+  createdById            String?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 
   client                    Client                          @relation(fields: [clientId], references: [id], onDelete: Cascade)
   proposal                  Proposal?                       @relation(fields: [proposalId], references: [id])

@@ -58,6 +58,15 @@ function parseDate(v?: string): Date | null {
   const dt = new Date(Date.UTC(+y, +mo - 1, +d, +hh, +mm, +ss));
   return isNaN(dt.getTime()) ? null : dt;
 }
+// SI/NO (es-CL) → boolean; vacío → null.
+function parseBool(v?: string): boolean | null {
+  const t = clean(v);
+  if (!t) return null;
+  const u = t.toUpperCase();
+  if (["SI", "SÍ", "TRUE", "1"].includes(u)) return true;
+  if (["NO", "FALSE", "0"].includes(u)) return false;
+  return null;
+}
 // RUT contratante viene concatenado cuerpo+dv sin guion
 function normRut(v?: string): string | null {
   const t = clean(v);
@@ -233,8 +242,19 @@ async function main() {
       status: status as any,
       currency: mapCurrency(cara.Nombre_Moneda),
       premiumNet: parseDec(cara.Prima_Neta),
+      premiumAffect: parseDec(cara.Prima_Afecta),
+      premiumExempt: parseDec(cara.Prima_Exenta),
       commissionPercent: parseDec(cara.Porc_Comision),
       commissionAmount: parseDec(cara.Monto_Comision),
+      commissionCalculated: parseDec(cara.Comision_Calculada),
+      commissionAffect: parseDec(cara.Comision_Afecta),
+      commissionExempt: parseDec(cara.Comision_Exenta),
+      commissionAffectPct: parseDec(cara.Porc_Comision_Afecto),
+      commissionExemptPct: parseDec(cara.Porc_Comision_Exento),
+      commissionFinalCompany: parseDec(cara.Comision_Final_Cia),
+      commissionPaid: parseBool(cara.Comision_Pagada),
+      exchangeRate: parseDec(cara.Cambio),
+      ufValue: parseDec(cara.Valor_UF),
       startDate: parseDate(cara.Inicio_Vigencia),
       endDate,
       createdAt: parseDate(cara.Fecha_Creacion) ?? undefined,
