@@ -32,7 +32,17 @@ export const changePasswordSchema = z
     message: "La nueva contraseña debe ser distinta de la actual",
   });
 
+export const changeEmailSchema = z.object({
+  newEmail: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(1, "Ingresa el correo nuevo")
+    .email("Correo inválido"),
+});
+
 export type ProfileNameValues = z.infer<typeof profileNameSchema>;
+export type ChangeEmailValues = z.infer<typeof changeEmailSchema>;
 export type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
 
 export type AccountResult = { ok: true } | { ok: false; error: string };

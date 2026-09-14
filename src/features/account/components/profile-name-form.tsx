@@ -8,13 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function ProfileNameForm({
-  initialName,
-  email,
-}: {
-  initialName: string;
-  email: string;
-}) {
+export function ProfileNameForm({ initialName }: { initialName: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState(initialName);
@@ -50,15 +44,6 @@ export function ProfileNameForm({
         <p className="text-xs text-muted-foreground">
           Es el nombre con el que apareces en propuestas, bitácoras y
           asignaciones de cartera.
-        </p>
-      </div>
-
-      <div className="space-y-1">
-        <Label htmlFor="email">Correo</Label>
-        <Input id="email" value={email} disabled className="max-w-md" />
-        <p className="text-xs text-muted-foreground">
-          El correo es tu identificador de acceso y no se puede cambiar desde
-          aquí. Pídeselo a un administrador de tu corredora.
         </p>
       </div>
 
