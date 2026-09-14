@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireSuperadmin } from "@/server/context";
 import { AdminNav } from "./_nav";
+import { SignOutButton } from "@/components/sign-out-button";
 import { ShieldCheck } from "lucide-react";
 
 export default async function AdminLayout({
@@ -24,16 +25,25 @@ export default async function AdminLayout({
           </p>
           <AdminNav />
         </div>
-        <div className="border-t border-sidebar-border px-4 py-3 text-[11px] text-sidebar-foreground/45">
-          {ctx.email}
-          <div className="mt-1">
+        <div className="space-y-2 border-t border-sidebar-border px-4 py-3">
+          <div className="truncate text-[11px] text-sidebar-foreground/45">
+            {ctx.email}
+          </div>
+          <div className="flex flex-col gap-1 text-[11px]">
             <Link
               href="/panel"
               className="text-sidebar-foreground/70 underline-offset-2 hover:underline"
             >
               ← Volver al app
             </Link>
+            <Link
+              href="/perfil"
+              className="text-sidebar-foreground/70 underline-offset-2 hover:underline"
+            >
+              Mi perfil
+            </Link>
           </div>
+          <SignOutButton variant="outline" size="sm" className="w-full" />
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">

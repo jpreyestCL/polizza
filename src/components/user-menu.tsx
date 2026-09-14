@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { LogOut, ShieldCheck } from "lucide-react";
+import { LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { initials } from "@/lib/utils";
 import { roleLabel } from "@/lib/roles";
@@ -54,14 +54,16 @@ export function UserMenu({
             )}
           </div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => router.push("/perfil")}>
+          <UserRound />
+          Mi perfil
+        </DropdownMenuItem>
         {isSuperadmin && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => router.push("/admin")}>
-              <ShieldCheck />
-              Panel SaaS Admin
-            </DropdownMenuItem>
-          </>
+          <DropdownMenuItem onSelect={() => router.push("/admin")}>
+            <ShieldCheck />
+            Panel SaaS Admin
+          </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={handleSignOut}>
