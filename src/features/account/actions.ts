@@ -8,8 +8,10 @@ import { requireSession } from "@/server/context";
 import {
   profileNameSchema,
   changePasswordSchema,
+  changeEmailSchema,
   type ProfileNameValues,
   type ChangePasswordValues,
+  type ChangeEmailValues,
   type AccountResult,
 } from "./schemas";
 
@@ -64,6 +66,49 @@ export async function changePasswordAction(
   } catch (error) {
     if (error instanceof APIError) {
       return { ok: false, error: "La contraseña actual no es correcta." };
+    }
+    throw error;
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Pide el cambio de correo. Better Auth no toca el correo todavía: manda un
+ * enlace de confirmación a la dirección NUEVA y el cambio se escribe recién
+ * cuando el usuario lo abre.
+ *
+ * Si el correo ya pertenece a otra cuenta, Better Auth responde 200 sin enviar
+ * nada, para no revelar qué direcciones están registradas. Por eso el mensaje
+ * de vuelta es deliberadamente neutro y no confirma la existencia del correo.
+ */
+export async function requestEmailChangeAction(
+  values: ChangeEmailValues,
+): Promise<AccountResult> {
+  const parsed = changeEmailSchema.safeParse(values);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Inválido" };
+  }
+  const ctx = await requireSession();
+
+  if (parsed.data.newEmail === ctx.email.toLowerCase()) {
+    return { ok: false, error: "Ese ya es tu correo actual." };
+  }
+
+  try {
+    await auth.api.changeEmail({
+      headers: await headers(),
+      body: {
+        newEmail: parsed.data.newEmail,
+        callbackURL: "/perfil?correo=confirmado",
+      },
+    });
+  } catch (error) {
+    if (error instanceof APIError) {
+      return {
+        ok: false,
+        error: "No pudimos iniciar el cambio de correo. Inténtalo de nuevo.",
+      };
     }
     throw error;
   }

@@ -32,6 +32,30 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
   },
+  user: {
+    /**
+     * Cambio de correo con verificación obligatoria. No se activa
+     * `updateEmailWithoutVerification`, así que el correo nunca cambia hasta
+     * que se abre el enlace: Better Auth envía el link a la DIRECCIÓN NUEVA y
+     * recién al abrirlo escribe el nuevo correo y marca `emailVerified`.
+     * Vale tanto para cuentas verificadas como no verificadas.
+     */
+    changeEmail: { enabled: true },
+  },
+  emailVerification: {
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendEmail({
+        to: user.email,
+        subject: "Confirma tu nuevo correo — Polizza",
+        text: `Para confirmar ${user.email} como tu correo de acceso a Polizza entra a: ${url}`,
+        html: emailLayout(
+          "Confirma tu nuevo correo",
+          `Pediste usar <strong>${user.email}</strong> para entrar a Polizza. El cambio se aplica recién cuando confirmes desde este enlace. Si no fuiste tú, ignora este mensaje: tu correo actual sigue funcionando.`,
+          { label: "Confirmar correo", url },
+        ),
+      });
+    },
+  },
   plugins: [
     organization({
       ac,
