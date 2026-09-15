@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Pager } from "@/components/pager";
+import { ListSearch } from "@/components/list-search";
 import { parsePageParams } from "@/lib/pagination";
 
 type SearchParams = Promise<
@@ -21,7 +22,8 @@ export default async function SiniestrosPage({
   const sp = await searchParams;
   const page = parsePageParams(sp);
   const { ctx, db } = await requireOrgDb();
-  const claimsPage = await listClaims(ctx, db, page);
+  const q = typeof sp?.q === "string" ? sp.q : undefined;
+  const claimsPage = await listClaims(ctx, db, page, q);
 
   return (
     <div className="space-y-6">
@@ -37,7 +39,8 @@ export default async function SiniestrosPage({
           </Button>
         }
       />
-      {claimsPage.rows.length === 0 && !claimsPage.prevCursor ? (
+      <ListSearch placeholder="Buscar por N° de siniestro, póliza o cliente…" />
+      {claimsPage.rows.length === 0 && !claimsPage.prevCursor && !q ? (
         <EmptyState
           icon={TriangleAlert}
           title="Aún no hay siniestros"

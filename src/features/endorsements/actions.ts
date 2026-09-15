@@ -6,6 +6,7 @@ import { logActivity } from "@/server/activity";
 import {
   endorsementSchema,
   ENDORSEMENT_TYPE_LABELS,
+  endorsementStatusEffect,
   type EndorsementValues,
 } from "./schemas";
 
@@ -42,20 +43,16 @@ export async function createEndorsementAction(
   });
   if (!policy) return { ok: false, error: "Póliza no existe." };
 
-  // Validar transición
-  if (
-    parsed.data.type === "CANCELACION" &&
-    !["VIGENTE", "VENCIDA"].includes(policy.status)
-  ) {
+  // Validar transición. Solo se valida para los endosos que mueven el estado;
+  // el resto (ítems, glosas, prórrogas, solicitudes) se registra siempre.
+  const nextStatus = endorsementStatusEffect(parsed.data.type);
+  if (nextStatus === "CANCELADA" && !["VIGENTE", "VENCIDA"].includes(policy.status)) {
     return {
       ok: false,
       error: "Solo se puede cancelar una póliza vigente o vencida.",
     };
   }
-  if (
-    parsed.data.type === "ANULACION" &&
-    policy.status === "ANULADA"
-  ) {
+  if (nextStatus === "ANULADA" && policy.status === "ANULADA") {
     return { ok: false, error: "La póliza ya está anulada." };
   }
 
@@ -74,8 +71,7 @@ export async function createEndorsementAction(
   });
 
   // Cambiar estado de la póliza según tipo
-  if (parsed.data.type === "CANCELACION" || parsed.data.type === "ANULACION") {
-    const nextStatus = parsed.data.type === "CANCELACION" ? "CANCELADA" : "ANULADA";
+  if (nextStatus) {
     await db.policy.update({
       where: { id: policyId },
       data: { status: nextStatus },
@@ -116,8 +112,8 @@ export async function deleteEndorsementAction(
   });
   if (!endorsement) return { ok: false, error: "Endoso no existe." };
 
-  // Si era cancelación/anulación y es el último endoso de ese tipo, revertir estado de la póliza.
-  if (endorsement.type === "CANCELACION" || endorsement.type === "ANULACION") {
+  // Si movía el estado y es el último endoso de ese tipo, revertir la póliza.
+  if (endorsementStatusEffect(endorsement.type)) {
     const others = await db.endorsement.count({
       where: {
         policyId: endorsement.policyId,

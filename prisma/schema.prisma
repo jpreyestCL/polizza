@@ -843,9 +843,22 @@ model ProposalLog {
 }
 
 enum EndorsementType {
-  CANCELACION
-  ANULACION
+  AGREGA_ITEMS
+  ELIMINA_ITEMS
+  ANULACION_ENDOSO
+  ANULACION_COMPANIA
+  CAMBIO_ASEGURADO_POLIZA
+  CAMBIO_ASEGURADO_ITEM
+  CANCELACION_COMPANIA
+  CANCELACION_NO_PAGO
+  CORTE_PERDIDA_TOTAL
+  ENDOSO_INTERNO
+  MODIFICACION_GLOSA_ITEM
+  MODIFICA_MONTO_PRIMA
   MODIFICACION
+  PRORROGA
+  SOLICITUD_ANULACION
+  SOLICITUD_CANCELACION
 }
 
 model Endorsement {
@@ -991,6 +1004,9 @@ model Policy {
   previousPolicyId       String?
   nextPolicyId           String?
   externalId             String?
+  // Producto contratado. En pólizas emitidas en Polizza se hereda de la
+  // propuesta; en las importadas lo setea el import desde el catálogo legacy.
+  productId              String?
   assignedUserId         String?
   // Vendedor (ejecutivo comercial) asociado a la póliza para liquidar su
   // comisión. Precargado desde Proposal.salespersonId al convertir, editable.
@@ -1017,6 +1033,7 @@ model Policy {
   @@unique([organizationId, externalId])
   @@index([organizationId])
   @@index([clientId])
+  @@index([productId])
   @@index([organizationId, salespersonId])
 }
 

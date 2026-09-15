@@ -244,7 +244,7 @@ export function ClientsTable({
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar por nombre o RUT…"
+            placeholder="Buscar por nombre, RUT o N° de póliza…"
             className="pl-8"
           />
         </div>

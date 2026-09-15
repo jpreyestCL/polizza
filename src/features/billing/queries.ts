@@ -58,12 +58,32 @@ export async function listAllInstallments(
   ctx: SessionContext,
   db: Db,
   page: PageParams,
+  q?: string,
 ): Promise<Paginated<InstallmentWithPolicy>> {
+  const term = q?.trim();
   const where = {
     policyId: { not: null },
     ...(canSeeAllClients(ctx.role)
       ? {}
       : { policy: { assignedUserId: ctx.userId } }),
+    // Búsqueda por N° de póliza o nombre del cliente de esa póliza.
+    ...(term
+      ? {
+          policy: {
+            ...(canSeeAllClients(ctx.role)
+              ? {}
+              : { assignedUserId: ctx.userId }),
+            OR: [
+              { policyNumber: { contains: term, mode: "insensitive" as const } },
+              {
+                client: {
+                  name: { contains: term, mode: "insensitive" as const },
+                },
+              },
+            ],
+          },
+        }
+      : {}),
   };
   const [rows, total] = await Promise.all([
     db.installment.findMany({

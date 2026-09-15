@@ -38,6 +38,14 @@ export async function listClients(
           OR: [
             { name: { contains: q, mode: "insensitive" as const } },
             { rut: { contains: rutQ, mode: "insensitive" as const } },
+            // También por N° de póliza: lleva al titular de esa póliza.
+            {
+              policies: {
+                some: {
+                  policyNumber: { contains: q, mode: "insensitive" as const },
+                },
+              },
+            },
           ],
         }
       : {}),

@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "@prisma/client";
 import type { ClaimStatus, PolicyStatus } from "@prisma/client";
 import type { SessionContext } from "@/server/context";
 import { basePrisma, type Db } from "@/server/db";
@@ -37,8 +38,31 @@ export async function listClaims(
   ctx: SessionContext,
   db: Db,
   page: PageParams,
+  q?: string,
 ): Promise<Paginated<ClaimListItem>> {
-  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  const where: Prisma.ClaimWhereInput = canSeeAllClients(ctx.role)
+    ? {}
+    : { assignedUserId: ctx.userId };
+
+  // Búsqueda por N° de siniestro, N° de la compañía, N° de póliza o cliente.
+  // `Claim.policyId` es una FK suelta (sin relación en el schema), así que el
+  // número de póliza se resuelve a ids con una consulta previa.
+  const term = q?.trim();
+  if (term) {
+    const matchingPolicies = await db.policy.findMany({
+      where: { policyNumber: { contains: term, mode: "insensitive" } },
+      select: { id: true },
+      take: 500,
+    });
+    where.OR = [
+      { claimNumber: { contains: term, mode: "insensitive" } },
+      { companyClaimNumber: { contains: term, mode: "insensitive" } },
+      { client: { name: { contains: term, mode: "insensitive" } } },
+      ...(matchingPolicies.length > 0
+        ? [{ policyId: { in: matchingPolicies.map((p) => p.id) } }]
+        : []),
+    ];
+  }
   const [rows, total] = await Promise.all([
    db.claim.findMany({
     where,

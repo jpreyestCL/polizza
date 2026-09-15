@@ -195,8 +195,9 @@ function EndorsementDialog({
         <DialogHeader>
           <DialogTitle>Registrar endoso</DialogTitle>
           <DialogDescription>
-            Cancelación y Anulación cambian el estado de la póliza. Modificación
-            solo registra el cambio para la bitácora.
+            Las cancelaciones por compañía o no pago, la anulación por compañía
+            y el corte por pérdida total cambian el estado de la póliza. Las
+            solicitudes y el resto solo quedan registradas en la bitácora.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
