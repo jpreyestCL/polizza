@@ -2,16 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, User, Building2 } from "lucide-react";
+import { Search, Loader2, User, Building2, ShieldCheck } from "lucide-react";
 import { formatRut } from "@/lib/rut";
 import { Input } from "@/components/ui/input";
 
-type SearchResult = {
-  id: string;
-  name: string;
-  rut: string;
-  type: "PERSONA" | "EMPRESA";
-};
+type SearchResult =
+  | {
+      kind: "client";
+      id: string;
+      name: string;
+      rut: string;
+      type: "PERSONA" | "EMPRESA";
+    }
+  | {
+      kind: "policy";
+      id: string;
+      policyNumber: string;
+      clientName: string;
+      status: string;
+    };
 
 export function GlobalSearch() {
   const router = useRouter();
@@ -58,10 +67,14 @@ export function GlobalSearch() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  function goToClient(id: string) {
+  function goTo(result: SearchResult) {
     setOpen(false);
     setQuery("");
-    router.push(`/clientes/${id}`);
+    router.push(
+      result.kind === "policy"
+        ? `/polizas/${result.id}`
+        : `/clientes/${result.id}`,
+    );
   }
 
   const showPanel = open && query.trim().length >= 2;
@@ -76,7 +89,7 @@ export function GlobalSearch() {
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        placeholder="Buscar cliente, RUT o correo…"
+        placeholder="Buscar cliente, RUT o N° de póliza…"
         className="pl-8"
         aria-label="Búsqueda global"
       />
@@ -94,23 +107,45 @@ export function GlobalSearch() {
           ) : (
             <ul className="max-h-80 overflow-y-auto py-1">
               {results.map((result) => (
-                <li key={result.id}>
+                <li key={`${result.kind}-${result.id}`}>
                   <button
                     type="button"
-                    onClick={() => goToClient(result.id)}
+                    onClick={() => goTo(result)}
                     className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
                   >
-                    {result.type === "EMPRESA" ? (
-                      <Building2 className="size-4 shrink-0 text-muted-foreground" />
+                    {result.kind === "policy" ? (
+                      <>
+                        <ShieldCheck className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1 truncate">
+                          <span className="font-medium">
+                            {result.policyNumber}
+                          </span>
+                          {result.clientName && (
+                            <span className="text-muted-foreground">
+                              {" · "}
+                              {result.clientName}
+                            </span>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          Póliza
+                        </span>
+                      </>
                     ) : (
-                      <User className="size-4 shrink-0 text-muted-foreground" />
+                      <>
+                        {result.type === "EMPRESA" ? (
+                          <Building2 className="size-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <User className="size-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate">
+                          {result.name}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {formatRut(result.rut)}
+                        </span>
+                      </>
                     )}
-                    <span className="min-w-0 flex-1 truncate">
-                      {result.name}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {formatRut(result.rut)}
-                    </span>
                   </button>
                 </li>
               ))}

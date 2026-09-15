@@ -1,6 +1,7 @@
 import "server-only";
 import type { PolicyStatus } from "@prisma/client";
 import type { SessionContext } from "@/server/context";
+import { computeGross } from "./premium";
 import type { Db } from "@/server/db";
 import { canSeeAllClients } from "@/lib/roles";
 import { needsRenewal, renewalInfo, type RenewalLevel } from "@/lib/renewal";
@@ -100,11 +101,21 @@ export async function listRenewals(
   ctx: SessionContext,
   db: Db,
   page: PageParams,
+  q?: string,
 ): Promise<Paginated<PolicyListItem>> {
+  const term = q?.trim();
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
     status: "VIGENTE" as const,
     endDate: { not: null },
+    ...(term
+      ? {
+          OR: [
+            { policyNumber: { contains: term, mode: "insensitive" as const } },
+            { client: { name: { contains: term, mode: "insensitive" as const } } },
+          ],
+        }
+      : {}),
   };
   const [rows, total] = await Promise.all([
     db.policy.findMany({
@@ -227,7 +238,7 @@ export async function getPolicyDetail(db: Db, id: string) {
   return {
     ...policy,
     premiumNet,
-    premiumGross: computeGross(premiumNet, policy.proposal),
+    premiumGross: computeGross(premiumNet, policy.proposal, policy),
     items: policy.items.map((item) => ({
       ...item,
       insuredAmount: item.insuredAmount ? Number(item.insuredAmount) : null,
@@ -260,37 +271,6 @@ export type ClientPolicyRow = {
   premiumGross: number | null;
 };
 
-/**
- * Calcula la prima bruta de una póliza. Si proviene de una propuesta con
- * coberturas, usa el desglose afecta/exenta: bruta = afecta×1.19 + exenta.
- * Si no (póliza importada sin desglose), asume afecta: neta × 1.19.
- */
-function computeGross(
-  net: number | null,
-  proposal: {
-    items: { coverages: { premiumAffect: unknown; premiumExempt: unknown }[] }[];
-  } | null,
-): number | null {
-  if (proposal) {
-    let affect = 0;
-    let exempt = 0;
-    let hasSplit = false;
-    for (const it of proposal.items) {
-      for (const c of it.coverages) {
-        if (c.premiumAffect != null) {
-          affect += Number(c.premiumAffect);
-          hasSplit = true;
-        }
-        if (c.premiumExempt != null) {
-          exempt += Number(c.premiumExempt);
-          hasSplit = true;
-        }
-      }
-    }
-    if (hasSplit && affect + exempt > 0) return affect * 1.19 + exempt;
-  }
-  return net != null ? net * 1.19 : null;
-}
 
 /** Pólizas de un cliente, para la ficha 360°. Enriquece ramo, producto,
  * compañía, vigencia y prima bruta (calculada). */
@@ -311,6 +291,9 @@ export async function listClientPolicies(
           endDate: true,
           currency: true,
           premiumNet: true,
+          premiumAffect: true,
+          premiumExempt: true,
+          productId: true,
           companyId: true,
           lineId: true,
           branchId: true,
@@ -364,7 +347,10 @@ export async function listClientPolicies(
       (p.lineId ? lineById.get(p.lineId) : null) ??
       (p.branchId ? branchById.get(p.branchId) : null) ??
       null;
+    // 1) producto propio de la póliza (importadas y emitidas ya asignadas),
+    // 2) el de la propuesta de origen, 3) derivado por ramo+compañía.
     const product =
+      (p.productId ? productById.get(p.productId) : null) ??
       (p.proposal?.productId
         ? productById.get(p.proposal.productId)
         : null) ??
@@ -383,7 +369,7 @@ export async function listClientPolicies(
       company: p.companyId ? (companyById.get(p.companyId) ?? null) : null,
       product,
       premiumNet: net,
-      premiumGross: computeGross(net, p.proposal),
+      premiumGross: computeGross(net, p.proposal, p),
     };
   });
 }
