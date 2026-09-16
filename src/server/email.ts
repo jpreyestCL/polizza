@@ -10,6 +10,7 @@ export type EmailAttachment = {
 type SendEmailInput = {
   to: string;
   cc?: string[];
+  bcc?: string[];
   subject: string;
   text: string;
   html?: string;
@@ -44,6 +45,7 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
         from: process.env.EMAIL_FROM ?? "Polizza <no-reply@polizza.cl>",
         to: input.to,
         cc: input.cc,
+        bcc: input.bcc,
         subject: input.subject,
         text: input.text,
         html: input.html ?? `<p>${input.text}</p>`,

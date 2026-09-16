@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Link } from "@tiptap/extension-link";
 import { Image } from "@tiptap/extension-image";
@@ -10,6 +10,8 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TextAlign } from "@tiptap/extension-text-align";
+import { TextStyle } from "@tiptap/extension-text-style";
+import { Color } from "@tiptap/extension-color";
 import {
   AlignCenter,
   AlignJustify,
@@ -24,9 +26,11 @@ import {
   IndentDecrease,
   IndentIncrease,
   Italic,
+  Underline as UnderlineIcon,
   Link as LinkIcon,
   List,
   ListOrdered,
+  Palette,
   Pilcrow,
   TableIcon,
 } from "lucide-react";
@@ -60,6 +64,8 @@ export function RichTextEditor({
       TableHeader,
       TableCell,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
+      TextStyle,
+      Color,
     ],
     content: value || "",
     immediatelyRender: false,
@@ -142,6 +148,14 @@ export function RichTextEditor({
         >
           <Italic className="size-4" />
         </ToolbarButton>
+        <ToolbarButton
+          aria-label="Subrayado"
+          className={btn(isActive("underline"))}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+        >
+          <UnderlineIcon className="size-4" />
+        </ToolbarButton>
+        <ColorPicker editor={editor} />
         <ToolbarButton
           aria-label="Enlace"
           className={btn(isActive("link"))}
@@ -287,5 +301,68 @@ function ToolbarButton({
     <Button type="button" variant="ghost" size="sm" className={className} {...props}>
       {children}
     </Button>
+  );
+}
+
+/**
+ * Selector de color de texto. Paleta corta y sobria: en una propuesta el color
+ * sirve para destacar una condición o una exclusión, no para decorar.
+ */
+const TEXT_COLORS: { label: string; value: string | null }[] = [
+  { label: "Automático", value: null },
+  { label: "Rojo", value: "#b42318" },
+  { label: "Ámbar", value: "#b54708" },
+  { label: "Verde", value: "#067647" },
+  { label: "Azul", value: "#175cd3" },
+  { label: "Morado", value: "#6941c6" },
+  { label: "Gris", value: "#667085" },
+];
+
+function ColorPicker({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const current = (editor.getAttributes("textStyle").color as string) ?? null;
+
+  return (
+    <div className="relative">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label="Color del texto"
+        className="h-8 w-8 p-0 text-muted-foreground"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Palette className="size-4" style={current ? { color: current } : undefined} />
+      </Button>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+            aria-hidden
+          />
+          <div className="absolute left-0 top-9 z-50 w-40 rounded-md border bg-popover p-1 shadow-md">
+            {TEXT_COLORS.map((c) => (
+              <button
+                key={c.label}
+                type="button"
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent"
+                onClick={() => {
+                  if (c.value) editor.chain().focus().setColor(c.value).run();
+                  else editor.chain().focus().unsetColor().run();
+                  setOpen(false);
+                }}
+              >
+                <span
+                  className="size-3.5 shrink-0 rounded-full border"
+                  style={{ backgroundColor: c.value ?? "transparent" }}
+                />
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

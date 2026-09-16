@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { renderProposalPdf } from "./render";
 import { requireOrgDb } from "@/server/context";
+import { readStoredFile } from "@/server/storage";
 import { sendEmail, emailLayout } from "@/server/email";
 import { saveUploadedFile } from "@/server/storage";
 import type { Db } from "@/server/db";
@@ -283,8 +284,16 @@ export async function sendProposalByEmailAction(
     pdfBuffer = await renderProposalPdf(data);
   }
 
-  // Documentos seleccionados → links en el cuerpo del email
-  let docs: { fileName: string; fileUrl: string }[] = [];
+  // Documentos seleccionados. Los que están subidos al servidor van como
+  // ADJUNTOS reales (pdf, word, excel, imágenes…). Los que son enlace externo
+  // (Drive/Dropbox, sin storageKey) no se pueden adjuntar: van como link.
+  let docs: {
+    fileName: string;
+    fileUrl: string;
+    storageKey: string | null;
+    mimeType: string | null;
+    sizeBytes: number | null;
+  }[] = [];
   if (options.documentIds && options.documentIds.length > 0) {
     docs = await db.document.findMany({
       where: {
@@ -292,7 +301,48 @@ export async function sendProposalByEmailAction(
         entityType: "PROPOSAL",
         entityId: proposalId,
       },
-      select: { fileName: true, fileUrl: true },
+      select: {
+        fileName: true,
+        fileUrl: true,
+        storageKey: true,
+        mimeType: true,
+        sizeBytes: true,
+      },
+    });
+  }
+
+  // El proveedor de correo corta el mensaje completo alrededor de los 40 MB.
+  // Se adjunta mientras quepa y el resto se manda por enlace, para que el
+  // correo salga igual en vez de fallar entero.
+  const MAX_ATTACHMENTS_BYTES = 35 * 1024 * 1024;
+  const docAttachments: {
+    filename: string;
+    content: Buffer;
+    contentType?: string;
+  }[] = [];
+  const linkedDocs: { fileName: string; fileUrl: string }[] = [];
+  let attachedBytes = pdfBuffer.byteLength;
+
+  for (const d of docs) {
+    if (!d.storageKey) {
+      linkedDocs.push({ fileName: d.fileName, fileUrl: d.fileUrl });
+      continue;
+    }
+    const bytes = await readStoredFile(d.storageKey);
+    if (!bytes) {
+      console.error(`Documento sin archivo en disco: ${d.fileName}`);
+      linkedDocs.push({ fileName: d.fileName, fileUrl: d.fileUrl });
+      continue;
+    }
+    if (attachedBytes + bytes.byteLength > MAX_ATTACHMENTS_BYTES) {
+      linkedDocs.push({ fileName: d.fileName, fileUrl: d.fileUrl });
+      continue;
+    }
+    attachedBytes += bytes.byteLength;
+    docAttachments.push({
+      filename: d.fileName,
+      content: bytes,
+      contentType: d.mimeType ?? undefined,
     });
   }
 
@@ -309,8 +359,8 @@ export async function sendProposalByEmailAction(
   const note = options.body?.trim();
 
   const docsHtml =
-    docs.length > 0
-      ? `<p style="font-size:13px;margin-top:12px"><b>Documentos adjuntos por enlace:</b></p><ul style="font-size:13px">${docs
+    linkedDocs.length > 0
+      ? `<p style="font-size:13px;margin-top:12px"><b>Documentos por enlace:</b></p><ul style="font-size:13px">${linkedDocs
           .map(
             (d) =>
               `<li><a href="${d.fileUrl}" target="_blank">${d.fileName}</a></li>`,
@@ -333,12 +383,13 @@ export async function sendProposalByEmailAction(
     await sendEmail({
       to: recipient,
       cc: ccList.length > 0 ? ccList : undefined,
+      bcc: bccList.length > 0 ? bccList : undefined,
       subject,
       text:
         body +
-        (docs.length > 0
-          ? "\n\nDocumentos adjuntos por enlace:\n" +
-            docs.map((d) => `- ${d.fileName}: ${d.fileUrl}`).join("\n")
+        (linkedDocs.length > 0
+          ? "\n\nDocumentos por enlace:\n" +
+            linkedDocs.map((d) => `- ${d.fileName}: ${d.fileUrl}`).join("\n")
           : ""),
       html,
       attachments: [
@@ -347,6 +398,7 @@ export async function sendProposalByEmailAction(
           content: Buffer.from(pdfBuffer),
           contentType: "application/pdf",
         },
+        ...docAttachments,
       ],
     });
   } catch (e) {
