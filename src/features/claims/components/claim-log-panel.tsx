@@ -8,8 +8,9 @@ import type { ClaimLog, ClaimLogKind } from "@prisma/client";
 import { addClaimNoteAction } from "../actions";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Badge } from "@/components/ui/badge";
+import { RichTextView } from "@/components/ui/rich-text-view";
 
 const KIND_LABEL: Record<ClaimLogKind, string> = {
   CREATED: "Creado",
@@ -66,11 +67,10 @@ export function ClaimLogPanel({
     <div className="space-y-4">
       <div className="rounded-xl border bg-card p-4">
         <p className="mb-2 text-sm font-semibold">Agregar nota a la bitácora</p>
-        <Textarea
-          rows={2}
+        <RichTextEditor
           value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Llamada con liquidador, espera de documento, etc."
+          onChange={setNote}
+          minHeightClass="min-h-[90px]"
         />
         <div className="mt-2 flex justify-end">
           <Button onClick={addNote} disabled={saving || !note.trim()} size="sm">
@@ -99,7 +99,7 @@ export function ClaimLogPanel({
                 {KIND_LABEL[log.kind]}
               </Badge>
               <div className="min-w-0 flex-1">
-                <p className="text-sm whitespace-pre-wrap">{log.message}</p>
+                <RichTextView value={log.message} />
                 <p className="text-xs text-muted-foreground">
                   {formatDateTime(log.createdAt)}
                 </p>

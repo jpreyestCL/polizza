@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { isRichTextFieldType } from "@/lib/rich-text";
 import { AsyncCombobox } from "@/components/ui/async-combobox";
 import type { BranchFieldDef } from "../queries";
 
@@ -38,8 +39,7 @@ function normalizeKey(k: string): string {
  * la pista. Los `select`, `text` y demás no se tocan.
  */
 function isRichTextField(f: BranchFieldDef): boolean {
-  if (f.type === "richtext") return true;
-  if (f.type === "textarea") return true;
+  if (isRichTextFieldType(f.type)) return true;
   return RICHTEXT_KEY_HINTS.includes(normalizeKey(f.fieldKey));
 }
 

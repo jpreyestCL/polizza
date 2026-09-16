@@ -51,3 +51,19 @@ export function htmlToPlainText(value: string): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+
+/**
+ * ¿Este campo de ficha dinámica se edita (y por lo tanto se guarda) como HTML?
+ *
+ * ÚNICA fuente de verdad, compartida por el formulario del cliente y por la
+ * sanitización del servidor. Tenerla duplicada es peligroso: si el cliente
+ * guarda HTML en un campo que el servidor no sanitiza, entra markup sin
+ * limpiar a la base.
+ *
+ * El criterio es el TIPO del campo, no su nombre: `descripcion_materia`
+ * ("Descripción Materia Asegurada") no calzaba con ninguna lista de nombres.
+ */
+export function isRichTextFieldType(type: string): boolean {
+  return type === "richtext" || type === "textarea";
+}

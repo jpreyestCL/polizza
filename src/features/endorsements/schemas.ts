@@ -42,18 +42,21 @@ export const ENDORSEMENT_TYPE_LABELS: Record<EndorsementTypeValue, string> = {
 /**
  * Efecto de cada tipo de endoso sobre el estado de la póliza.
  *
- * Solo los endosos EJECUTADOS mueven el estado. Las "Solicitud de…" son un
- * trámite en curso con la compañía: se registran en la bitácora y el estado
- * cambia recién cuando llega la cancelación o anulación efectiva. El resto
- * (ítems, glosas, montos, prórrogas) no altera la vigencia.
+ * Tabla definida por la corredora (planilla "cambio de estados endosos",
+ * 2026-09-16). Las solicitudes SÍ mueven el estado: para la corredora la
+ * solicitud ya deja la póliza fuera de vigencia, no espera la confirmación de
+ * la compañía. Los endosos de ítems, glosas, montos y prórrogas no la alteran.
  */
 export const ENDORSEMENT_STATUS_EFFECT: Partial<
   Record<EndorsementTypeValue, "CANCELADA" | "ANULADA">
 > = {
+  ANULACION_ENDOSO: "ANULADA",
   ANULACION_COMPANIA: "ANULADA",
+  SOLICITUD_ANULACION: "ANULADA",
   CANCELACION_COMPANIA: "CANCELADA",
   CANCELACION_NO_PAGO: "CANCELADA",
   CORTE_PERDIDA_TOTAL: "CANCELADA",
+  SOLICITUD_CANCELACION: "CANCELADA",
 };
 
 /** Tipos que dejan la póliza fuera de vigencia. */

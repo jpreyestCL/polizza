@@ -14,6 +14,7 @@ import type { InstallmentItem } from "@/features/billing/queries";
 import { MoneyValue } from "@/components/money-value";
 import { EmptyState } from "@/components/empty-state";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RichTextView } from "@/components/ui/rich-text-view";
 
 function Field({ label, value }: { label: string; value?: React.ReactNode }) {
   return (
@@ -287,7 +288,7 @@ export function PolicyDetailTabs({
               >
                 <PolicyStatusBadge status={entry.status} />
                 <div className="min-w-0 flex-1">
-                  {entry.note && <p className="text-sm">{entry.note}</p>}
+                  {entry.note && <RichTextView value={entry.note} />}
                   <p className="text-xs text-muted-foreground">
                     {formatDateTime(entry.createdAt)}
                   </p>

@@ -12,7 +12,7 @@ import {
 } from "../schemas";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   Dialog,
   DialogContent,
@@ -99,11 +99,10 @@ export function PolicyStatusButton({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="policy-status-note">Nota (opcional)</Label>
-              <Textarea
-                id="policy-status-note"
-                rows={3}
+              <RichTextEditor
                 value={note}
-                onChange={(event) => setNote(event.target.value)}
+                onChange={setNote}
+                minHeightClass="min-h-[90px]"
               />
             </div>
           </div>

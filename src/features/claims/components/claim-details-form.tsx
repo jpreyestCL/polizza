@@ -19,7 +19,7 @@ import type { BranchFieldDef, ClaimDetail } from "../queries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
   Select,
   SelectContent,
@@ -323,10 +323,10 @@ export function ClaimDetailsForm({
           />
         </Field>
         <Field label="Relato de los hechos" full>
-          <Textarea
-            rows={5}
+          <RichTextEditor
             value={values.incidentNarrative}
-            onChange={(e) => set("incidentNarrative", e.target.value)}
+            onChange={(v) => set("incidentNarrative", v)}
+            minHeightClass="min-h-[140px]"
           />
         </Field>
       </Section>
@@ -471,10 +471,10 @@ export function ClaimDetailsForm({
           </Select>
         </Field>
         <Field label="Descripción" full>
-          <Textarea
-            rows={3}
+          <RichTextEditor
             value={values.description}
-            onChange={(e) => set("description", e.target.value)}
+            onChange={(v) => set("description", v)}
+            minHeightClass="min-h-[100px]"
           />
         </Field>
       </Section>
@@ -605,10 +605,10 @@ function DynamicBranchField({
     case "textarea":
     case "richtext":
       return (
-        <Textarea
-          rows={3}
+        <RichTextEditor
           value={str}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
+          minHeightClass="min-h-[100px]"
         />
       );
     case "select":
