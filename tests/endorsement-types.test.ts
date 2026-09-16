@@ -14,23 +14,24 @@ describe("tipos de endoso", () => {
     }
   });
 
-  it("solo los endosos ejecutados cambian el estado de la póliza", () => {
+  // Tabla de la planilla "cambio de estados endosos" (corredora, 2026-09-16).
+  it("anulaciones y solicitud de anulación dejan la póliza ANULADA", () => {
+    expect(endorsementStatusEffect("ANULACION_ENDOSO")).toBe("ANULADA");
     expect(endorsementStatusEffect("ANULACION_COMPANIA")).toBe("ANULADA");
+    expect(endorsementStatusEffect("SOLICITUD_ANULACION")).toBe("ANULADA");
+  });
+
+  it("cancelaciones, corte por pérdida total y solicitud dejan la póliza CANCELADA", () => {
     expect(endorsementStatusEffect("CANCELACION_COMPANIA")).toBe("CANCELADA");
     expect(endorsementStatusEffect("CANCELACION_NO_PAGO")).toBe("CANCELADA");
     expect(endorsementStatusEffect("CORTE_PERDIDA_TOTAL")).toBe("CANCELADA");
-  });
-
-  it("las solicitudes NO cambian el estado: son trámite en curso", () => {
-    expect(endorsementStatusEffect("SOLICITUD_ANULACION")).toBeNull();
-    expect(endorsementStatusEffect("SOLICITUD_CANCELACION")).toBeNull();
+    expect(endorsementStatusEffect("SOLICITUD_CANCELACION")).toBe("CANCELADA");
   });
 
   it("los endosos de ítems, glosa, monto y prórroga solo quedan en bitácora", () => {
     for (const t of [
       "AGREGA_ITEMS",
       "ELIMINA_ITEMS",
-      "ANULACION_ENDOSO",
       "CAMBIO_ASEGURADO_POLIZA",
       "CAMBIO_ASEGURADO_ITEM",
       "ENDOSO_INTERNO",

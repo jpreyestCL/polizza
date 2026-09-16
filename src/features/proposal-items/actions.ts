@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { logActivity } from "@/server/activity";
 import { sanitizeRichText } from "@/lib/sanitize";
+import { isRichTextFieldType } from "@/lib/rich-text";
 import {
   proposalItemSchema,
   validateItemData,
@@ -26,7 +27,7 @@ function sanitizeItemData(
   const out: Record<string, unknown> = { ...data };
   for (const f of fields) {
     const key = f.fieldKey.toLowerCase().replace(/[_\s-]/g, "");
-    const isRich = f.type === "richtext" || RICHTEXT_KEY_HINTS.has(key);
+    const isRich = isRichTextFieldType(f.type) || RICHTEXT_KEY_HINTS.has(key);
     if (isRich && typeof out[f.fieldKey] === "string") {
       out[f.fieldKey] = sanitizeRichText(out[f.fieldKey] as string);
     }
@@ -109,7 +110,7 @@ export async function createProposalItemAction(
           toNullable(parsed.data.beneficiaryClientId) ??
           proposal.beneficiaryClientId,
         identification: toNullable(parsed.data.identification),
-        glossNote: toNullable(parsed.data.glossNote),
+        glossNote: toNullable(sanitizeRichText(parsed.data.glossNote)),
         data: sanitizeItemData(fields, parsed.data.data) as Prisma.InputJsonValue,
       },
       select: { id: true },
@@ -197,7 +198,7 @@ export async function updateProposalItemAction(
       insuredClientId: toNullable(parsed.data.insuredClientId),
       beneficiaryClientId: toNullable(parsed.data.beneficiaryClientId),
       identification: toNullable(parsed.data.identification),
-      glossNote: toNullable(parsed.data.glossNote),
+      glossNote: toNullable(sanitizeRichText(parsed.data.glossNote)),
       data: parsed.data.data as Prisma.InputJsonValue,
     },
   });

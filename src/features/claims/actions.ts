@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma, type ClaimLogKind } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
+import { sanitizeRichText } from "@/lib/sanitize";
 import { logActivity } from "@/server/activity";
 import { canDeleteClaim } from "@/lib/roles";
 import {
@@ -120,7 +121,7 @@ export async function createClaimAction(
             branchTypeId: emptyToNull(data.branchTypeId),
             claimNumber,
             folderNumber,
-            description: data.description,
+            description: sanitizeRichText(data.description),
             status: "REPORTADO",
             currency: "UF",
             assignedUserId: ctx.userId,
@@ -224,7 +225,7 @@ export async function updateClaimDetailsAction(
       incidentAddress: emptyToNull(data.incidentAddress),
       incidentCommune: emptyToNull(data.incidentCommune),
       incidentCity: emptyToNull(data.incidentCity),
-      incidentNarrative: emptyToNull(data.incidentNarrative),
+      incidentNarrative: emptyToNull(sanitizeRichText(data.incidentNarrative)),
 
       lossType: data.lossType === "" ? null : data.lossType,
       smartDeductible: tribool(data.smartDeductible),
@@ -239,7 +240,7 @@ export async function updateClaimDetailsAction(
       settledAmount: amount(data.settledAmount),
       currency: data.currency,
       assignedUserId: emptyToNull(data.assignedUserId),
-      description: data.description,
+      description: sanitizeRichText(data.description),
 
       data: branchData as Prisma.InputJsonValue,
     },
@@ -404,7 +405,7 @@ export async function changeClaimStatusAction(
         organizationId: ctx.organizationId,
         claimId: id,
         status: data.status,
-        note: emptyToNull(data.note),
+        note: emptyToNull(sanitizeRichText(data.note)),
         changedById: ctx.userId,
       },
     });
@@ -475,7 +476,7 @@ export async function addClaimThirdPartyAction(
       insuranceCompany: emptyToNull(data.insuranceCompany),
       policyNumber: emptyToNull(data.policyNumber),
       atFault: tribool(data.atFault),
-      damagedGoodsDescription: emptyToNull(data.damagedGoodsDescription),
+      damagedGoodsDescription: emptyToNull(sanitizeRichText(data.damagedGoodsDescription)),
     },
   });
 
@@ -547,7 +548,7 @@ export async function addClaimNoteAction(
       organizationId: ctx.organizationId,
       claimId,
       kind: "NOTE",
-      message: parsed.data.message,
+      message: sanitizeRichText(parsed.data.message),
       userId: ctx.userId,
     },
   });

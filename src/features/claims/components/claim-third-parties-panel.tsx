@@ -13,7 +13,8 @@ import type { ClaimThirdPartyValues } from "../schemas";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { RichTextView } from "@/components/ui/rich-text-view";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -176,11 +177,14 @@ function ThirdPartyCard({
         )}
         {tp.hasInsurance === false && <Item label="Seguro" value="Sin seguro" />}
         {!tp.involvesVehicle && tp.damagedGoodsDescription && (
-          <Item
-            label="Bien afectado"
-            value={tp.damagedGoodsDescription}
-            full
-          />
+          <div className="sm:col-span-2 lg:col-span-3">
+            <dt className="text-xs uppercase text-muted-foreground">
+              Bien afectado
+            </dt>
+            <dd>
+              <RichTextView value={tp.damagedGoodsDescription} />
+            </dd>
+          </div>
         )}
       </dl>
     </li>
@@ -359,12 +363,10 @@ function AddThirdPartyDialog({ claimId }: { claimId: string }) {
             </div>
           ) : (
             <F label="Descripción del bien afectado">
-              <Textarea
-                rows={3}
+              <RichTextEditor
                 value={values.damagedGoodsDescription}
-                onChange={(e) =>
-                  set("damagedGoodsDescription", e.target.value)
-                }
+                onChange={(v) => set("damagedGoodsDescription", v)}
+                minHeightClass="min-h-[90px]"
               />
             </F>
           )}

@@ -18,6 +18,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { RichTextView } from "@/components/ui/rich-text-view";
 
 export function ClaimDetailTabs({
   claim,
@@ -104,7 +105,7 @@ export function ClaimDetailTabs({
               >
                 <ClaimStatusBadge status={entry.status} />
                 <div className="min-w-0 flex-1">
-                  {entry.note && <p className="text-sm">{entry.note}</p>}
+                  {entry.note && <RichTextView value={entry.note} />}
                   <p className="text-xs text-muted-foreground">
                     {formatDateTime(entry.createdAt)}
                   </p>
@@ -165,7 +166,9 @@ function BranchDataPanel({ claim }: { claim: ClaimDetail }) {
               <dt className="text-xs uppercase text-muted-foreground">
                 Descripción
               </dt>
-              <dd className="text-sm">{claim.policyItem.description}</dd>
+              <dd>
+                <RichTextView value={claim.policyItem.description} />
+              </dd>
             </div>
             {claim.policyItemAmount !== null && (
               <div>

@@ -14,7 +14,8 @@ import { formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { htmlToPlainText } from "@/lib/rich-text";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 
@@ -99,7 +100,10 @@ export function NewClaimWizard() {
         policyItemId: item.id,
         proposalItemId: item.proposalItem?.id ?? "",
         branchTypeId: item.proposalItem?.branchTypeId ?? "",
-        description: description.trim() || `Siniestro sobre ${item.description}`,
+        description:
+          htmlToPlainText(description).trim().length > 0
+            ? description
+            : `Siniestro sobre ${htmlToPlainText(item.description)}`,
       });
       if (!result.ok) {
         toast.error(result.error);
@@ -235,7 +239,9 @@ export function NewClaimWizard() {
                   className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 hover:bg-muted/40"
                 >
                   <div className="min-w-0">
-                    <p className="font-medium">{it.description}</p>
+                    <p className="font-medium">
+                      {htmlToPlainText(it.description)}
+                    </p>
                     {it.proposalItem?.branchType && (
                       <p className="text-xs text-muted-foreground">
                         Ramo: {it.proposalItem.branchType.name}
@@ -278,17 +284,15 @@ export function NewClaimWizard() {
             </p>
             <p>
               <span className="text-muted-foreground">Ítem:</span>{" "}
-              {item.description}
+              {htmlToPlainText(item.description)}
             </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="description">Descripción inicial</Label>
-            <Textarea
-              id="description"
+            <RichTextEditor
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Resumen del siniestro (puedes ampliarlo después)"
-              rows={3}
+              onChange={setDescription}
+              minHeightClass="min-h-[100px]"
             />
           </div>
           <div className="flex justify-between">

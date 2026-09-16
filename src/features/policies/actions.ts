@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
+import { sanitizeRichText } from "@/lib/sanitize";
 import { logActivity } from "@/server/activity";
 import { canDeletePolicy } from "@/lib/roles";
 import {
@@ -341,7 +342,7 @@ export async function changePolicyStatusAction(
         organizationId: ctx.organizationId,
         policyId: id,
         status: data.status,
-        note: emptyToNull(data.note),
+        note: emptyToNull(sanitizeRichText(data.note)),
         changedById: ctx.userId,
       },
     });
