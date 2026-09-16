@@ -24,7 +24,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import { htmlToPlainText } from "@/lib/rich-text";
 import { ClientCombobox } from "@/components/ui/client-combobox";
 import { QuickClientDialog } from "@/features/clients/components/quick-client-dialog";
 import { BulkUploadDialog } from "./bulk-upload-dialog";
@@ -114,7 +115,9 @@ function formatFieldValue(
     const opt = field.options.find((o) => o.value === raw);
     if (opt) return opt.label;
   }
-  return String(raw);
+  // Los campos de texto largo guardan HTML del editor: en la tabla se muestra
+  // el texto sin etiquetas.
+  return htmlToPlainText(String(raw));
 }
 
 function buildItemSummary(
@@ -133,7 +136,7 @@ function buildItemSummary(
           (v) => typeof v === "string" && v.length > 0,
         ) as string | undefined) ??
         "—",
-      secondary: glossNote,
+      secondary: glossNote ? htmlToPlainText(glossNote) : null,
     };
   }
   const parts = config.identification
@@ -144,6 +147,8 @@ function buildItemSummary(
   const secondary =
     config.secondary === "__GLOSS__"
       ? glossNote
+        ? htmlToPlainText(glossNote)
+        : null
       : formatFieldValue(
           config.secondary,
           data[config.secondary],
@@ -742,13 +747,10 @@ function ItemDialog({
           {!hasFichaGlosa && (
             <div>
               <Label className="text-xs">Glosa / comentario</Label>
-              <Textarea
-                rows={3}
+              <RichTextEditor
                 value={values.glossNote}
-                onChange={(e) =>
-                  setValues({ ...values, glossNote: e.target.value })
-                }
-                placeholder="Notas adicionales para este ítem"
+                onChange={(v) => setValues({ ...values, glossNote: v })}
+                minHeightClass="min-h-[100px]"
               />
             </div>
           )}

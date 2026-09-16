@@ -28,8 +28,18 @@ function normalizeKey(k: string): string {
   return k.toLowerCase().replace(/[_\s-]/g, "");
 }
 
+/**
+ * Todo campo de texto largo se edita con formato (negritas, listas, colores):
+ * en una propuesta hay que poder destacar condiciones y exclusiones.
+ *
+ * El chequeo es por TIPO, no por nombre. Antes dependía de una lista de
+ * `fieldKey` con coincidencia exacta y campos como `descripcion_materia`
+ * ("Descripción Materia Asegurada") quedaban fuera por no llamarse igual que
+ * la pista. Los `select`, `text` y demás no se tocan.
+ */
 function isRichTextField(f: BranchFieldDef): boolean {
   if (f.type === "richtext") return true;
+  if (f.type === "textarea") return true;
   return RICHTEXT_KEY_HINTS.includes(normalizeKey(f.fieldKey));
 }
 

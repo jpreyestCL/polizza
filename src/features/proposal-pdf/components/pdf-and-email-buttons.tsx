@@ -290,7 +290,7 @@ export function PdfAndEmailButtons({
               {documents.length > 0 && (
                 <div className="mt-2">
                   <div className="mb-1.5 text-xs font-medium">
-                    Adjuntar otros documentos (se incluyen como links en el email):
+                    Adjuntar otros documentos (van adjuntos en el correo; los que son enlace externo se envían como link):
                   </div>
                   <div className="grid max-h-32 grid-cols-2 gap-1 overflow-y-auto">
                     {documents.map((d) => (

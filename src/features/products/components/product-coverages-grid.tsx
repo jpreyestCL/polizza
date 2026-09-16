@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Copy, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Copy, Pencil, Save, Trash2, X } from "lucide-react";
 import {
   createTenantCoverageAction,
   updateTenantCoverageAction,
@@ -431,16 +431,18 @@ function CoverageEditableRow({
         />
       </td>
       <td className="px-2 py-1.5 text-right">
-        <div className="flex justify-end gap-1">
+        <div className="flex items-center justify-end gap-1">
+          {/* Botón con texto, no un ícono suelto: con el disquete ghost nadie
+              encontraba cómo grabar la cobertura recién escrita. */}
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Grabar"
+            size="sm"
             onClick={onSave}
             disabled={pending}
+            className="h-7"
           >
             <Save className="size-3.5" />
+            {isNew ? "Agregar" : "Guardar"}
           </Button>
           {!isNew && (
             <Button
@@ -453,11 +455,6 @@ function CoverageEditableRow({
             >
               <X className="size-3.5" />
             </Button>
-          )}
-          {isNew && (
-            <span className="self-center text-[10px] text-muted-foreground">
-              <Plus className="inline size-3" /> Nueva
-            </span>
           )}
         </div>
       </td>

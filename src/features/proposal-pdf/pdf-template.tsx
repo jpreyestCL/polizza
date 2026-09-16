@@ -14,6 +14,8 @@ const COLOR_LIGHT_BG = "#f3f4f6";
 const COLOR_TEXT = "#1f2937";
 const COLOR_MUTED = "#6b7280";
 
+import { RichText } from "./rich-text-pdf";
+
 const styles = StyleSheet.create({
   page: {
     padding: 28,
@@ -479,13 +481,13 @@ export function ProposalPdfTemplate({ data }: { data: PdfProposal }) {
                     <Text style={styles.labelMuted}>
                       {key.replace(/_/g, " ")}
                     </Text>
-                    <Text>{String(val)}</Text>
+                    <RichText value={String(val)} />
                   </View>
                 ))}
               {item.glossNote && (
                 <View style={styles.cell2}>
                   <Text style={styles.labelMuted}>Comentarios</Text>
-                  <Text>{item.glossNote}</Text>
+                  <RichText value={item.glossNote} />
                 </View>
               )}
             </View>
