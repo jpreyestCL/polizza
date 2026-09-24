@@ -103,7 +103,8 @@ export async function createPolicyAction(
           startDate: parseDate(data.startDate),
           endDate: parseDate(data.endDate),
           assignedUserId: emptyToNull(data.assignedUserId) ?? ctx.userId,
-          salespersonId: proposalSalespersonId,
+          salespersonId:
+            emptyToNull(data.salespersonId) ?? proposalSalespersonId,
           createdById: ctx.userId,
         },
       });
@@ -254,6 +255,7 @@ export async function updatePolicyAction(
           startDate: parseDate(data.startDate),
           endDate: parseDate(data.endDate),
           assignedUserId: emptyToNull(data.assignedUserId) ?? ctx.userId,
+          salespersonId: emptyToNull(data.salespersonId),
         },
       });
       await tx.policyItem.deleteMany({ where: { policyId: id } });

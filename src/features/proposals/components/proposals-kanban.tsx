@@ -15,7 +15,7 @@ import {
 } from "../schemas";
 import type { ProposalListItem } from "../queries";
 import type { CatalogItem } from "@/features/catalog/queries";
-import { ProposalSlaBadge } from "./proposal-badges";
+import { ProposalKindBadge, ProposalSlaBadge } from "./proposal-badges";
 import { StatusChangeDialog } from "./status-change-dialog";
 
 type Dragged = { id: string; status: ProposalStatusValue };
@@ -110,8 +110,9 @@ export function ProposalsKanban({
                     className="cursor-pointer rounded-lg border bg-card p-3 shadow-sm transition-shadow hover:shadow-md"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium">
+                      <span className="flex items-center gap-1.5 font-medium">
                         {formatProposalNumber(proposal.proposalNumber)}
+                        <ProposalKindBadge kind={proposal.kind} />
                       </span>
                       <ProposalSlaBadge
                         level={proposal.slaLevel}
@@ -120,7 +121,8 @@ export function ProposalsKanban({
                     </div>
                     {proposal.policyNumberGenerated && (
                       <p className="mt-0.5 text-xs font-medium text-success">
-                        Póliza N° {proposal.policyNumberGenerated}
+                        {proposal.kind === "ENDOSO" ? "Endoso" : "Póliza"} N°{" "}
+                        {proposal.policyNumberGenerated}
                       </p>
                     )}
                     <p className="mt-1 truncate text-sm">

@@ -1,9 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@prisma/client";
+import { Prisma, type EndorsementType } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
-import { basePrisma } from "@/server/db";
+import { basePrisma, type Db } from "@/server/db";
+import type { SessionContext } from "@/server/context";
+import { applyEndorsementToPolicy } from "@/features/endorsements/apply";
+import { ENDORSEMENT_TYPE_LABELS } from "@/features/endorsements/schemas";
 import { logActivity } from "@/server/activity";
 import { canDeleteProposal } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/sanitize";
@@ -622,27 +625,34 @@ export async function registerPolicyEmissionAction(
 
   const proposal = await db.proposal.findFirst({
     where: { id: proposalId },
-    select: { id: true, proposalNumber: true },
+    select: { id: true, proposalNumber: true, kind: true },
   });
   if (!proposal) {
     return { ok: false, error: "La propuesta no existe o no tienes acceso." };
   }
+  const isEndorsement = proposal.kind === "ENDOSO";
+  const docLabel = isEndorsement ? "Endoso" : "Póliza";
+  const emittedLabel = isEndorsement
+    ? `Endoso N° ${data.policyNumber.trim()} emitido por la compañía`
+    : `Póliza N° ${data.policyNumber.trim()} emitida por la compañía`;
 
   // Obs 15: no se puede dejar la póliza en estado Emitida sin haber subido el
-  // PDF de la póliza (documento de tipo "Póliza" adjunto a la propuesta).
+  // PDF de la póliza (documento de tipo "Póliza" adjunto a la propuesta). En
+  // una propuesta de endoso se exige el PDF del endoso emitido.
   const policyDoc = await db.document.findFirst({
     where: {
       entityType: "PROPOSAL",
       entityId: proposalId,
-      documentType: "Póliza",
+      documentType: docLabel,
     },
     select: { id: true },
   });
   if (!policyDoc) {
     return {
       ok: false,
-      error:
-        "Debes subir el PDF de la póliza (documento tipo “Póliza” en la pestaña Documentos) antes de dejarla por despachar.",
+      error: isEndorsement
+        ? "Debes subir el PDF del endoso emitido (documento tipo “Endoso” en la pestaña Documentos) antes de dejarlo por despachar."
+        : "Debes subir el PDF de la póliza (documento tipo “Póliza” en la pestaña Documentos) antes de dejarla por despachar.",
     };
   }
 
@@ -664,9 +674,7 @@ export async function registerPolicyEmissionAction(
         organizationId: ctx.organizationId,
         proposalId,
         status: "POR_DESPACHAR",
-        note:
-          emptyToNull(data.note) ??
-          `Póliza N° ${data.policyNumber.trim()} emitida por la compañía`,
+        note: emptyToNull(data.note) ?? emittedLabel,
         changedById: ctx.userId,
       },
     });
@@ -674,8 +682,8 @@ export async function registerPolicyEmissionAction(
       data: {
         organizationId: ctx.organizationId,
         proposalId,
-        action: "POLICY_EMITTED",
-        summary: `Póliza N° ${data.policyNumber.trim()} emitida por la compañía`,
+        action: isEndorsement ? "ENDORSEMENT_EMITTED" : "POLICY_EMITTED",
+        summary: emittedLabel,
         payload: {
           policyNumber: data.policyNumber.trim(),
           emissionDate: data.emissionDate,
@@ -691,7 +699,9 @@ export async function registerPolicyEmissionAction(
     entityType: "PROPOSAL",
     entityId: proposalId,
     action: "policy_emitted",
-    summary: `Propuesta ${proposal.proposalNumber}: póliza N° ${data.policyNumber.trim()} emitida`,
+    summary: `Propuesta ${proposal.proposalNumber}: ${
+      isEndorsement ? "endoso" : "póliza"
+    } N° ${data.policyNumber.trim()} ${isEndorsement ? "emitido" : "emitida"}`,
     userId: ctx.userId,
   });
 
@@ -720,11 +730,12 @@ export async function registerEmissionErrorAction(
 
   const proposal = await db.proposal.findFirst({
     where: { id: proposalId },
-    select: { id: true, proposalNumber: true },
+    select: { id: true, proposalNumber: true, kind: true },
   });
   if (!proposal) {
     return { ok: false, error: "La propuesta no existe o no tienes acceso." };
   }
+  const docWord = proposal.kind === "ENDOSO" ? "Endoso" : "Póliza";
 
   await db.$transaction(async (tx) => {
     await tx.proposal.update({
@@ -745,7 +756,7 @@ export async function registerEmissionErrorAction(
         organizationId: ctx.organizationId,
         proposalId,
         status: "DEVUELTA",
-        note: `Devuelta a la compañía · Póliza N° ${data.policyNumber.trim()} · ${data.reason}${
+        note: `Devuelta a la compañía · ${docWord} N° ${data.policyNumber.trim()} · ${data.reason}${
           data.detail ? ` — ${data.detail}` : ""
         }`,
         changedById: ctx.userId,
@@ -823,6 +834,11 @@ export async function dispatchPolicyToContratanteAction(
       premiumNet: true,
       policyNumberGenerated: true,
       contratanteEmail: true,
+      kind: true,
+      endorsedPolicyId: true,
+      endorsementType: true,
+      endorsementDetail: true,
+      policyEmissionDate: true,
       client: { select: { name: true, email: true } },
     },
   });
@@ -843,6 +859,12 @@ export async function dispatchPolicyToContratanteAction(
     };
   }
   const policyNumber = proposal.policyNumberGenerated.trim();
+
+  // Propuesta de endoso: el despacho registra el endoso en la póliza original
+  // (no crea una póliza nueva).
+  if (proposal.kind === "ENDOSO") {
+    return dispatchEndorsementProposal(ctx, db, proposal, data);
+  }
 
   // Guarda de re-despacho: si la propuesta ya tiene una póliza en la cartera no
   // se vuelve a crear ni se reenvía el correo (review #4/#7).
@@ -1017,98 +1039,24 @@ export async function dispatchPolicyToContratanteAction(
   // La póliza ya está en la cartera: ahora se envía el correo (review #3). Si el
   // envío falla, la póliza queda creada igual y el operador reenvía desde ella.
   if (data.send) {
-    const org = await basePrisma.organization.findUnique({
-      where: { id: ctx.organizationId },
-      select: { name: true },
+    const orgName = await organizationName(ctx.organizationId);
+    const sendError = await sendDispatchEmail(db, {
+      proposalId,
+      recipient,
+      documentType: "Póliza",
+      documentIds: data.documentIds,
+      subject: data.subject.trim() || `Póliza N° ${policyNumber} · ${orgName}`,
+      bodyText:
+        data.body.trim() ||
+        `Estimado(a) ${proposal.client.name},\n\nAdjuntamos su póliza N° ${policyNumber}. Ante cualquier consulta, quedamos a su disposición.\n\nLe saluda atentamente,\n${orgName}`,
     });
-    const orgName = org?.name ?? "Polizza";
-
-    // Documentos: la póliza (tipo "Póliza") siempre + los seleccionados de la
-    // carátula. Los subidos al servidor se adjuntan; los de enlace externo se
-    // listan como links en el cuerpo.
-    const policyDocs = await db.document.findMany({
-      where: {
-        entityType: "PROPOSAL",
-        entityId: proposalId,
-        documentType: "Póliza",
-      },
-      select: { id: true, fileName: true, fileUrl: true, storageKey: true, mimeType: true },
-    });
-    const selected = data.documentIds.length
-      ? await db.document.findMany({
-          where: {
-            id: { in: data.documentIds },
-            entityType: "PROPOSAL",
-            entityId: proposalId,
-          },
-          select: { id: true, fileName: true, fileUrl: true, storageKey: true, mimeType: true },
-        })
-      : [];
-    const byId = new Map<string, (typeof policyDocs)[number]>();
-    for (const d of [...policyDocs, ...selected]) byId.set(d.id, d);
-    const allDocs = Array.from(byId.values());
-
-    const attachments: { filename: string; content: Buffer; contentType?: string }[] = [];
-    const linkDocs: { fileName: string; fileUrl: string }[] = [];
-    for (const d of allDocs) {
-      if (d.storageKey) {
-        const bytes = await readStoredFile(d.storageKey);
-        if (bytes) {
-          attachments.push({
-            filename: d.fileName,
-            content: bytes,
-            contentType: d.mimeType ?? undefined,
-          });
-          continue;
-        }
-      }
-      if (d.fileUrl) linkDocs.push({ fileName: d.fileName, fileUrl: d.fileUrl });
-    }
-
-    const subject =
-      data.subject.trim() || `Póliza N° ${policyNumber} · ${orgName}`;
-    const bodyText =
-      data.body.trim() ||
-      `Estimado(a) ${proposal.client.name},\n\nAdjuntamos su póliza N° ${policyNumber}. Ante cualquier consulta, quedamos a su disposición.\n\nLe saluda atentamente,\n${orgName}`;
-    const docsHtml =
-      linkDocs.length > 0
-        ? `<p style="font-size:13px;margin-top:12px"><b>Documentos por enlace:</b></p><ul style="font-size:13px">${linkDocs
-            .map(
-              (d) =>
-                `<li><a href="${d.fileUrl}" target="_blank">${d.fileName}</a></li>`,
-            )
-            .join("")}</ul>`
-        : "";
-    const html = emailLayout(
-      subject,
-      bodyText
-        .split("\n")
-        .map((l) => `<div>${escapeHtmlLite(l) || "&nbsp;"}</div>`)
-        .join("") + docsHtml,
-    );
-
-    try {
-      await sendEmail({
-        to: recipient,
-        subject,
-        text:
-          bodyText +
-          (linkDocs.length > 0
-            ? "\n\nDocumentos por enlace:\n" +
-              linkDocs.map((d) => `- ${d.fileName}: ${d.fileUrl}`).join("\n")
-            : ""),
-        html,
-        attachments,
-      });
-    } catch (e) {
+    if (sendError) {
       revalidatePath("/propuestas");
       revalidatePath("/polizas");
       revalidatePath(`/propuestas/${proposalId}`);
       return {
         ok: false,
-        error: `La póliza N° ${policyNumber} se creó en la cartera, pero falló el envío del correo: ${
-          e instanceof Error ? e.message : "error desconocido"
-        }. Reenvíalo desde la póliza.`,
+        error: `La póliza N° ${policyNumber} se creó en la cartera, pero falló el envío del correo: ${sendError}. Reenvíalo desde la póliza.`,
       };
     }
   }
@@ -1126,6 +1074,263 @@ export async function dispatchPolicyToContratanteAction(
   revalidatePath("/polizas");
   revalidatePath(`/propuestas/${proposalId}`);
   return { ok: true, id: policyId };
+}
+
+/**
+ * Despacho de una propuesta de endoso: la compañía emitió el endoso y fue
+ * revisado. Registra el Endorsement en la póliza (aplicando su efecto sobre el
+ * estado) y, si corresponde, envía el endoso al contratante. La propuesta sale
+ * del flujo de propuestas al quedar vinculada al endoso.
+ */
+async function dispatchEndorsementProposal(
+  ctx: SessionContext,
+  db: Db,
+  proposal: {
+    id: string;
+    proposalNumber: string;
+    policyNumberGenerated: string | null;
+    contratanteEmail: string | null;
+    endorsedPolicyId: string | null;
+    endorsementType: EndorsementType | null;
+    endorsementDetail: string | null;
+    startDate: Date | null;
+    endDate: Date | null;
+    client: { name: string; email: string | null };
+  },
+  data: PolicyDispatchValues,
+): Promise<ActionResult> {
+  const endorsementNumber = proposal.policyNumberGenerated?.trim() || null;
+  if (!proposal.endorsedPolicyId || !proposal.endorsementType) {
+    return {
+      ok: false,
+      error: "La propuesta de endoso no tiene póliza o tipo de endoso.",
+    };
+  }
+  if (!proposal.startDate) {
+    return { ok: false, error: "Falta la fecha de inicio del endoso." };
+  }
+  const policy = await db.policy.findFirst({
+    where: { id: proposal.endorsedPolicyId },
+    select: { id: true, policyNumber: true },
+  });
+  if (!policy) {
+    return { ok: false, error: "La póliza endosada ya no existe." };
+  }
+  const alreadyRegistered = await db.endorsement.findFirst({
+    where: { proposalId: proposal.id },
+    select: { id: true },
+  });
+  if (alreadyRegistered) {
+    return {
+      ok: false,
+      error: "Esta propuesta de endoso ya fue despachada y registrada en la póliza.",
+    };
+  }
+
+  const recipient = data.send
+    ? data.toEmail.trim() ||
+      proposal.contratanteEmail?.trim() ||
+      proposal.client.email?.trim() ||
+      ""
+    : "";
+  if (data.send && !recipient) {
+    return {
+      ok: false,
+      error:
+        "No hay email del contratante. Indícalo o agrégalo en la ficha/propuesta.",
+    };
+  }
+
+  const typeLabel = ENDORSEMENT_TYPE_LABELS[proposal.endorsementType];
+  const endorsementType = proposal.endorsementType;
+  const effectiveDate = proposal.startDate;
+  let failure: string | null = null;
+  try {
+    await db.$transaction(async (tx) => {
+      const result = await applyEndorsementToPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        policyId: policy.id,
+        type: endorsementType,
+        effectiveDate,
+        endDate: proposal.endDate,
+        endorsementNumber,
+        detail: proposal.endorsementDetail,
+        notes: null,
+        proposalId: proposal.id,
+      });
+      if (!result.ok) {
+        failure = result.error;
+        // Aborta la transacción sin dejar nada a medias.
+        throw new Error(result.error);
+      }
+      await tx.proposal.update({
+        where: { id: proposal.id },
+        data: { currentStateStartedAt: new Date() },
+      });
+      await tx.proposalLog.create({
+        data: {
+          organizationId: ctx.organizationId,
+          proposalId: proposal.id,
+          action: "ENDORSEMENT_DISPATCHED",
+          summary: data.send
+            ? `Endoso${endorsementNumber ? ` N° ${endorsementNumber}` : ""} enviado al contratante y registrado en la póliza ${policy.policyNumber}`
+            : `Endoso${endorsementNumber ? ` N° ${endorsementNumber}` : ""} marcado como despachado y registrado en la póliza ${policy.policyNumber}`,
+          userId: ctx.userId,
+        },
+      });
+    });
+  } catch (error) {
+    if (failure) return { ok: false, error: failure };
+    throw error;
+  }
+
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "POLICY",
+    entityId: policy.id,
+    action: "endorsement_created",
+    summary: `${typeLabel}${endorsementNumber ? ` N° ${endorsementNumber}` : ""} de póliza ${policy.policyNumber} (propuesta ${proposal.proposalNumber})`,
+    userId: ctx.userId,
+  });
+
+  if (data.send) {
+    const orgName = await organizationName(ctx.organizationId);
+    const numberText = endorsementNumber ? ` N° ${endorsementNumber}` : "";
+    const sendError = await sendDispatchEmail(db, {
+      proposalId: proposal.id,
+      recipient,
+      documentType: "Endoso",
+      documentIds: data.documentIds,
+      subject:
+        data.subject.trim() ||
+        `Endoso${numberText} · Póliza N° ${policy.policyNumber} · ${orgName}`,
+      bodyText:
+        data.body.trim() ||
+        `Estimado(a) ${proposal.client.name},\n\nAdjuntamos el endoso${numberText} (${typeLabel.toLowerCase()}) de su póliza N° ${policy.policyNumber}. Ante cualquier consulta, quedamos a su disposición.\n\nLe saluda atentamente,\n${orgName}`,
+    });
+    if (sendError) {
+      revalidatePath("/propuestas");
+      revalidatePath(`/polizas/${policy.id}`);
+      revalidatePath(`/propuestas/${proposal.id}`);
+      return {
+        ok: false,
+        error: `El endoso quedó registrado en la póliza ${policy.policyNumber}, pero falló el envío del correo: ${sendError}.`,
+      };
+    }
+  }
+
+  revalidatePath("/propuestas");
+  revalidatePath("/polizas");
+  revalidatePath(`/polizas/${policy.id}`);
+  revalidatePath(`/propuestas/${proposal.id}`);
+  return { ok: true, id: policy.id };
+}
+
+async function organizationName(organizationId: string): Promise<string> {
+  const org = await basePrisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { name: true },
+  });
+  return org?.name ?? "Polizza";
+}
+
+/**
+ * Envía al contratante el documento emitido (póliza o endoso, según
+ * `documentType`) + los documentos seleccionados de la carátula. Los subidos al
+ * servidor se adjuntan; los de enlace externo van como links en el cuerpo.
+ * Devuelve el mensaje de error del envío, o null si salió bien.
+ */
+async function sendDispatchEmail(
+  db: Db,
+  input: {
+    proposalId: string;
+    recipient: string;
+    documentType: string;
+    documentIds: string[];
+    subject: string;
+    bodyText: string;
+  },
+): Promise<string | null> {
+  const select = {
+    id: true,
+    fileName: true,
+    fileUrl: true,
+    storageKey: true,
+    mimeType: true,
+  } as const;
+  const emittedDocs = await db.document.findMany({
+    where: {
+      entityType: "PROPOSAL",
+      entityId: input.proposalId,
+      documentType: input.documentType,
+    },
+    select,
+  });
+  const selected = input.documentIds.length
+    ? await db.document.findMany({
+        where: {
+          id: { in: input.documentIds },
+          entityType: "PROPOSAL",
+          entityId: input.proposalId,
+        },
+        select,
+      })
+    : [];
+  const byId = new Map<string, (typeof emittedDocs)[number]>();
+  for (const d of [...emittedDocs, ...selected]) byId.set(d.id, d);
+
+  const attachments: { filename: string; content: Buffer; contentType?: string }[] = [];
+  const linkDocs: { fileName: string; fileUrl: string }[] = [];
+  for (const d of byId.values()) {
+    if (d.storageKey) {
+      const bytes = await readStoredFile(d.storageKey);
+      if (bytes) {
+        attachments.push({
+          filename: d.fileName,
+          content: bytes,
+          contentType: d.mimeType ?? undefined,
+        });
+        continue;
+      }
+    }
+    if (d.fileUrl) linkDocs.push({ fileName: d.fileName, fileUrl: d.fileUrl });
+  }
+
+  const docsHtml =
+    linkDocs.length > 0
+      ? `<p style="font-size:13px;margin-top:12px"><b>Documentos por enlace:</b></p><ul style="font-size:13px">${linkDocs
+          .map(
+            (d) =>
+              `<li><a href="${d.fileUrl}" target="_blank">${d.fileName}</a></li>`,
+          )
+          .join("")}</ul>`
+      : "";
+  const html = emailLayout(
+    input.subject,
+    input.bodyText
+      .split("\n")
+      .map((l) => `<div>${escapeHtmlLite(l) || "&nbsp;"}</div>`)
+      .join("") + docsHtml,
+  );
+
+  try {
+    await sendEmail({
+      to: input.recipient,
+      subject: input.subject,
+      text:
+        input.bodyText +
+        (linkDocs.length > 0
+          ? "\n\nDocumentos por enlace:\n" +
+            linkDocs.map((d) => `- ${d.fileName}: ${d.fileUrl}`).join("\n")
+          : ""),
+      html,
+      attachments,
+    });
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : "error desconocido";
+  }
 }
 
 function escapeHtmlLite(s: string): string {

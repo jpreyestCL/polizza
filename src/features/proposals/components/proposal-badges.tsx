@@ -43,3 +43,9 @@ export function ProposalSlaBadge({
     </span>
   );
 }
+
+/** Marca las propuestas de endoso en listados y kanban. */
+export function ProposalKindBadge({ kind }: { kind: string }) {
+  if (kind !== "ENDOSO") return null;
+  return <Badge variant="muted">Endoso</Badge>;
+}

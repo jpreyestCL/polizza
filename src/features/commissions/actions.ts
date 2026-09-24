@@ -15,10 +15,12 @@ import {
 } from "@/lib/commissions";
 import {
   companyPaymentSchema,
+  policyCommissionSchema,
   salespersonRateSchema,
   policySalesCommissionSchema,
   generateSettlementSchema,
   type CompanyPaymentValues,
+  type PolicyCommissionValues,
   type SalespersonRateValues,
   type PolicySalesCommissionValues,
   type GenerateSettlementValues,
@@ -46,7 +48,10 @@ export async function registerCompanyPaymentAction(
 ): Promise<ActionResult> {
   const parsed = companyPaymentSchema.safeParse(values);
   if (!parsed.success) {
-    return { ok: false, error: "Revisa los datos del pago." };
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Revisa los datos del pago.",
+    };
   }
   const data = parsed.data;
   const { ctx, db } = await requireOrgDb();
@@ -56,10 +61,22 @@ export async function registerCompanyPaymentAction(
 
   const policy = await db.policy.findFirst({
     where: { id: data.policyId },
-    select: { id: true, policyNumber: true },
+    select: {
+      id: true,
+      policyNumber: true,
+      currency: true,
+      sellerCommissionItem: { select: { id: true } },
+    },
   });
   if (!policy) {
     return { ok: false, error: "La póliza no existe o no tienes acceso." };
+  }
+  if (data.decision === "PENDING" && policy.sellerCommissionItem) {
+    return {
+      ok: false,
+      error:
+        "La comisión del vendedor de esta póliza ya fue liquidada; no se puede dejar pendiente.",
+    };
   }
 
   const paymentDate = parseDate(data.paymentDate);
@@ -70,19 +87,40 @@ export async function registerCompanyPaymentAction(
       fieldErrors: { paymentDate: "Fecha inválida" },
     };
   }
+  // Sin tipo de cambio un pago en otra moneda no se puede comparar con la
+  // comisión (quedaría sumando 0): se exige el informado o el implícito.
+  if (data.currency !== policy.currency && !data.exchangeFactor) {
+    return {
+      ok: false,
+      error: `Ingresa el tipo de cambio ${policy.currency} → ${data.currency}.`,
+      fieldErrors: { exchangeFactor: "Tipo de cambio requerido" },
+    };
+  }
 
-  const payment = await db.companyCommissionPayment.create({
-    data: {
-      organizationId: ctx.organizationId,
-      policyId: data.policyId,
-      paymentDate,
-      amount: data.amount,
-      currency: data.currency,
-      invoiceNumber: emptyToNull(data.invoiceNumber),
-      exchangeFactor: emptyToNull(data.exchangeFactor),
-      notes: emptyToNull(data.notes),
-      createdById: ctx.userId,
-    },
+  const paid = data.decision === "PAID";
+  const payment = await db.$transaction(async (tx) => {
+    const created = await tx.companyCommissionPayment.create({
+      data: {
+        organizationId: ctx.organizationId,
+        policyId: data.policyId,
+        paymentDate,
+        amount: data.amount,
+        currency: data.currency,
+        invoiceNumber: emptyToNull(data.invoiceNumber),
+        invoiceDate: parseDate(data.invoiceDate),
+        exchangeFactor:
+          data.currency === policy.currency
+            ? null
+            : emptyToNull(data.exchangeFactor),
+        notes: emptyToNull(data.notes),
+        createdById: ctx.userId,
+      },
+    });
+    await tx.policy.update({
+      where: { id: policy.id },
+      data: { commissionPaid: paid },
+    });
+    return created;
   });
 
   await logActivity(db, {
@@ -90,12 +128,67 @@ export async function registerCompanyPaymentAction(
     entityType: "POLICY",
     entityId: policy.id,
     action: "company_commission_paid",
-    summary: `Pago de comisión de compañía registrado en póliza ${policy.policyNumber}`,
+    summary: paid
+      ? `Pago de comisión de compañía registrado en póliza ${policy.policyNumber} · comisión pagada`
+      : `Pago de comisión de compañía registrado en póliza ${policy.policyNumber} · comisión queda pendiente`,
     userId: ctx.userId,
   });
 
   revalidatePath("/comisiones");
+  revalidatePath("/liquidaciones-vendedores");
   return { ok: true, id: payment.id };
+}
+
+/**
+ * Deja la comisión de la póliza pagada (true), pendiente (false) o vuelve al
+ * cálculo automático por suma de pagos (null), sin registrar un pago nuevo.
+ */
+export async function setCommissionPaidAction(
+  policyId: string,
+  paid: boolean | null,
+): Promise<ActionResult> {
+  const { ctx, db } = await requireOrgDb();
+  if (!canManageCommissions(ctx.role)) {
+    return { ok: false, error: "No tienes permiso." };
+  }
+  const policy = await db.policy.findFirst({
+    where: { id: policyId },
+    select: {
+      id: true,
+      policyNumber: true,
+      sellerCommissionItem: { select: { id: true } },
+    },
+  });
+  if (!policy) {
+    return { ok: false, error: "La póliza no existe o no tienes acceso." };
+  }
+  if (paid !== true && policy.sellerCommissionItem) {
+    return {
+      ok: false,
+      error:
+        "La comisión del vendedor de esta póliza ya fue liquidada; elimina la liquidación antes de dejarla pendiente.",
+    };
+  }
+  await db.policy.update({
+    where: { id: policyId },
+    data: { commissionPaid: paid },
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "POLICY",
+    entityId: policyId,
+    action: "company_commission_status",
+    summary:
+      paid === true
+        ? `Comisión de póliza ${policy.policyNumber} dejada como pagada por la compañía`
+        : paid === false
+          ? `Comisión de póliza ${policy.policyNumber} dejada pendiente`
+          : `Comisión de póliza ${policy.policyNumber} vuelve a cálculo automático`,
+    userId: ctx.userId,
+  });
+  revalidatePath("/comisiones");
+  revalidatePath("/liquidaciones-vendedores");
+  return { ok: true, id: policyId };
 }
 
 export async function deleteCompanyPaymentAction(
@@ -107,12 +200,73 @@ export async function deleteCompanyPaymentAction(
   }
   const existing = await db.companyCommissionPayment.findFirst({
     where: { id },
-    select: { id: true },
+    select: { id: true, policyId: true },
   });
   if (!existing) return { ok: false, error: "El pago no existe." };
-  await db.companyCommissionPayment.delete({ where: { id } });
+  // Al quitar un pago la decisión anterior (pagada/pendiente) ya no aplica:
+  // la comisión vuelve al cálculo automático por suma de pagos.
+  await db.$transaction(async (tx) => {
+    await tx.companyCommissionPayment.delete({ where: { id } });
+    await tx.policy.update({
+      where: { id: existing.policyId },
+      data: { commissionPaid: null },
+    });
+  });
   revalidatePath("/comisiones");
+  revalidatePath("/liquidaciones-vendedores");
   return { ok: true, id };
+}
+
+/**
+ * Corrige la comisión de la póliza desde la revisión de comisiones, cuando la
+ * diferencia con lo pagado por la compañía se debe a un dato mal registrado en
+ * el sistema (prima neta o % de comisión).
+ */
+export async function updatePolicyCommissionAction(
+  policyId: string,
+  values: PolicyCommissionValues,
+): Promise<ActionResult> {
+  const parsed = policyCommissionSchema.safeParse(values);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Revisa los datos.",
+    };
+  }
+  const data = parsed.data;
+  const { ctx, db } = await requireOrgDb();
+  if (!canManageCommissions(ctx.role)) {
+    return { ok: false, error: "No tienes permiso." };
+  }
+  const policy = await db.policy.findFirst({
+    where: { id: policyId },
+    select: { id: true, policyNumber: true },
+  });
+  if (!policy) {
+    return { ok: false, error: "La póliza no existe o no tienes acceso." };
+  }
+  await db.policy.update({
+    where: { id: policyId },
+    data: {
+      premiumNet: data.premiumNet === "" ? null : data.premiumNet,
+      commissionPercent:
+        data.commissionPercent === "" ? null : data.commissionPercent,
+      commissionAmount:
+        data.commissionAmount === "" ? null : data.commissionAmount,
+    },
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "POLICY",
+    entityId: policyId,
+    action: "commission_updated",
+    summary: `Comisión de póliza ${policy.policyNumber} corregida desde revisión de comisiones`,
+    userId: ctx.userId,
+  });
+  revalidatePath("/comisiones");
+  revalidatePath("/liquidaciones-vendedores");
+  revalidatePath(`/polizas/${policyId}`);
+  return { ok: true, id: policyId };
 }
 
 // ── Vendedor / tasa por póliza ────────────────────────────────
@@ -156,7 +310,7 @@ export async function updatePolicySalesCommissionAction(
   });
 
   revalidatePath("/comisiones");
-  revalidatePath("/comisiones/liquidaciones");
+  revalidatePath("/liquidaciones-vendedores");
   return { ok: true, id: policyId };
 }
 
@@ -255,6 +409,7 @@ export async function generateSettlementAction(
       commissionPercent: true,
       commissionAmount: true,
       salesCommissionPct: true,
+      commissionPaid: true,
       companyCommissionPayments: {
         select: { amount: true, currency: true, exchangeFactor: true },
       },
@@ -279,7 +434,9 @@ export async function generateSettlementAction(
         })),
         p.currency,
       );
-      if (!isPaidByCompany(brokerCommission, companyPaid)) return null;
+      if (!isPaidByCompany(brokerCommission, companyPaid, p.commissionPaid)) {
+        return null;
+      }
       const pct = appliedSellerPct(
         p.salesCommissionPct != null ? Number(p.salesCommissionPct) : null,
         defaultPct,
@@ -348,7 +505,7 @@ export async function generateSettlementAction(
       return created;
     });
 
-    revalidatePath("/comisiones/liquidaciones");
+    revalidatePath("/liquidaciones-vendedores");
     revalidatePath("/comisiones");
     return { ok: true, id: settlement.id };
   } catch (error) {
@@ -397,8 +554,8 @@ export async function markSettlementPaidAction(
     where: { id },
     data: { status: "PAGADA", paidAt: new Date() },
   });
-  revalidatePath("/comisiones/liquidaciones");
-  revalidatePath(`/comisiones/liquidaciones/${id}`);
+  revalidatePath("/liquidaciones-vendedores");
+  revalidatePath(`/liquidaciones-vendedores/${id}`);
   return { ok: true, id };
 }
 
@@ -422,7 +579,7 @@ export async function deleteSettlementAction(
   }
   // Borra la liquidación; los items caen por cascade y liberan las pólizas.
   await db.sellerCommissionSettlement.delete({ where: { id } });
-  revalidatePath("/comisiones/liquidaciones");
+  revalidatePath("/liquidaciones-vendedores");
   revalidatePath("/comisiones");
   return { ok: true, id };
 }

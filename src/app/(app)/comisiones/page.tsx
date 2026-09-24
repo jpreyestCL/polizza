@@ -1,11 +1,10 @@
 import { redirect } from "next/navigation";
 import type { PolicyStatus } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
-import { canManageCommissions, canEditCommissionRates } from "@/lib/roles";
+import { canManageCommissions } from "@/lib/roles";
 import { listCommissions } from "@/features/commissions/queries";
 import { getCompanies, getLines } from "@/features/catalog/queries";
-import { getOrgMembers } from "@/features/clients/queries";
-import { CommissionsNav } from "@/features/commissions/components/commissions-nav";
+import { getIndicatorValues } from "@/server/uf";
 import { CommissionsTable } from "@/features/commissions/components/commissions-table";
 import { PageHeader } from "@/components/page-header";
 
@@ -40,7 +39,6 @@ export default async function ComisionesPage({
     q: str(sp?.q),
     companyId: str(sp?.companyId),
     lineId: str(sp?.lineId),
-    salespersonId: str(sp?.salespersonId),
     status:
       statusParam && POLICY_STATUSES.includes(statusParam)
         ? (statusParam as PolicyStatus)
@@ -53,29 +51,31 @@ export default async function ComisionesPage({
         : undefined,
   };
 
-  const [result, companies, lines, members] = await Promise.all([
+  const [result, companies, lines, indicators] = await Promise.all([
     listCommissions(ctx, db, filters),
     getCompanies(db),
     getLines(db),
-    getOrgMembers(ctx.organizationId),
+    getIndicatorValues(),
   ]);
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Comisiones"
-        description="Comisiones de la corredora por póliza y liquidación a vendedores."
+        title="Revisión de comisiones"
+        description="Comisión calculada por póliza, pagos de la compañía y diferencias a reclamar."
       />
-      <CommissionsNav />
       <CommissionsTable
         rows={result.rows}
         total={result.total}
         truncated={result.truncated}
         companies={companies}
         lines={lines}
-        members={members.map((m) => ({ userId: m.userId, name: m.name }))}
+        indicators={{
+          uf: indicators.uf?.value ?? null,
+          usdObs: indicators.usdObs?.value ?? null,
+          euro: indicators.euro?.value ?? null,
+        }}
         canManage={canManageCommissions(ctx.role)}
-        canEditRates={canEditCommissionRates(ctx.role)}
       />
     </div>
   );

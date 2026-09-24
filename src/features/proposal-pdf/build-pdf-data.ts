@@ -2,8 +2,32 @@ import "server-only";
 import { basePrisma, type Db } from "@/server/db";
 import { migrateItemData } from "@/lib/item-data-migration";
 import type { PdfProposal } from "./pdf-template";
+import type { PdfEndorsement } from "./endorsement-pdf-template";
+import { buildEndorsementPdfData } from "./build-endorsement-pdf-data";
 
+export type PdfDocumentData = PdfProposal | PdfEndorsement;
+
+/**
+ * Datos del PDF de una propuesta. Las propuestas de endoso generan la
+ * "Solicitud de Endoso"; el resto, la propuesta de seguro.
+ */
 export async function buildProposalPdfData(
+  db: Db,
+  proposalId: string,
+  options: { organizationName?: string } = {},
+): Promise<PdfDocumentData | null> {
+  const kind = await db.proposal.findFirst({
+    where: { id: proposalId },
+    select: { kind: true },
+  });
+  if (!kind) return null;
+  if (kind.kind === "ENDOSO") {
+    return buildEndorsementPdfData(db, proposalId, options);
+  }
+  return buildPolicyProposalPdfData(db, proposalId, options);
+}
+
+async function buildPolicyProposalPdfData(
   db: Db,
   proposalId: string,
   options: { organizationName?: string } = {},
@@ -197,6 +221,7 @@ export async function buildProposalPdfData(
   const beneficiaryFallback = beneficiaryFull ?? insuredFallback;
 
   return {
+    kind: "POLIZA",
     proposalNumber: proposal.proposalNumber,
     createdAt: proposal.createdAt,
     sentAt: proposal.sentAt,

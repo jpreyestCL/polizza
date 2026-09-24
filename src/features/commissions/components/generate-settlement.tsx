@@ -1,14 +1,27 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { Pencil } from "lucide-react";
 import type { SettleablePolicy } from "../queries";
-import { generateSettlementAction } from "../actions";
+import {
+  generateSettlementAction,
+  updatePolicySalesCommissionAction,
+} from "../actions";
 import { formatMoney, type CurrencyCode } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -34,6 +47,7 @@ export function GenerateSettlement({
   defaultPct,
   companies,
   lines,
+  canEditRates,
 }: {
   salespersonId: string | null;
   members: { userId: string; name: string }[];
@@ -41,12 +55,14 @@ export function GenerateSettlement({
   defaultPct: number | null;
   companies: CatalogItem[];
   lines: CatalogItem[];
+  canEditRates: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [rateFor, setRateFor] = useState<SettleablePolicy | null>(null);
 
   const companyName = useMemo(
     () => new Map(companies.map((c) => [c.id, c.name])),
@@ -109,7 +125,7 @@ export function GenerateSettlement({
       if (res.ok) {
         toast.success("Liquidación generada");
         setSelected(new Set());
-        router.push(`/comisiones/liquidaciones/${res.id}`);
+        router.push(`/liquidaciones-vendedores/${res.id}`);
       } else {
         toast.error(res.error);
       }
@@ -228,7 +244,25 @@ export function GenerateSettlement({
                       )}
                     </TableCell>
                     <TableCell className="text-right text-sm">
-                      {r.appliedPct != null ? `${r.appliedPct}%` : "—"}
+                      <span className="inline-flex items-center gap-1">
+                        {r.appliedPct != null ? `${r.appliedPct}%` : "—"}
+                        {r.salesCommissionPct != null ? (
+                          <span className="text-xs text-muted-foreground">
+                            (acuerdo)
+                          </span>
+                        ) : null}
+                        {canEditRates ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-7"
+                            title="Ajustar % de esta póliza"
+                            onClick={() => setRateFor(r)}
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                        ) : null}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right text-sm font-medium">
                       {formatMoney(r.payout, r.currency as CurrencyCode)}
@@ -240,6 +274,94 @@ export function GenerateSettlement({
           </Table>
         </div>
       )}
+      {salespersonId ? (
+        <PolicyRateDialog
+          row={rateFor}
+          salespersonId={salespersonId}
+          onClose={() => setRateFor(null)}
+          onSaved={() => {
+            setRateFor(null);
+            router.refresh();
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Override del % del vendedor en una póliza (acuerdo especial para cerrar un
+ * negocio). Vacío = vuelve a la tasa default del vendedor. Solo admin.
+ */
+function PolicyRateDialog({
+  row,
+  salespersonId,
+  onClose,
+  onSaved,
+}: {
+  row: SettleablePolicy | null;
+  salespersonId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [pct, setPct] = useState("");
+
+  useEffect(() => {
+    if (row) {
+      setPct(row.salesCommissionPct != null ? String(row.salesCommissionPct) : "");
+    }
+  }, [row]);
+
+  function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!row) return;
+    startTransition(async () => {
+      const res = await updatePolicySalesCommissionAction(row.policyId, {
+        salespersonId,
+        salesCommissionPct: pct.trim(),
+      });
+      if (res.ok) {
+        toast.success("% de comisión actualizado");
+        onSaved();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
+
+  return (
+    <Dialog open={Boolean(row)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>
+            % vendedor{row ? ` · Póliza ${row.policyNumber}` : ""}
+          </DialogTitle>
+          <DialogDescription>
+            Deja vacío para usar la tasa default del vendedor. Ingresa un valor
+            para fijar un acuerdo especial en esta póliza.
+          </DialogDescription>
+        </DialogHeader>
+        <form className="space-y-3" onSubmit={onSubmit}>
+          <div className="space-y-1">
+            <Label>% comisión vendedor</Label>
+            <Input
+              inputMode="decimal"
+              placeholder="Tasa default"
+              value={pct}
+              onChange={(e) => setPct(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Guardando…" : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

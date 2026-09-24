@@ -1,13 +1,12 @@
 import { redirect } from "next/navigation";
 import { requireOrgDb } from "@/server/context";
-import { canManageCommissions } from "@/lib/roles";
+import { canManageCommissions, canEditCommissionRates } from "@/lib/roles";
 import {
   listSettlements,
   listSettleablePolicies,
 } from "@/features/commissions/queries";
 import { getCompanies, getLines } from "@/features/catalog/queries";
 import { getOrgMembers } from "@/features/clients/queries";
-import { CommissionsNav } from "@/features/commissions/components/commissions-nav";
 import { GenerateSettlement } from "@/features/commissions/components/generate-settlement";
 import { SettlementsList } from "@/features/commissions/components/settlements-list";
 import { PageHeader } from "@/components/page-header";
@@ -46,10 +45,9 @@ export default async function LiquidacionesPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Comisiones"
-        description="Comisiones de la corredora por póliza y liquidación a vendedores."
+        title="Liquidación de vendedores"
+        description="Liquida a cada vendedor su comisión sobre las pólizas que la compañía ya pagó a la corredora."
       />
-      <CommissionsNav />
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-muted-foreground">
           Generar liquidación
@@ -61,6 +59,7 @@ export default async function LiquidacionesPage({
           defaultPct={settleable.defaultPct}
           companies={companies}
           lines={lines}
+          canEditRates={canEditCommissionRates(ctx.role)}
         />
       </section>
       <section className="space-y-2">

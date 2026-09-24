@@ -20,7 +20,11 @@ import {
   STATUS_LABELS,
   type ProposalStatusValue,
 } from "../schemas";
-import { ProposalStatusBadge, ProposalSlaBadge } from "./proposal-badges";
+import {
+  ProposalKindBadge,
+  ProposalStatusBadge,
+  ProposalSlaBadge,
+} from "./proposal-badges";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -101,10 +105,12 @@ export function ProposalsTable({
               className="font-medium hover:text-primary"
             >
               {formatProposalNumber(row.original.proposalNumber)}
-            </Link>
+            </Link>{" "}
+            <ProposalKindBadge kind={row.original.kind} />
             {row.original.policyNumberGenerated && (
               <div className="text-xs font-medium text-success">
-                Póliza N° {row.original.policyNumberGenerated}
+                {row.original.kind === "ENDOSO" ? "Endoso" : "Póliza"} N°{" "}
+                {row.original.policyNumberGenerated}
               </div>
             )}
           </div>

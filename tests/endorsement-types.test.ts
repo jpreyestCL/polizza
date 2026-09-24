@@ -4,6 +4,7 @@ import {
   ENDORSEMENT_TYPE_LABELS,
   endorsementStatusEffect,
   endorsementSchema,
+  endorsementTransitionError,
 } from "@/features/endorsements/schemas";
 
 describe("tipos de endoso", () => {
@@ -48,9 +49,65 @@ describe("tipos de endoso", () => {
     const res = endorsementSchema.safeParse({
       type: "CANCELACION",
       effectiveDate: "2026-09-15",
-      reason: "",
       notes: "",
     });
     expect(res.success).toBe(false);
+  });
+});
+
+describe("formulario de endoso", () => {
+  it("no pide motivo: basta el tipo y el detalle", () => {
+    const res = endorsementSchema.safeParse({
+      type: "MODIFICACION",
+      effectiveDate: "2026-09-23",
+      detail: "Se incluye la cobertura de remoción de escombros",
+    });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.mode).toBe("PROPUESTA");
+  });
+
+  it("la propuesta de endoso exige el detalle para la compañía", () => {
+    const res = endorsementSchema.safeParse({
+      mode: "PROPUESTA",
+      type: "MODIFICACION",
+      effectiveDate: "2026-09-23",
+    });
+    expect(res.success).toBe(false);
+  });
+
+  it("el registro directo no exige detalle", () => {
+    const res = endorsementSchema.safeParse({
+      mode: "DIRECTO",
+      type: "CANCELACION_NO_PAGO",
+      effectiveDate: "2026-09-23",
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("rechaza un fin de endoso anterior al inicio", () => {
+    const res = endorsementSchema.safeParse({
+      mode: "DIRECTO",
+      type: "PRORROGA",
+      effectiveDate: "2026-09-23",
+      endDate: "2026-09-01",
+    });
+    expect(res.success).toBe(false);
+  });
+});
+
+describe("endorsementTransitionError", () => {
+  it("no deja cancelar una póliza ya anulada", () => {
+    expect(
+      endorsementTransitionError("CANCELACION_COMPANIA", "ANULADA"),
+    ).toBeTruthy();
+  });
+
+  it("no deja anular dos veces", () => {
+    expect(endorsementTransitionError("ANULACION_COMPANIA", "ANULADA")).toBeTruthy();
+  });
+
+  it("los endosos que no mueven el estado se aplican siempre", () => {
+    expect(endorsementTransitionError("MODIFICACION", "CANCELADA")).toBeNull();
+    expect(endorsementTransitionError("CANCELACION_NO_PAGO", "VIGENTE")).toBeNull();
   });
 });

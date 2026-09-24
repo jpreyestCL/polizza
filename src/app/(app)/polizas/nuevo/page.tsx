@@ -43,6 +43,7 @@ export default async function NuevaPolizaPage({
     startDate: "",
     endDate: "",
     assignedUserId: ctx.userId,
+    salespersonId: "",
     items: [],
     coverages: [],
   };
@@ -50,7 +51,9 @@ export default async function NuevaPolizaPage({
   let fromProposalNumber: string | null = null;
   if (fromProposal) {
     const proposal = await getProposalDetail(db, fromProposal);
-    if (proposal) {
+    // Una propuesta de endoso no se convierte en póliza: al despacharla se
+    // registra como endoso de la póliza original.
+    if (proposal && proposal.kind === "POLIZA") {
       fromProposalNumber = proposal.proposalNumber;
       // Cargar ítems y coberturas de la propuesta para precargar la póliza.
       const proposalItems = await db.proposalItem.findMany({
@@ -135,6 +138,7 @@ export default async function NuevaPolizaPage({
         startDate: toDateInput(proposal.startDate),
         endDate: toDateInput(proposal.endDate),
         assignedUserId: proposal.assignedUserId ?? ctx.userId,
+        salespersonId: proposal.salespersonId ?? "",
         items,
         coverages,
       };

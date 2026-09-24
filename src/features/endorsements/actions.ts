@@ -1,13 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
+import { basePrisma } from "@/server/db";
 import { logActivity } from "@/server/activity";
+import { generateProposalNumber } from "@/features/proposals/number-generator";
+import { isProposalLocked } from "@/features/proposals/schemas";
+import { applyEndorsementToPolicy } from "./apply";
 import {
   endorsementSchema,
+  endorsementProposalSchema,
+  endorsementTransitionError,
   ENDORSEMENT_TYPE_LABELS,
   endorsementStatusEffect,
   type EndorsementValues,
+  type EndorsementProposalValues,
 } from "./schemas";
 
 type ActionResult<T = undefined> =
@@ -25,81 +33,243 @@ function toDate(v: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * Nuevo endoso sobre una póliza.
+ *  - mode PROPUESTA: crea una propuesta de endoso (Proposal kind ENDOSO) que
+ *    sigue el flujo de propuestas; devuelve `proposalId` para abrirla.
+ *  - mode DIRECTO: registra el endoso ya emitido y aplica su efecto de estado.
+ */
 export async function createEndorsementAction(
   policyId: string,
   raw: EndorsementValues,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<ActionResult<{ id: string; proposalId?: string }>> {
   const parsed = endorsementSchema.safeParse(raw);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   }
-  const effective = toDate(parsed.data.effectiveDate);
+  const data = parsed.data;
+  const effective = toDate(data.effectiveDate);
   if (!effective) return { ok: false, error: "Fecha inválida" };
+  const endDate = toDate(data.endDate);
 
   const { ctx, db } = await requireOrgDb();
   const policy = await db.policy.findFirst({
     where: { id: policyId },
-    select: { id: true, policyNumber: true, status: true },
+    select: {
+      id: true,
+      policyNumber: true,
+      status: true,
+      clientId: true,
+      proposalId: true,
+      companyId: true,
+      lineId: true,
+      branchId: true,
+      productId: true,
+      currency: true,
+      endDate: true,
+      commissionPercent: true,
+      assignedUserId: true,
+      salespersonId: true,
+    },
   });
   if (!policy) return { ok: false, error: "Póliza no existe." };
 
-  // Validar transición. Solo se valida para los endosos que mueven el estado;
-  // el resto (ítems, glosas, prórrogas, solicitudes) se registra siempre.
-  const nextStatus = endorsementStatusEffect(parsed.data.type);
-  if (nextStatus === "CANCELADA" && !["VIGENTE", "VENCIDA"].includes(policy.status)) {
+  // Se valida al crear para no armar una propuesta que después no se pueda
+  // aplicar (se vuelve a validar al despachar).
+  const transitionError = endorsementTransitionError(data.type, policy.status);
+  if (transitionError) return { ok: false, error: transitionError };
+
+  const label = ENDORSEMENT_TYPE_LABELS[data.type];
+
+  if (data.mode === "DIRECTO") {
+    const result = await db.$transaction((tx) =>
+      applyEndorsementToPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        policyId,
+        type: data.type,
+        effectiveDate: effective,
+        endDate,
+        endorsementNumber: toNullable(data.endorsementNumber),
+        detail: toNullable(data.detail),
+        notes: toNullable(data.notes),
+        proposalId: null,
+      }),
+    );
+    if (!result.ok) return result;
+
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "POLICY",
+      entityId: policyId,
+      action: "endorsement_created",
+      summary: `${label} de póliza ${policy.policyNumber}`,
+      userId: ctx.userId,
+    });
+    revalidatePath(`/polizas/${policyId}`);
+    return { ok: true, data: { id: result.id } };
+  }
+
+  // Propuesta de endoso: hereda de la póliza (y de su propuesta de origen, si
+  // la hay) los datos que van en la "Solicitud de Endoso".
+  const source = policy.proposalId
+    ? await db.proposal.findFirst({
+        where: { id: policy.proposalId },
+        select: {
+          branchTypeId: true,
+          insuredClientId: true,
+          beneficiaryClientId: true,
+          recipientEmail: true,
+          recipientContactId: true,
+          contratanteEmail: true,
+          contratantePhone: true,
+          contratanteCelular: true,
+          commissionAffectPct: true,
+          commissionExemptPct: true,
+          startTime: true,
+          endTime: true,
+        },
+      })
+    : null;
+
+  try {
+    const proposalNumber = await generateProposalNumber(
+      basePrisma,
+      ctx.organizationId,
+    );
+    const proposal = await db.$transaction(async (tx) => {
+      const created = await tx.proposal.create({
+        data: {
+          organizationId: ctx.organizationId,
+          kind: "ENDOSO",
+          endorsedPolicyId: policy.id,
+          endorsementType: data.type,
+          endorsementDetail: data.detail,
+          observations: toNullable(data.notes),
+          clientId: policy.clientId,
+          proposalNumber,
+          companyId: policy.companyId,
+          lineId: policy.lineId,
+          branchId: policy.branchId,
+          branchTypeId: source?.branchTypeId ?? null,
+          productId: policy.productId,
+          insuredClientId: source?.insuredClientId ?? null,
+          beneficiaryClientId: source?.beneficiaryClientId ?? null,
+          recipientEmail: source?.recipientEmail ?? null,
+          recipientContactId: source?.recipientContactId ?? null,
+          contratanteEmail: source?.contratanteEmail ?? null,
+          contratantePhone: source?.contratantePhone ?? null,
+          contratanteCelular: source?.contratanteCelular ?? null,
+          commissionAffectPct:
+            source?.commissionAffectPct ?? policy.commissionPercent ?? null,
+          commissionExemptPct: source?.commissionExemptPct ?? null,
+          status: "ELABORACION",
+          currency: policy.currency,
+          startDate: effective,
+          endDate: endDate ?? policy.endDate,
+          startTime: source?.startTime ?? null,
+          endTime: source?.endTime ?? null,
+          assignedUserId: policy.assignedUserId ?? ctx.userId,
+          salespersonId: policy.salespersonId,
+          currentStateStartedAt: new Date(),
+          createdById: ctx.userId,
+        },
+        select: { id: true, proposalNumber: true },
+      });
+      await tx.proposalStatusHistory.create({
+        data: {
+          organizationId: ctx.organizationId,
+          proposalId: created.id,
+          status: "ELABORACION",
+          note: `Propuesta de endoso (${label.toLowerCase()}) de la póliza ${policy.policyNumber}`,
+          changedById: ctx.userId,
+        },
+      });
+      await tx.proposalLog.create({
+        data: {
+          organizationId: ctx.organizationId,
+          proposalId: created.id,
+          action: "CREATED",
+          summary: `Propuesta de endoso creada desde la póliza ${policy.policyNumber}`,
+          userId: ctx.userId,
+        },
+      });
+      return created;
+    });
+
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "POLICY",
+      entityId: policyId,
+      action: "endorsement_proposal_created",
+      summary: `Propuesta de endoso N° ${proposal.proposalNumber} (${label}) de póliza ${policy.policyNumber}`,
+      userId: ctx.userId,
+    });
+
+    revalidatePath(`/polizas/${policyId}`);
+    revalidatePath("/propuestas");
+    return { ok: true, data: { id: proposal.id, proposalId: proposal.id } };
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return {
+        ok: false,
+        error: "Conflicto al numerar la propuesta. Intenta nuevamente.",
+      };
+    }
+    throw error;
+  }
+}
+
+/** Edita una propuesta de endoso mientras no esté bloqueada. */
+export async function updateEndorsementProposalAction(
+  proposalId: string,
+  raw: EndorsementProposalValues,
+): Promise<ActionResult<{ id: string }>> {
+  const parsed = endorsementProposalSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  }
+  const data = parsed.data;
+  const effective = toDate(data.effectiveDate);
+  if (!effective) return { ok: false, error: "Fecha inválida" };
+
+  const { ctx, db } = await requireOrgDb();
+  const proposal = await db.proposal.findFirst({
+    where: { id: proposalId, kind: "ENDOSO" },
+    select: { id: true, status: true, proposalNumber: true },
+  });
+  if (!proposal) return { ok: false, error: "La propuesta de endoso no existe." };
+  if (isProposalLocked(proposal.status)) {
     return {
       ok: false,
-      error: "Solo se puede cancelar una póliza vigente o vencida.",
+      error: "La propuesta está bloqueada. Reábrela para editarla.",
     };
   }
-  if (nextStatus === "ANULADA" && policy.status === "ANULADA") {
-    return { ok: false, error: "La póliza ya está anulada." };
-  }
 
-  // Crear endoso
-  const created = await db.endorsement.create({
+  await db.proposal.update({
+    where: { id: proposalId },
     data: {
-      organizationId: ctx.organizationId,
-      policyId,
-      type: parsed.data.type,
-      effectiveDate: effective,
-      reason: toNullable(parsed.data.reason),
-      notes: toNullable(parsed.data.notes),
-      createdById: ctx.userId,
+      endorsementType: data.type,
+      endorsementDetail: data.detail,
+      startDate: effective,
+      endDate: toDate(data.endDate),
+      observations: toNullable(data.observations),
     },
-    select: { id: true },
   });
-
-  // Cambiar estado de la póliza según tipo
-  if (nextStatus) {
-    await db.policy.update({
-      where: { id: policyId },
-      data: { status: nextStatus },
-    });
-    await db.policyStatusHistory.create({
-      data: {
-        organizationId: ctx.organizationId,
-        policyId,
-        status: nextStatus,
-        note: `Endoso de ${ENDORSEMENT_TYPE_LABELS[parsed.data.type].toLowerCase()}${
-          parsed.data.reason ? ": " + parsed.data.reason : ""
-        }`,
-        changedById: ctx.userId,
-      },
-    });
-  }
-
   await logActivity(db, {
     organizationId: ctx.organizationId,
-    entityType: "POLICY",
-    entityId: policyId,
-    action: "endorsement_created",
-    summary: `${ENDORSEMENT_TYPE_LABELS[parsed.data.type]} de póliza ${policy.policyNumber}`,
+    entityType: "PROPOSAL",
+    entityId: proposalId,
+    action: "updated",
+    summary: `Propuesta de endoso ${proposal.proposalNumber} actualizada`,
     userId: ctx.userId,
   });
-
-  revalidatePath(`/polizas/${policyId}`);
-  return { ok: true, data: { id: created.id } };
+  revalidatePath("/propuestas");
+  revalidatePath(`/propuestas/${proposalId}`);
+  return { ok: true, data: { id: proposalId } };
 }
 
 export async function deleteEndorsementAction(

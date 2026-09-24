@@ -18,6 +18,7 @@ import {
   Building2,
   Package,
   Handshake,
+  HandCoins,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -55,8 +56,15 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/cobranza", label: "Cobranza", icon: Wallet, available: true },
   {
     href: "/comisiones",
-    label: "Comisiones",
+    label: "Revisión comisiones",
     icon: Percent,
+    available: true,
+    managerOnly: true,
+  },
+  {
+    href: "/liquidaciones-vendedores",
+    label: "Liquidación vendedores",
+    icon: HandCoins,
     available: true,
     managerOnly: true,
   },

@@ -33,9 +33,12 @@ import {
 export function PolicyReceptionPanel({
   proposalId,
   status,
+  kind = "POLIZA",
 }: {
   proposalId: string;
   status: string;
+  /** ENDOSO: se recepciona el endoso emitido (N° de endoso). */
+  kind?: string;
 }) {
   const router = useRouter();
   // Tras una devolución (obs 17) el flujo natural es registrar la emisión
@@ -61,6 +64,10 @@ export function PolicyReceptionPanel({
   // póliza fue devuelta con error y se está a la espera de la corrección
   // (DEVUELTA, obs 17).
   if (status !== "ENVIADA_COMPANIA" && status !== "DEVUELTA") return null;
+  const isEndorsement = kind === "ENDOSO";
+  const numberLabel = isEndorsement
+    ? "N° de endoso emitido *"
+    : "N° de póliza generado *";
 
   async function submitOk() {
     const parsed = policyReceptionSchema.safeParse({
@@ -80,7 +87,11 @@ export function PolicyReceptionPanel({
       toast.error(r.error);
       return;
     }
-    toast.success("Póliza registrada. Propuesta lista por despachar.");
+    toast.success(
+      isEndorsement
+        ? "Endoso recepcionado. Listo para despachar al cliente."
+        : "Póliza registrada. Propuesta lista por despachar.",
+    );
     router.refresh();
   }
 
@@ -112,13 +123,31 @@ export function PolicyReceptionPanel({
         <FileCheck2 className="size-4 text-muted-foreground" />
         <h2 className="text-base font-semibold">
           {isReturned
-            ? "Corrección de la póliza devuelta"
-            : "Recepción de la póliza"}
+            ? `Corrección ${isEndorsement ? "del endoso devuelto" : "de la póliza devuelta"}`
+            : `Recepción ${isEndorsement ? "del endoso" : "de la póliza"}`}
         </h2>
       </div>
       <div className="space-y-4 p-4">
         <p className="text-sm text-muted-foreground">
-          {isReturned ? (
+          {isEndorsement ? (
+            isReturned ? (
+              <>
+                El endoso fue devuelto a la compañía por un error de emisión.
+                Cuando envíen el endoso corregido, revísalo y registra aquí la{" "}
+                <strong>emisión correcta</strong> (queda{" "}
+                <strong>Por despachar</strong>). Sube el PDF del endoso como
+                documento tipo “Endoso”.
+              </>
+            ) : (
+              <>
+                A la espera de que la compañía emita el endoso. Revisa que se
+                emitió bien y registra la emisión correcta (queda{" "}
+                <strong>Por despachar</strong>) o el error de emisión (queda{" "}
+                <strong>Devuelta a la cía</strong>). Sube el PDF del endoso en
+                la pestaña Documentos como tipo “Endoso”.
+              </>
+            )
+          ) : isReturned ? (
             <>
               La póliza fue devuelta a la compañía por un error de emisión.
               Cuando envíen la póliza corregida, registra aquí la{" "}
@@ -166,7 +195,7 @@ export function PolicyReceptionPanel({
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <Label className="text-xs">N° de póliza generado *</Label>
+                <Label className="text-xs">{numberLabel}</Label>
                 <Input
                   value={policyNumber}
                   onChange={(e) => setPolicyNumber(e.target.value)}
@@ -213,7 +242,7 @@ export function PolicyReceptionPanel({
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <Label className="text-xs">N° de póliza generado *</Label>
+                <Label className="text-xs">{numberLabel}</Label>
                 <Input
                   value={errPolicyNumber}
                   onChange={(e) => setErrPolicyNumber(e.target.value)}
