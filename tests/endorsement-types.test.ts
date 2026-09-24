@@ -111,3 +111,21 @@ describe("endorsementTransitionError", () => {
     expect(endorsementTransitionError("CANCELACION_NO_PAGO", "VIGENTE")).toBeNull();
   });
 });
+
+describe("recepción del endoso emitido", () => {
+  it("acepta el inicio de vigencia del endoso emitido (opcional)", async () => {
+    const { policyReceptionSchema } = await import(
+      "@/features/proposals/schemas"
+    );
+    const base = {
+      policyNumber: "053",
+      emissionDate: "2026-09-25",
+      receptionDate: "2026-09-26",
+    };
+    expect(policyReceptionSchema.parse(base).effectiveDate).toBe("");
+    expect(
+      policyReceptionSchema.parse({ ...base, effectiveDate: "2026-09-23" })
+        .effectiveDate,
+    ).toBe("2026-09-23");
+  });
+});

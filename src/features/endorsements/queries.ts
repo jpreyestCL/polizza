@@ -59,7 +59,7 @@ export async function listPolicyEndorsementProposals(
     where: {
       kind: "ENDOSO",
       endorsedPolicyId: policyId,
-      endorsement: { is: null },
+      dispatchedAt: null,
     },
     orderBy: { createdAt: "desc" },
     select: {

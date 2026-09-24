@@ -711,6 +711,9 @@ model Proposal {
   policyReceptionDate        DateTime?        @db.Date
   emissionErrorReason        String? // motivo de error de emisión (devuelta a la compañía)
   emissionErrorDetail        String?
+  // Despacho al contratante. En una propuesta de endoso marca el fin del flujo
+  // (el endoso ya quedó registrado en la póliza al recepcionarlo).
+  dispatchedAt               DateTime?
   currentStateStartedAt      DateTime         @default(now())
   createdById                String?
   createdAt                  DateTime         @default(now())

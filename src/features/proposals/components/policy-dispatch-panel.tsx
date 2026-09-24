@@ -67,8 +67,8 @@ export function PolicyDispatchPanel({
     toast.success(
       isEndorsement
         ? mode === "send"
-          ? "Endoso enviado al contratante y registrado en la póliza."
-          : "Endoso registrado en la póliza."
+          ? "Endoso enviado al contratante."
+          : "Endoso marcado como despachado."
         : mode === "send"
           ? "Póliza despachada al contratante."
           : "Póliza marcada como despachada.",
@@ -88,10 +88,9 @@ export function PolicyDispatchPanel({
         <p className="text-sm text-muted-foreground">
           {isEndorsement ? (
             <>
-              El endoso está recepcionado y revisado. Envíalo al contratante por
-              email (con el endoso y los documentos seleccionados) o márcalo
-              como despachado. Al despachar, el endoso queda registrado en la
-              póliza y la propuesta de endoso finaliza su flujo.
+              El endoso ya está registrado en la póliza. Envíalo al contratante
+              por email (con el endoso y los documentos seleccionados) o
+              márcalo como despachado para cerrar la propuesta de endoso.
             </>
           ) : (
             <>

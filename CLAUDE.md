@@ -377,9 +377,12 @@ ssh root@161.35.229.180 'nano /home/ai/apps/poliza/.env && systemctl restart pol
    `endorsementType`, `endorsementDetail`) que recorre el mismo flujo que una
    propuesta de póliza (PDF "Solicitud de Endoso" → envío a la cía → recepción
    con N° de endoso en `policyNumberGenerated` y documento tipo "Endoso" →
-   despacho). Al despachar se crea el `Endorsement` (con `proposalId`) y se
-   aplica su efecto: cancelaciones → `CANCELADA`, anulaciones → `ANULADA`, el
-   resto solo registra. También se puede registrar directo un endoso ya
+   despacho). Al registrar la **emisión correcta** (recepción) se crea el
+   `Endorsement` (con `proposalId`) y se aplica su efecto en ese momento:
+   cancelaciones → `CANCELADA`, anulaciones → `ANULADA`, el resto solo
+   registra. La cancelación/anulación rige desde el inicio de vigencia del
+   endoso (`Endorsement.effectiveDate`, confirmado en la recepción). El
+   despacho al cliente solo envía el endoso y marca `Proposal.dispatchedAt`. También se puede registrar directo un endoso ya
    emitido por la cía. Borrar el último endoso de tipo cancelación/anulación
    revierte a `VIGENTE`. No se pide "motivo".
 

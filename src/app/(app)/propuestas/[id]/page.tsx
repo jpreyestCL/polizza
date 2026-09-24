@@ -226,16 +226,16 @@ export default async function PropuestaDetailPage({
         timezone={ctx.organizationTimezone}
       />
 
-      {isEndorsement && proposal.endorsement ? (
+      {isEndorsement && proposal.dispatchedAt ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4">
           <div>
             <h2 className="text-base font-semibold">Endoso despachado</h2>
             <p className="text-sm text-muted-foreground">
               El endoso
-              {proposal.endorsement.endorsementNumber
-                ? ` N° ${proposal.endorsement.endorsementNumber}`
+              {proposal.endorsement?.endorsementNumber
+                ? ` N° ${proposal.endorsement?.endorsementNumber}`
                 : ""}{" "}
-              quedó registrado en la póliza
+              está registrado en la póliza
               {proposal.endorsedPolicy
                 ? ` N° ${proposal.endorsedPolicy.policyNumber}`
                 : ""}
@@ -271,6 +271,11 @@ export default async function PropuestaDetailPage({
             proposalId={id}
             status={proposal.status}
             kind={proposal.kind}
+            defaultEffectiveDate={
+              proposal.startDate
+                ? proposal.startDate.toISOString().slice(0, 10)
+                : ""
+            }
           />
 
           <PolicyDispatchPanel

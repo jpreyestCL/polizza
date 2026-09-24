@@ -260,6 +260,10 @@ export const policyReceptionSchema = z.object({
   emissionDate: z.string().trim().min(1, "Fecha de emisión requerida"),
   receptionDate: z.string().trim().min(1, "Fecha de recepción requerida"),
   note: z.string().trim().max(1000).default(""),
+  // Propuesta de endoso: inicio de vigencia del endoso tal como lo emitió la
+  // compañía (desde esa fecha rige la cancelación / anulación). Vacío = el de
+  // la propuesta.
+  effectiveDate: z.string().trim().default(""),
 });
 export type PolicyReceptionValues = z.infer<typeof policyReceptionSchema>;
 

@@ -20,6 +20,12 @@ export type ApplyEndorsementInput = {
   proposalId: string | null;
 };
 
+/** Día puro (columna Date, en UTC) como dd-mm-aaaa. */
+function formatDay(date: Date): string {
+  const [y, m, d] = date.toISOString().slice(0, 10).split("-");
+  return `${d}-${m}-${y}`;
+}
+
 /**
  * Registra un endoso en la póliza y aplica su efecto sobre el estado
  * (cancelación / anulación). Se usa tanto en el registro directo como al
@@ -68,9 +74,11 @@ export async function applyEndorsementToPolicy(
         organizationId: input.organizationId,
         policyId: input.policyId,
         status: nextStatus,
+        // El estado cambia al registrar el endoso emitido, pero rige desde la
+        // fecha de inicio del endoso.
         note: `Endoso de ${ENDORSEMENT_TYPE_LABELS[input.type].toLowerCase()}${
           input.endorsementNumber ? ` N° ${input.endorsementNumber}` : ""
-        }`,
+        } · vigente desde ${formatDay(input.effectiveDate)}`,
         changedById: input.userId,
       },
     });

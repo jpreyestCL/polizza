@@ -52,13 +52,13 @@ export async function listProposals(
   filters: ProposalListFilters = {},
 ): Promise<Paginated<ProposalListItem>> {
   const q = filters.q?.trim();
-  // Excluye las propuestas ya despachadas (con póliza vinculada, o con el
-  // endoso ya registrado en la póliza): viven en la sección "Pólizas", no en
+  // Excluye las propuestas ya despachadas (con póliza vinculada, o la propuesta
+  // de endoso ya despachada al cliente): viven en la sección "Pólizas", no en
   // el flujo de propuestas (obs 9).
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
     policies: { none: {} },
-    endorsement: { is: null },
+    dispatchedAt: null,
     ...(q
       ? {
           OR: [
@@ -122,7 +122,7 @@ export async function listAllProposalsForKanban(
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
     policies: { none: {} },
-    endorsement: { is: null },
+    dispatchedAt: null,
   };
   const rows = await db.proposal.findMany({
     where,

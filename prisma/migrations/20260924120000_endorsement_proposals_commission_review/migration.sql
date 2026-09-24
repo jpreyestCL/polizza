@@ -2,7 +2,8 @@
 CREATE TYPE "ProposalKind" AS ENUM ('POLIZA', 'ENDOSO');
 
 -- AlterTable
-ALTER TABLE "Proposal" ADD COLUMN     "endorsedPolicyId" TEXT,
+ALTER TABLE "Proposal" ADD COLUMN     "dispatchedAt" TIMESTAMP(3),
+ADD COLUMN     "endorsedPolicyId" TEXT,
 ADD COLUMN     "endorsementDetail" TEXT,
 ADD COLUMN     "endorsementType" "EndorsementType",
 ADD COLUMN     "kind" "ProposalKind" NOT NULL DEFAULT 'POLIZA';

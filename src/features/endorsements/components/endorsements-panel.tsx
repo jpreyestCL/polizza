@@ -152,7 +152,7 @@ function EndorsementItem({ endorsement }: { endorsement: EndorsementRow }) {
       !confirm(
         `¿Eliminar el endoso de ${typeLabel(endorsement.type)}? Si cambiaba el estado de la póliza y es el único de su tipo, la póliza volverá a vigente.${
           endorsement.proposal
-            ? " La propuesta de endoso volverá a quedar por despachar."
+            ? " La propuesta de endoso se mantiene."
             : ""
         }`,
       )
@@ -294,9 +294,9 @@ function EndorsementDialog({
           <DialogTitle>Nuevo endoso</DialogTitle>
           <DialogDescription>
             La propuesta de endoso sigue el mismo proceso que una propuesta de
-            póliza: se genera el PDF, se envía a la compañía y, cuando la
-            compañía emite el endoso y lo revisas, se registra en la póliza y
-            se despacha al cliente.
+            póliza: se genera el PDF y se envía a la compañía. Cuando la
+            compañía emite el endoso y registras la emisión correcta, queda
+            registrado en la póliza; luego se despacha al cliente.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -348,8 +348,9 @@ function EndorsementDialog({
                   ? "cancelada"
                   : "anulada"}{" "}
                 {isProposal
-                  ? "cuando se despache el endoso emitido."
-                  : "al registrarlo."}
+                  ? "cuando registres el endoso emitido por la compañía"
+                  : "al registrarlo"}
+                , con vigencia desde el inicio del endoso.
               </p>
             ) : null}
           </div>

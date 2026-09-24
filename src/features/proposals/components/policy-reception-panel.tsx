@@ -34,11 +34,14 @@ export function PolicyReceptionPanel({
   proposalId,
   status,
   kind = "POLIZA",
+  defaultEffectiveDate = "",
 }: {
   proposalId: string;
   status: string;
   /** ENDOSO: se recepciona el endoso emitido (N° de endoso). */
   kind?: string;
+  /** ENDOSO: inicio de vigencia propuesto (se confirma con el emitido). */
+  defaultEffectiveDate?: string;
 }) {
   const router = useRouter();
   // Tras una devolución (obs 17) el flujo natural es registrar la emisión
@@ -51,6 +54,7 @@ export function PolicyReceptionPanel({
   const [emissionDate, setEmissionDate] = useState("");
   const [receptionDate, setReceptionDate] = useState("");
   const [note, setNote] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState(defaultEffectiveDate);
 
   // Error de emisión
   const [reason, setReason] = useState<EmissionErrorReason | "">("");
@@ -75,6 +79,7 @@ export function PolicyReceptionPanel({
       emissionDate,
       receptionDate,
       note,
+      effectiveDate: kind === "ENDOSO" ? effectiveDate : "",
     });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Datos inválidos");
@@ -89,7 +94,7 @@ export function PolicyReceptionPanel({
     }
     toast.success(
       isEndorsement
-        ? "Endoso recepcionado. Listo para despachar al cliente."
+        ? "Endoso registrado en la póliza. Listo para despachar al cliente."
         : "Póliza registrada. Propuesta lista por despachar.",
     );
     router.refresh();
@@ -141,8 +146,11 @@ export function PolicyReceptionPanel({
             ) : (
               <>
                 A la espera de que la compañía emita el endoso. Revisa que se
-                emitió bien y registra la emisión correcta (queda{" "}
-                <strong>Por despachar</strong>) o el error de emisión (queda{" "}
+                emitió bien y registra la emisión correcta: el endoso queda
+                registrado en la póliza (una cancelación o anulación cambia su
+                estado ahora, con vigencia desde el inicio del endoso) y la
+                propuesta queda <strong>Por despachar</strong> al cliente. Si
+                vino con error, regístralo (queda{" "}
                 <strong>Devuelta a la cía</strong>). Sube el PDF del endoso en
                 la pestaña Documentos como tipo “Endoso”.
               </>
@@ -218,6 +226,20 @@ export function PolicyReceptionPanel({
                   onChange={(e) => setReceptionDate(e.target.value)}
                 />
               </div>
+              {isEndorsement ? (
+                <div>
+                  <Label className="text-xs">Inicio vigencia del endoso *</Label>
+                  <Input
+                    type="date"
+                    value={effectiveDate}
+                    onChange={(e) => setEffectiveDate(e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Según el endoso emitido. Desde esta fecha rige la
+                    cancelación o anulación.
+                  </p>
+                </div>
+              ) : null}
             </div>
             <div>
               <Label className="text-xs">Nota (opcional)</Label>

@@ -625,12 +625,40 @@ export async function registerPolicyEmissionAction(
 
   const proposal = await db.proposal.findFirst({
     where: { id: proposalId },
-    select: { id: true, proposalNumber: true, kind: true },
+    select: {
+      id: true,
+      proposalNumber: true,
+      kind: true,
+      endorsedPolicyId: true,
+      endorsementType: true,
+      endorsementDetail: true,
+      startDate: true,
+      endDate: true,
+    },
   });
   if (!proposal) {
     return { ok: false, error: "La propuesta no existe o no tienes acceso." };
   }
   const isEndorsement = proposal.kind === "ENDOSO";
+  // Endoso: rige desde el inicio de vigencia que trae el endoso emitido.
+  const endorsementEffective = isEndorsement
+    ? (parseDate(data.effectiveDate) ?? proposal.startDate)
+    : null;
+  if (isEndorsement && !endorsementEffective) {
+    return {
+      ok: false,
+      error: "Indica la fecha de inicio de vigencia del endoso.",
+    };
+  }
+  if (
+    isEndorsement &&
+    (!proposal.endorsedPolicyId || !proposal.endorsementType)
+  ) {
+    return {
+      ok: false,
+      error: "La propuesta de endoso no tiene póliza o tipo de endoso.",
+    };
+  }
   const docLabel = isEndorsement ? "Endoso" : "Póliza";
   const emittedLabel = isEndorsement
     ? `Endoso N° ${data.policyNumber.trim()} emitido por la compañía`
@@ -656,43 +684,105 @@ export async function registerPolicyEmissionAction(
     };
   }
 
-  await db.$transaction(async (tx) => {
-    await tx.proposal.update({
-      where: { id: proposalId },
-      data: {
-        status: "POR_DESPACHAR",
-        currentStateStartedAt: new Date(),
-        policyNumberGenerated: data.policyNumber.trim(),
-        policyEmissionDate: parseDate(data.emissionDate),
-        policyReceptionDate: parseDate(data.receptionDate),
-        emissionErrorReason: null,
-        emissionErrorDetail: null,
-      },
-    });
-    await tx.proposalStatusHistory.create({
-      data: {
-        organizationId: ctx.organizationId,
-        proposalId,
-        status: "POR_DESPACHAR",
-        note: emptyToNull(data.note) ?? emittedLabel,
-        changedById: ctx.userId,
-      },
-    });
-    await tx.proposalLog.create({
-      data: {
-        organizationId: ctx.organizationId,
-        proposalId,
-        action: isEndorsement ? "ENDORSEMENT_EMITTED" : "POLICY_EMITTED",
-        summary: emittedLabel,
-        payload: {
-          policyNumber: data.policyNumber.trim(),
-          emissionDate: data.emissionDate,
-          receptionDate: data.receptionDate,
+  let endorsementFailure: string | null = null;
+  try {
+    await db.$transaction(async (tx) => {
+      await tx.proposal.update({
+        where: { id: proposalId },
+        data: {
+          status: "POR_DESPACHAR",
+          currentStateStartedAt: new Date(),
+          policyNumberGenerated: data.policyNumber.trim(),
+          policyEmissionDate: parseDate(data.emissionDate),
+          policyReceptionDate: parseDate(data.receptionDate),
+          emissionErrorReason: null,
+          emissionErrorDetail: null,
+          ...(endorsementEffective ? { startDate: endorsementEffective } : {}),
         },
-        userId: ctx.userId,
-      },
+      });
+      // Propuesta de endoso: la compañía lo emitió bien y lo revisamos, así que
+      // queda registrado en la póliza ahora (y aplica su efecto sobre el
+      // estado). El despacho al cliente es un paso posterior.
+      if (
+        isEndorsement &&
+        endorsementEffective &&
+        proposal.endorsedPolicyId &&
+        proposal.endorsementType
+      ) {
+        const existing = await tx.endorsement.findFirst({
+          where: { proposalId },
+          select: { id: true },
+        });
+        if (existing) {
+          await tx.endorsement.update({
+            where: { id: existing.id },
+            data: {
+              endorsementNumber: data.policyNumber.trim(),
+              effectiveDate: endorsementEffective,
+            },
+          });
+        } else {
+          const result = await applyEndorsementToPolicy(tx, {
+            organizationId: ctx.organizationId,
+            userId: ctx.userId,
+            policyId: proposal.endorsedPolicyId,
+            type: proposal.endorsementType,
+            effectiveDate: endorsementEffective,
+            endDate: proposal.endDate,
+            endorsementNumber: data.policyNumber.trim(),
+            detail: proposal.endorsementDetail,
+            notes: null,
+            proposalId,
+          });
+          if (!result.ok) {
+            endorsementFailure = result.error;
+            throw new Error(result.error);
+          }
+        }
+      }
+      await tx.proposalStatusHistory.create({
+        data: {
+          organizationId: ctx.organizationId,
+          proposalId,
+          status: "POR_DESPACHAR",
+          note: emptyToNull(data.note) ?? emittedLabel,
+          changedById: ctx.userId,
+        },
+      });
+      await tx.proposalLog.create({
+        data: {
+          organizationId: ctx.organizationId,
+          proposalId,
+          action: isEndorsement ? "ENDORSEMENT_EMITTED" : "POLICY_EMITTED",
+          summary: emittedLabel,
+          payload: {
+            policyNumber: data.policyNumber.trim(),
+            emissionDate: data.emissionDate,
+            receptionDate: data.receptionDate,
+            ...(endorsementEffective
+              ? { effectiveDate: endorsementEffective.toISOString().slice(0, 10) }
+              : {}),
+          },
+          userId: ctx.userId,
+        },
+      });
     });
-  });
+  } catch (error) {
+    if (endorsementFailure) return { ok: false, error: endorsementFailure };
+    throw error;
+  }
+
+  if (isEndorsement && proposal.endorsedPolicyId) {
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "POLICY",
+      entityId: proposal.endorsedPolicyId,
+      action: "endorsement_created",
+      summary: `Endoso N° ${data.policyNumber.trim()} registrado (propuesta ${proposal.proposalNumber})`,
+      userId: ctx.userId,
+    });
+    revalidatePath(`/polizas/${proposal.endorsedPolicyId}`);
+  }
 
   await logActivity(db, {
     organizationId: ctx.organizationId,
@@ -837,8 +927,6 @@ export async function dispatchPolicyToContratanteAction(
       kind: true,
       endorsedPolicyId: true,
       endorsementType: true,
-      endorsementDetail: true,
-      policyEmissionDate: true,
       client: { select: { name: true, email: true } },
     },
   });
@@ -1008,7 +1096,7 @@ export async function dispatchPolicyToContratanteAction(
       // una póliza vinculada deja de aparecer en el flujo de propuestas.
       await tx.proposal.update({
         where: { id: proposalId },
-        data: { currentStateStartedAt: new Date() },
+        data: { currentStateStartedAt: new Date(), dispatchedAt: new Date() },
       });
       await tx.proposalLog.create({
         data: {
@@ -1077,10 +1165,9 @@ export async function dispatchPolicyToContratanteAction(
 }
 
 /**
- * Despacho de una propuesta de endoso: la compañía emitió el endoso y fue
- * revisado. Registra el Endorsement en la póliza (aplicando su efecto sobre el
- * estado) y, si corresponde, envía el endoso al contratante. La propuesta sale
- * del flujo de propuestas al quedar vinculada al endoso.
+ * Despacho de una propuesta de endoso al contratante. El endoso ya quedó
+ * registrado en la póliza al recepcionarlo (emisión correcta); acá solo se
+ * envía (o se marca como despachado) y la propuesta sale del flujo.
  */
 async function dispatchEndorsementProposal(
   ctx: SessionContext,
@@ -1092,40 +1179,23 @@ async function dispatchEndorsementProposal(
     contratanteEmail: string | null;
     endorsedPolicyId: string | null;
     endorsementType: EndorsementType | null;
-    endorsementDetail: string | null;
-    startDate: Date | null;
-    endDate: Date | null;
     client: { name: string; email: string | null };
   },
   data: PolicyDispatchValues,
 ): Promise<ActionResult> {
   const endorsementNumber = proposal.policyNumberGenerated?.trim() || null;
-  if (!proposal.endorsedPolicyId || !proposal.endorsementType) {
-    return {
-      ok: false,
-      error: "La propuesta de endoso no tiene póliza o tipo de endoso.",
-    };
-  }
-  if (!proposal.startDate) {
-    return { ok: false, error: "Falta la fecha de inicio del endoso." };
-  }
-  const policy = await db.policy.findFirst({
-    where: { id: proposal.endorsedPolicyId },
-    select: { id: true, policyNumber: true },
-  });
-  if (!policy) {
-    return { ok: false, error: "La póliza endosada ya no existe." };
-  }
-  const alreadyRegistered = await db.endorsement.findFirst({
+  const registered = await db.endorsement.findFirst({
     where: { proposalId: proposal.id },
-    select: { id: true },
+    select: { id: true, policy: { select: { id: true, policyNumber: true } } },
   });
-  if (alreadyRegistered) {
+  if (!registered) {
     return {
       ok: false,
-      error: "Esta propuesta de endoso ya fue despachada y registrada en la póliza.",
+      error:
+        "El endoso no está registrado en la póliza. Registra la emisión correcta antes de despacharlo.",
     };
   }
+  const policy = registered.policy;
 
   const recipient = data.send
     ? data.toEmail.trim() ||
@@ -1141,62 +1211,15 @@ async function dispatchEndorsementProposal(
     };
   }
 
-  const typeLabel = ENDORSEMENT_TYPE_LABELS[proposal.endorsementType];
-  const endorsementType = proposal.endorsementType;
-  const effectiveDate = proposal.startDate;
-  let failure: string | null = null;
-  try {
-    await db.$transaction(async (tx) => {
-      const result = await applyEndorsementToPolicy(tx, {
-        organizationId: ctx.organizationId,
-        userId: ctx.userId,
-        policyId: policy.id,
-        type: endorsementType,
-        effectiveDate,
-        endDate: proposal.endDate,
-        endorsementNumber,
-        detail: proposal.endorsementDetail,
-        notes: null,
-        proposalId: proposal.id,
-      });
-      if (!result.ok) {
-        failure = result.error;
-        // Aborta la transacción sin dejar nada a medias.
-        throw new Error(result.error);
-      }
-      await tx.proposal.update({
-        where: { id: proposal.id },
-        data: { currentStateStartedAt: new Date() },
-      });
-      await tx.proposalLog.create({
-        data: {
-          organizationId: ctx.organizationId,
-          proposalId: proposal.id,
-          action: "ENDORSEMENT_DISPATCHED",
-          summary: data.send
-            ? `Endoso${endorsementNumber ? ` N° ${endorsementNumber}` : ""} enviado al contratante y registrado en la póliza ${policy.policyNumber}`
-            : `Endoso${endorsementNumber ? ` N° ${endorsementNumber}` : ""} marcado como despachado y registrado en la póliza ${policy.policyNumber}`,
-          userId: ctx.userId,
-        },
-      });
-    });
-  } catch (error) {
-    if (failure) return { ok: false, error: failure };
-    throw error;
-  }
+  const typeLabel = proposal.endorsementType
+    ? ENDORSEMENT_TYPE_LABELS[proposal.endorsementType]
+    : "Endoso";
+  const numberText = endorsementNumber ? ` N° ${endorsementNumber}` : "";
 
-  await logActivity(db, {
-    organizationId: ctx.organizationId,
-    entityType: "POLICY",
-    entityId: policy.id,
-    action: "endorsement_created",
-    summary: `${typeLabel}${endorsementNumber ? ` N° ${endorsementNumber}` : ""} de póliza ${policy.policyNumber} (propuesta ${proposal.proposalNumber})`,
-    userId: ctx.userId,
-  });
-
+  // El correo va antes de cerrar el flujo: si falla, la propuesta sigue por
+  // despachar y se puede reintentar.
   if (data.send) {
     const orgName = await organizationName(ctx.organizationId);
-    const numberText = endorsementNumber ? ` N° ${endorsementNumber}` : "";
     const sendError = await sendDispatchEmail(db, {
       proposalId: proposal.id,
       recipient,
@@ -1210,18 +1233,41 @@ async function dispatchEndorsementProposal(
         `Estimado(a) ${proposal.client.name},\n\nAdjuntamos el endoso${numberText} (${typeLabel.toLowerCase()}) de su póliza N° ${policy.policyNumber}. Ante cualquier consulta, quedamos a su disposición.\n\nLe saluda atentamente,\n${orgName}`,
     });
     if (sendError) {
-      revalidatePath("/propuestas");
-      revalidatePath(`/polizas/${policy.id}`);
-      revalidatePath(`/propuestas/${proposal.id}`);
       return {
         ok: false,
-        error: `El endoso quedó registrado en la póliza ${policy.policyNumber}, pero falló el envío del correo: ${sendError}.`,
+        error: `Falló el envío del correo: ${sendError}. El endoso sigue por despachar.`,
       };
     }
   }
 
+  await db.$transaction(async (tx) => {
+    await tx.proposal.update({
+      where: { id: proposal.id },
+      data: { dispatchedAt: new Date(), currentStateStartedAt: new Date() },
+    });
+    await tx.proposalLog.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId: proposal.id,
+        action: "ENDORSEMENT_DISPATCHED",
+        summary: data.send
+          ? `Endoso${numberText} enviado al contratante`
+          : `Endoso${numberText} marcado como despachado`,
+        userId: ctx.userId,
+      },
+    });
+  });
+
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "PROPOSAL",
+    entityId: proposal.id,
+    action: "endorsement_dispatched",
+    summary: `Propuesta de endoso ${proposal.proposalNumber}: ${typeLabel.toLowerCase()} de póliza ${policy.policyNumber} despachado`,
+    userId: ctx.userId,
+  });
+
   revalidatePath("/propuestas");
-  revalidatePath("/polizas");
   revalidatePath(`/polizas/${policy.id}`);
   revalidatePath(`/propuestas/${proposal.id}`);
   return { ok: true, id: policy.id };
