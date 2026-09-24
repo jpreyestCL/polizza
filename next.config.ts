@@ -10,6 +10,22 @@ const nextConfig: NextConfig = {
   // copia al output standalone → ENOENT en runtime. Marcarlo como externo
   // hace que se resuelva desde node_modules en runtime con __dirname correcto.
   serverExternalPackages: ["isomorphic-dompurify", "jsdom"],
+  // La liquidación de vendedores dejó de ser una pestaña de /comisiones y pasó
+  // a ser un módulo propio: los enlaces antiguos siguen funcionando.
+  async redirects() {
+    return [
+      {
+        source: "/comisiones/liquidaciones",
+        destination: "/liquidaciones-vendedores",
+        permanent: true,
+      },
+      {
+        source: "/comisiones/liquidaciones/:id",
+        destination: "/liquidaciones-vendedores/:id",
+        permanent: true,
+      },
+    ];
+  },
   webpack: (config, { isServer }) => {
     // Workaround: el proyecto declara "type": "module" en package.json (necesario
     // para usar import.meta.dirname acá), pero Next 15 emite .next/server/pages/

@@ -20,7 +20,10 @@ import { RenewPolicyButton } from "@/features/policies/components/renew-policy-b
 import { DeletePolicyDialog } from "@/features/policies/components/delete-policy-dialog";
 import { ClientAlertBanner } from "@/components/alert-banner";
 import { Button } from "@/components/ui/button";
-import { listPolicyEndorsements } from "@/features/endorsements/queries";
+import {
+  listPolicyEndorsements,
+  listPolicyEndorsementProposals,
+} from "@/features/endorsements/queries";
 import { EndorsementsPanel } from "@/features/endorsements/components/endorsements-panel";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight } from "lucide-react";
@@ -45,6 +48,7 @@ export default async function PolizaDetailPage({
     members,
     uf,
     endorsements,
+    endorsementProposals,
     renewedByProposals,
   ] = await Promise.all([
     getPolicyActivity(db, id),
@@ -55,6 +59,7 @@ export default async function PolizaDetailPage({
     getOrgMembers(ctx.organizationId),
     getUfValue(),
     listPolicyEndorsements(db, id),
+    listPolicyEndorsementProposals(db, id),
     // Propuestas que renuevan ESTA póliza (previousPolicyId apunta acá)
     db.proposal.findMany({
       where: { previousPolicyId: id },
@@ -156,7 +161,11 @@ export default async function PolizaDetailPage({
       <EndorsementsPanel
         policyId={id}
         endorsements={endorsements}
+        endorsementProposals={endorsementProposals}
         policyStatus={policy.status}
+        policyEndDate={
+          policy.endDate ? policy.endDate.toISOString().slice(0, 10) : ""
+        }
       />
     </div>
   );

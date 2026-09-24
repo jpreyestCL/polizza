@@ -45,7 +45,7 @@ export default async function LiquidacionDetallePage({
   return (
     <div className="space-y-6">
       <Button asChild variant="ghost" size="sm" className="w-fit">
-        <Link href="/comisiones/liquidaciones">
+        <Link href="/liquidaciones-vendedores">
           <ArrowLeft className="mr-1 size-4" /> Liquidaciones
         </Link>
       </Button>

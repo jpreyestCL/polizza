@@ -28,6 +28,7 @@ export const DOCUMENT_TYPES = [
   "Correo",
   "Cotización compañía",
   "Cuestionario",
+  "Endoso",
   "Excel con el detalle de ítems",
   "Guía de despacho",
   "Informe de inspección",

@@ -139,6 +139,7 @@ type Party = {
 };
 
 export type PdfProposal = {
+  kind: "POLIZA";
   proposalNumber: string;
   createdAt: Date;
   sentAt: Date | null;

@@ -39,7 +39,7 @@ export function SettlementDetailActions({
       const res = await deleteSettlementAction(id);
       if (res.ok) {
         toast.success("Liquidación eliminada");
-        router.push("/comisiones/liquidaciones");
+        router.push("/liquidaciones-vendedores");
       } else {
         toast.error(res.error);
       }

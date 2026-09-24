@@ -31,6 +31,35 @@ const dateString = z
     "Fecha inválida",
   );
 
+const optionalPositive = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "" || (!Number.isNaN(Number(value)) && Number(value) > 0),
+    "Ingresa un valor mayor a 0",
+  )
+  .default("");
+
+const optionalNonNegative = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "" || (!Number.isNaN(Number(value)) && Number(value) >= 0),
+    "Ingresa un valor válido",
+  )
+  .default("");
+
+/**
+ * Qué hacer con la comisión al registrar el pago:
+ *  - PAID: dejarla pagada por la compañía (aunque haya una diferencia).
+ *  - PENDING: registrar el pago pero dejar la comisión pendiente (p.ej. pagó
+ *    de menos y hay que reclamar el saldo).
+ */
+export const PAYMENT_DECISIONS = ["PAID", "PENDING"] as const;
+export type PaymentDecision = (typeof PAYMENT_DECISIONS)[number];
+
 /** Registrar un pago de la compañía por la comisión de una póliza. */
 export const companyPaymentSchema = z.object({
   policyId: z.string().min(1, "Póliza requerida"),
@@ -38,10 +67,33 @@ export const companyPaymentSchema = z.object({
   amount: amountString,
   currency: currencyEnum.default("CLP"),
   invoiceNumber: optionalString,
-  exchangeFactor: optionalString,
+  invoiceDate: optionalString,
+  // Tipo de cambio moneda póliza → moneda del pago (el informado por la
+  // compañía o, si no lo informa, el implícito / de referencia).
+  exchangeFactor: optionalPositive,
   notes: optionalString,
+  decision: z.enum(PAYMENT_DECISIONS).default("PAID"),
 });
 export type CompanyPaymentValues = z.infer<typeof companyPaymentSchema>;
+
+/**
+ * Corrección de la comisión de la póliza desde la revisión de comisiones
+ * (prima neta, % y/o monto fijo). Monto vacío = se deriva de prima × %.
+ */
+export const policyCommissionSchema = z.object({
+  premiumNet: optionalNonNegative,
+  commissionPercent: z
+    .string()
+    .trim()
+    .refine((value) => {
+      if (value === "") return true;
+      const n = Number(value);
+      return !Number.isNaN(n) && n >= 0 && n <= 100;
+    }, "Porcentaje entre 0 y 100")
+    .default(""),
+  commissionAmount: optionalNonNegative,
+});
+export type PolicyCommissionValues = z.infer<typeof policyCommissionSchema>;
 
 /** Tasa default de comisión de un vendedor (admin). */
 export const salespersonRateSchema = z.object({

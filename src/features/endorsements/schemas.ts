@@ -68,11 +68,101 @@ export function endorsementStatusEffect(
 
 const optionalString = z.string().trim().default("");
 
-export const endorsementSchema = z.object({
-  type: z.enum(ENDORSEMENT_TYPES),
-  effectiveDate: z.string().min(1, "Fecha efectiva requerida"),
-  reason: optionalString,
-  notes: optionalString,
-});
+/**
+ * Cómo se crea el endoso:
+ *  - PROPUESTA: genera una propuesta de endoso que recorre el mismo flujo que
+ *    una propuesta de póliza (PDF → envío a la cía → recepción → despacho al
+ *    cliente). El endoso queda registrado en la póliza recién al despacharla.
+ *  - DIRECTO: registra un endoso ya emitido por la compañía (p.ej. una
+ *    cancelación por no pago que inicia la propia compañía).
+ */
+export const ENDORSEMENT_MODES = ["PROPUESTA", "DIRECTO"] as const;
+export type EndorsementMode = (typeof ENDORSEMENT_MODES)[number];
+
+// El motivo ya no se pide: el tipo de endoso indica lo que hay que hacer en la
+// póliza y el detalle describe el cambio.
+export const endorsementSchema = z
+  .object({
+    mode: z.enum(ENDORSEMENT_MODES).default("PROPUESTA"),
+    type: z.enum(ENDORSEMENT_TYPES),
+    effectiveDate: z.string().min(1, "Fecha de inicio del endoso requerida"),
+    endDate: optionalString,
+    detail: z.string().trim().max(20000).default(""),
+    endorsementNumber: optionalString,
+    notes: optionalString,
+  })
+  .superRefine((val, ctx) => {
+    if (val.mode === "PROPUESTA" && !val.detail) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["detail"],
+        message: "Describe el detalle del endoso para la compañía",
+      });
+    }
+    if (val.endDate && val.effectiveDate && val.endDate < val.effectiveDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "El fin del endoso no puede ser anterior al inicio",
+      });
+    }
+  });
 
 export type EndorsementValues = z.infer<typeof endorsementSchema>;
+
+/** Edición de una propuesta de endoso (mientras está en elaboración). */
+export const endorsementProposalSchema = z
+  .object({
+    type: z.enum(ENDORSEMENT_TYPES),
+    effectiveDate: z.string().min(1, "Fecha de inicio del endoso requerida"),
+    endDate: optionalString,
+    detail: z
+      .string()
+      .trim()
+      .min(1, "Describe el detalle del endoso para la compañía")
+      .max(20000),
+    observations: optionalString,
+  })
+  .superRefine((val, ctx) => {
+    if (val.endDate && val.endDate < val.effectiveDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["endDate"],
+        message: "El fin del endoso no puede ser anterior al inicio",
+      });
+    }
+  });
+
+export type EndorsementProposalValues = z.infer<
+  typeof endorsementProposalSchema
+>;
+
+/**
+ * Valida si un endoso de este tipo se puede aplicar a una póliza en el estado
+ * dado. Solo restringe los que mueven el estado; el resto se registra siempre.
+ * Devuelve el mensaje de error o null si es válido.
+ */
+export function endorsementTransitionError(
+  type: EndorsementTypeValue,
+  policyStatus: string,
+): string | null {
+  const next = endorsementStatusEffect(type);
+  if (next === "CANCELADA" && !["VIGENTE", "VENCIDA"].includes(policyStatus)) {
+    return "Solo se puede cancelar una póliza vigente o vencida.";
+  }
+  if (next === "ANULADA" && policyStatus === "ANULADA") {
+    return "La póliza ya está anulada.";
+  }
+  return null;
+}
+
+/**
+ * Endosos que normalmente inicia la propia compañía (no hay propuesta que
+ * enviarle): el formulario sugiere registrarlos directamente.
+ */
+export const COMPANY_INITIATED_TYPES: EndorsementTypeValue[] = [
+  "ANULACION_COMPANIA",
+  "CANCELACION_COMPANIA",
+  "CANCELACION_NO_PAGO",
+  "CORTE_PERDIDA_TOTAL",
+];

@@ -8,6 +8,7 @@ import { isProposalLocked } from "@/features/proposals/schemas";
 import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { listActiveBrokers } from "@/features/brokers/queries";
 import { ProposalForm } from "@/features/proposals/components/proposal-form";
+import { EndorsementProposalForm } from "@/features/endorsements/components/endorsement-proposal-form";
 import { PageHeader } from "@/components/page-header";
 import type { ProposalFormValues } from "@/features/proposals/schemas";
 import type { CurrencyCode } from "@/lib/money";
@@ -28,6 +29,31 @@ export default async function EditarPropuestaPage({
   if (!proposal) notFound();
   if (isProposalLocked(proposal.status)) {
     redirect(`/propuestas/${id}`);
+  }
+
+  if (proposal.kind === "ENDOSO") {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title={`Editar propuesta de endoso ${proposal.proposalNumber}`}
+          description={
+            proposal.endorsedPolicy
+              ? `Póliza N° ${proposal.endorsedPolicy.policyNumber} · ${proposal.client.name}`
+              : proposal.client.name
+          }
+        />
+        <EndorsementProposalForm
+          proposalId={id}
+          defaultValues={{
+            type: proposal.endorsementType ?? "MODIFICACION",
+            effectiveDate: toDateInput(proposal.startDate),
+            endDate: toDateInput(proposal.endDate),
+            detail: proposal.endorsementDetail ?? "",
+            observations: proposal.observations ?? "",
+          }}
+        />
+      </div>
+    );
   }
 
   const [clients, members, catalog, brokers, coaseguroPart, brokerPart] =

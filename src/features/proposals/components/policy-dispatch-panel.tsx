@@ -22,11 +22,14 @@ type DocOption = { id: string; fileName: string };
 export function PolicyDispatchPanel({
   proposalId,
   status,
+  kind = "POLIZA",
   defaultEmail,
   documents,
 }: {
   proposalId: string;
   status: string;
+  /** ENDOSO: el despacho registra el endoso en la póliza original. */
+  kind?: string;
   defaultEmail: string | null;
   documents: DocOption[];
 }) {
@@ -39,6 +42,7 @@ export function PolicyDispatchPanel({
   const [submitting, setSubmitting] = useState(false);
 
   if (status !== "POR_DESPACHAR") return null;
+  const isEndorsement = kind === "ENDOSO";
 
   function toggleDoc(id: string) {
     setSelected((prev) =>
@@ -61,9 +65,13 @@ export function PolicyDispatchPanel({
       return;
     }
     toast.success(
-      mode === "send"
-        ? "Póliza despachada al contratante."
-        : "Póliza marcada como despachada.",
+      isEndorsement
+        ? mode === "send"
+          ? "Endoso enviado al contratante."
+          : "Endoso marcado como despachado."
+        : mode === "send"
+          ? "Póliza despachada al contratante."
+          : "Póliza marcada como despachada.",
     );
     router.refresh();
   }
@@ -72,14 +80,26 @@ export function PolicyDispatchPanel({
     <div className="rounded-lg border bg-card">
       <div className="flex items-center gap-2 border-b p-4">
         <Truck className="size-4 text-muted-foreground" />
-        <h2 className="text-base font-semibold">Despacho de la póliza</h2>
+        <h2 className="text-base font-semibold">
+          {isEndorsement ? "Despacho del endoso" : "Despacho de la póliza"}
+        </h2>
       </div>
       <div className="space-y-4 p-4">
         <p className="text-sm text-muted-foreground">
-          La póliza está recepcionada. Envíala al contratante por email (con la
-          póliza y los documentos seleccionados de la carátula) o márcala como
-          despachada. Al despachar, la propuesta finaliza su flujo y la póliza
-          queda visible en la cartera vigente.
+          {isEndorsement ? (
+            <>
+              El endoso ya está registrado en la póliza. Envíalo al contratante
+              por email (con el endoso y los documentos seleccionados) o
+              márcalo como despachado para cerrar la propuesta de endoso.
+            </>
+          ) : (
+            <>
+              La póliza está recepcionada. Envíala al contratante por email
+              (con la póliza y los documentos seleccionados de la carátula) o
+              márcala como despachada. Al despachar, la propuesta finaliza su
+              flujo y la póliza queda visible en la cartera vigente.
+            </>
+          )}
         </p>
 
         <div className="inline-flex rounded-md border p-0.5 text-sm">
@@ -103,7 +123,7 @@ export function PolicyDispatchPanel({
                 : "text-muted-foreground"
             }`}
           >
-            Marcar como despachada
+            {isEndorsement ? "Marcar como despachado" : "Marcar como despachada"}
           </button>
         </div>
 
@@ -140,7 +160,9 @@ export function PolicyDispatchPanel({
             {documents.length > 0 && (
               <div className="space-y-1.5 rounded-md border bg-muted/30 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Documentos a adjuntar (la póliza se adjunta automáticamente)
+                  Documentos a adjuntar (
+                  {isEndorsement ? "el endoso" : "la póliza"} se adjunta
+                  automáticamente)
                 </div>
                 {documents.map((d) => (
                   <label
@@ -168,7 +190,11 @@ export function PolicyDispatchPanel({
             ) : (
               <Truck className="size-4" />
             )}
-            {mode === "send" ? "Enviar y despachar" : "Marcar como despachada"}
+            {mode === "send"
+              ? "Enviar y despachar"
+              : isEndorsement
+                ? "Marcar como despachado"
+                : "Marcar como despachada"}
           </Button>
         </div>
       </div>

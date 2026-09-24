@@ -250,6 +250,34 @@ export function PolicyForm({
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name="salespersonId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Vendedor</FormLabel>
+                  <Select
+                    value={field.value || "none"}
+                    onValueChange={(v) => field.onChange(v === "none" ? "" : v)}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sin vendedor" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="none">Sin vendedor</SelectItem>
+                      {members.map((member) => (
+                        <SelectItem key={member.userId} value={member.userId}>
+                          {member.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </div>
         </section>
 

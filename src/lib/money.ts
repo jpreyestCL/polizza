@@ -62,3 +62,23 @@ export function formatMoney(
 export function isCurrency(value: string): value is CurrencyCode {
   return (CURRENCIES as readonly string[]).includes(value);
 }
+
+/**
+ * Interpreta un número escrito a la chilena o con punto decimal:
+ *  - "82.274" → 82274 (punto como separador de miles)
+ *  - "40.950,75" → 40950.75
+ *  - "40950.75" / "40950,75" → 40950.75
+ * Devuelve null si el texto está vacío o no es un número.
+ */
+export function parseLocaleNumber(input: string | null | undefined): number | null {
+  if (input == null) return null;
+  let text = String(input).trim().replace(/\s|\$/g, "");
+  if (!text) return null;
+  if (text.includes(",")) {
+    text = text.replace(/\./g, "").replace(",", ".");
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(text)) {
+    text = text.replace(/\./g, "");
+  }
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}

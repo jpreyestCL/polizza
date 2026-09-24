@@ -353,9 +353,21 @@ export async function sendProposalByEmailAction(
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
+  const isEndorsement = proposal.kind === "ENDOSO";
+  const endorsedPolicy =
+    isEndorsement && proposal.endorsedPolicyId
+      ? await db.policy.findFirst({
+          where: { id: proposal.endorsedPolicyId },
+          select: { policyNumber: true },
+        })
+      : null;
   const subject =
     options.subject?.trim() ||
-    `Propuesta de Seguro N° ${proposal.proposalNumber} de ${org?.name ?? "Polizza"} - ${proposal.client.name}`;
+    (isEndorsement
+      ? `Solicitud de Endoso N° ${proposal.proposalNumber}${
+          endorsedPolicy ? ` · Póliza ${endorsedPolicy.policyNumber}` : ""
+        } de ${org?.name ?? "Polizza"} - ${proposal.client.name}`
+      : `Propuesta de Seguro N° ${proposal.proposalNumber} de ${org?.name ?? "Polizza"} - ${proposal.client.name}`);
   const note = options.body?.trim();
 
   const docsHtml =
@@ -370,7 +382,11 @@ export async function sendProposalByEmailAction(
 
   const body =
     note ||
-    `Estimados,\n\nFavor asignar folio/ciclo para la emisión de la propuesta N° ${proposal.proposalNumber} para nuestro cliente ${proposal.client.name}. La propuesta se adjunta en PDF.\n\nFavor acusar recibo de la recepción de este correo.\n\nLes saluda atentamente,\n${org?.name ?? "Polizza"}`;
+    (isEndorsement
+      ? `Estimados,\n\nFavor emitir el endoso solicitado${
+          endorsedPolicy ? ` sobre la póliza N° ${endorsedPolicy.policyNumber}` : ""
+        } de nuestro cliente ${proposal.client.name}. Se adjunta la solicitud de endoso N° ${proposal.proposalNumber} en PDF.\n\nFavor acusar recibo de la recepción de este correo.\n\nLes saluda atentamente,\n${org?.name ?? "Polizza"}`
+      : `Estimados,\n\nFavor asignar folio/ciclo para la emisión de la propuesta N° ${proposal.proposalNumber} para nuestro cliente ${proposal.client.name}. La propuesta se adjunta en PDF.\n\nFavor acusar recibo de la recepción de este correo.\n\nLes saluda atentamente,\n${org?.name ?? "Polizza"}`);
   const html = emailLayout(
     subject,
     body
@@ -394,7 +410,9 @@ export async function sendProposalByEmailAction(
       html,
       attachments: [
         {
-          filename: `propuesta-${proposal.proposalNumber}.pdf`,
+          filename: isEndorsement
+            ? `solicitud-endoso-${proposal.proposalNumber}.pdf`
+            : `propuesta-${proposal.proposalNumber}.pdf`,
           content: Buffer.from(pdfBuffer),
           contentType: "application/pdf",
         },

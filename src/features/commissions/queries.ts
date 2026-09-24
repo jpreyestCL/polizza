@@ -9,6 +9,7 @@ import {
   sellerPayout,
   totalCompanyPaid,
   isPaidByCompany,
+  round2,
 } from "@/lib/commissions";
 
 /** Tope de filas del reporte de comisiones (un solo "página" como el legacy). */
@@ -39,10 +40,20 @@ export type CommissionRow = {
   startDate: Date | null;
   premiumNet: number | null;
   currency: string;
+  /** % de comisión de la póliza (para derivar la comisión si no hay monto). */
+  commissionPercent: number | null;
+  /** Monto de comisión fijado en la póliza (null = se deriva de prima × %). */
+  commissionAmount: number | null;
   /** Comisión de la corredora (monto o derivado), en moneda de la póliza. */
   brokerCommission: number;
   /** Total pagado por la compañía, convertido a la moneda de la póliza. */
   companyPaid: number;
+  /** Comisión aún no cubierta por pagos, en moneda de la póliza. */
+  pendingCommission: number;
+  /** Total pagado expresado en pesos (pagos en CLP + convertidos con su factor). */
+  companyPaidClp: number;
+  /** Decisión explícita de la revisión (Policy.commissionPaid). */
+  paidDecision: boolean | null;
   paidByCompany: boolean;
   salespersonId: string | null;
   /** Override de % de comisión del vendedor en esta póliza (null = default). */
@@ -55,7 +66,10 @@ export type CommissionRow = {
     paymentDate: Date;
     amount: number;
     currency: string;
+    exchangeFactor: number | null;
     invoiceNumber: string | null;
+    invoiceDate: Date | null;
+    notes: string | null;
   }[];
 };
 
@@ -118,6 +132,7 @@ export async function listCommissions(
       currency: true,
       commissionPercent: true,
       commissionAmount: true,
+      commissionPaid: true,
       salespersonId: true,
       salesCommissionPct: true,
       client: { select: { name: true } },
@@ -131,6 +146,8 @@ export async function listCommissions(
           currency: true,
           exchangeFactor: true,
           invoiceNumber: true,
+          invoiceDate: true,
+          notes: true,
         },
       },
       sellerCommissionItem: { select: { id: true } },
@@ -155,6 +172,15 @@ export async function listCommissions(
         cp.exchangeFactor != null ? Number(cp.exchangeFactor) : null,
     }));
     const companyPaid = totalCompanyPaid(payments, p.currency);
+    const companyPaidClp = round2(
+      payments.reduce((acc, pm) => {
+        if (pm.currency === "CLP") return acc + pm.amount;
+        if (pm.exchangeFactor && pm.currency === p.currency) {
+          return acc + pm.amount * pm.exchangeFactor;
+        }
+        return acc;
+      }, 0),
+    );
     return {
       policyId: p.id,
       policyNumber: p.policyNumber,
@@ -167,9 +193,20 @@ export async function listCommissions(
       startDate: p.startDate,
       premiumNet: p.premiumNet != null ? Number(p.premiumNet) : null,
       currency: p.currency,
+      commissionPercent:
+        p.commissionPercent != null ? Number(p.commissionPercent) : null,
+      commissionAmount:
+        p.commissionAmount != null ? Number(p.commissionAmount) : null,
       brokerCommission,
       companyPaid,
-      paidByCompany: isPaidByCompany(brokerCommission, companyPaid),
+      pendingCommission: Math.max(round2(brokerCommission - companyPaid), 0),
+      companyPaidClp,
+      paidDecision: p.commissionPaid,
+      paidByCompany: isPaidByCompany(
+        brokerCommission,
+        companyPaid,
+        p.commissionPaid,
+      ),
       salespersonId: p.salespersonId,
       salesCommissionPct:
         p.salesCommissionPct != null ? Number(p.salesCommissionPct) : null,
@@ -179,7 +216,11 @@ export async function listCommissions(
         paymentDate: cp.paymentDate,
         amount: Number(cp.amount),
         currency: cp.currency,
+        exchangeFactor:
+          cp.exchangeFactor != null ? Number(cp.exchangeFactor) : null,
         invoiceNumber: cp.invoiceNumber,
+        invoiceDate: cp.invoiceDate,
+        notes: cp.notes,
       })),
     };
   });
@@ -202,6 +243,8 @@ export type SettleablePolicy = {
   startDate: Date | null;
   currency: string;
   brokerCommission: number;
+  /** Override de % del vendedor en esta póliza (null = tasa default). */
+  salesCommissionPct: number | null;
   appliedPct: number | null;
   payout: number;
 };
@@ -244,6 +287,7 @@ export async function listSettleablePolicies(
       commissionPercent: true,
       commissionAmount: true,
       salesCommissionPct: true,
+      commissionPaid: true,
       client: { select: { name: true } },
       companyCommissionPayments: {
         select: { amount: true, currency: true, exchangeFactor: true },
@@ -269,7 +313,9 @@ export async function listSettleablePolicies(
       })),
       p.currency,
     );
-    if (!isPaidByCompany(brokerCommission, companyPaid)) continue;
+    if (!isPaidByCompany(brokerCommission, companyPaid, p.commissionPaid)) {
+      continue;
+    }
     const pct = appliedSellerPct(
       p.salesCommissionPct != null ? Number(p.salesCommissionPct) : null,
       defaultPct,
@@ -283,6 +329,8 @@ export async function listSettleablePolicies(
       startDate: p.startDate,
       currency: p.currency,
       brokerCommission,
+      salesCommissionPct:
+        p.salesCommissionPct != null ? Number(p.salesCommissionPct) : null,
       appliedPct: pct,
       payout: sellerPayout(brokerCommission, pct),
     });

@@ -47,6 +47,7 @@ export function PdfAndEmailButtons({
   documents,
   status,
   hasStoredPdf,
+  endorsement,
 }: {
   proposalId: string;
   proposalNumber: string;
@@ -57,6 +58,8 @@ export function PdfAndEmailButtons({
   documents: ProposalDocument[];
   status: string;
   hasStoredPdf: boolean;
+  /** Propuesta de endoso: cambia el texto por defecto del correo. */
+  endorsement?: { policyNumber: string | null } | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -108,11 +111,22 @@ export function PdfAndEmailButtons({
   const [bcc, setBcc] = useState<string[]>([]);
   const [ccInput, setCcInput] = useState("");
   const [bccInput, setBccInput] = useState("");
+  const policyRef = endorsement?.policyNumber
+    ? ` · Póliza ${endorsement.policyNumber}`
+    : "";
   const [subject, setSubject] = useState(
-    `Propuesta de Seguro N° ${proposalNumber} de ${organizationName} - ${clientName}`,
+    endorsement
+      ? `Solicitud de Endoso N° ${proposalNumber}${policyRef} de ${organizationName} - ${clientName}`
+      : `Propuesta de Seguro N° ${proposalNumber} de ${organizationName} - ${clientName}`,
   );
   const [body, setBody] = useState(
-    `Estimados,\n\nFavor asignar folio/ciclo para la emisión de la propuesta N° ${proposalNumber} a nombre de ${clientName}.\n\nFavor acusar recibo de la recepción de este correo.\n\nLes saluda atentamente,\n${organizationName}`,
+    endorsement
+      ? `Estimados,\n\nFavor emitir el endoso solicitado${
+          endorsement.policyNumber
+            ? ` sobre la póliza N° ${endorsement.policyNumber}`
+            : ""
+        } a nombre de ${clientName}. Se adjunta la solicitud de endoso N° ${proposalNumber}.\n\nFavor acusar recibo de la recepción de este correo.\n\nLes saluda atentamente,\n${organizationName}`
+      : `Estimados,\n\nFavor asignar folio/ciclo para la emisión de la propuesta N° ${proposalNumber} a nombre de ${clientName}.\n\nFavor acusar recibo de la recepción de este correo.\n\nLes saluda atentamente,\n${organizationName}`,
   );
   const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
   const [markOnly, setMarkOnly] = useState(false);

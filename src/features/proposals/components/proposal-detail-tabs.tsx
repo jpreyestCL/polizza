@@ -10,6 +10,7 @@ import { DocumentsPanel } from "@/features/documents/components/documents-panel"
 import type { DocumentItem } from "@/features/documents/queries";
 import { MoneyValue } from "@/components/money-value";
 import { EmptyState } from "@/components/empty-state";
+import { ENDORSEMENT_TYPE_LABELS } from "@/features/endorsements/schemas";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 function Field({ label, value }: { label: string; value?: React.ReactNode }) {
@@ -62,7 +63,11 @@ export function ProposalDetailTabs({
     premiumTotals.exempt > 0 ||
     premiumTotals.iva > 0 ||
     premiumTotals.gross > 0;
-  const grossToShow = showAggregates ? premiumTotals.gross : proposal.premiumGross;
+  const grossToShow = showAggregates
+    ? premiumTotals.gross
+    : proposal.premiumGross;
+  const isEndorsement = proposal.kind === "ENDOSO";
+  const emittedWord = isEndorsement ? "endoso" : "póliza";
 
   return (
     <Tabs defaultValue="resumen">
@@ -100,80 +105,112 @@ export function ProposalDetailTabs({
               <Field label="Compañía" value={companyName} />
               <Field label="Ramo" value={branchTypeName} />
               <Field label="Moneda" value={proposal.currency} />
+              {isEndorsement ? (
+                <>
+                  <Field
+                    label="Póliza endosada"
+                    value={
+                      proposal.endorsedPolicy ? (
+                        <Link
+                          href={`/polizas/${proposal.endorsedPolicy.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          N° {proposal.endorsedPolicy.policyNumber}
+                        </Link>
+                      ) : null
+                    }
+                  />
+                  <Field
+                    label="Tipo de endoso"
+                    value={
+                      proposal.endorsementType
+                        ? ENDORSEMENT_TYPE_LABELS[proposal.endorsementType]
+                        : null
+                    }
+                  />
+                </>
+              ) : null}
+              {!isEndorsement ? (
+                <>
+                  <Field
+                    label="Prima afecta"
+                    value={
+                      showAggregates ? (
+                        <MoneyValue
+                          amount={premiumTotals.affect}
+                          currency={proposal.currency}
+                          ufValue={ufValue}
+                        />
+                      ) : (
+                        "—"
+                      )
+                    }
+                  />
+                  <Field
+                    label="Prima exenta"
+                    value={
+                      showAggregates ? (
+                        <MoneyValue
+                          amount={premiumTotals.exempt}
+                          currency={proposal.currency}
+                          ufValue={ufValue}
+                        />
+                      ) : (
+                        "—"
+                      )
+                    }
+                  />
+                  <Field
+                    label="IVA"
+                    value={
+                      showAggregates ? (
+                        <MoneyValue
+                          amount={premiumTotals.iva}
+                          currency={proposal.currency}
+                          ufValue={ufValue}
+                        />
+                      ) : (
+                        "—"
+                      )
+                    }
+                  />
+                  <Field
+                    label="Prima bruta"
+                    value={
+                      grossToShow != null ? (
+                        <MoneyValue
+                          amount={grossToShow}
+                          currency={proposal.currency}
+                          ufValue={ufValue}
+                        />
+                      ) : (
+                        "—"
+                      )
+                    }
+                  />
+                </>
+              ) : null}
               <Field
-                label="Prima afecta"
-                value={
-                  showAggregates ? (
-                    <MoneyValue
-                      amount={premiumTotals.affect}
-                      currency={proposal.currency}
-                      ufValue={ufValue}
-                    />
-                  ) : (
-                    "—"
-                  )
-                }
+                label={isEndorsement ? "Vigencia del endoso" : "Vigencia"}
+                value={vigencia}
               />
-              <Field
-                label="Prima exenta"
-                value={
-                  showAggregates ? (
-                    <MoneyValue
-                      amount={premiumTotals.exempt}
-                      currency={proposal.currency}
-                      ufValue={ufValue}
-                    />
-                  ) : (
-                    "—"
-                  )
-                }
-              />
-              <Field
-                label="IVA"
-                value={
-                  showAggregates ? (
-                    <MoneyValue
-                      amount={premiumTotals.iva}
-                      currency={proposal.currency}
-                      ufValue={ufValue}
-                    />
-                  ) : (
-                    "—"
-                  )
-                }
-              />
-              <Field
-                label="Prima bruta"
-                value={
-                  grossToShow != null ? (
-                    <MoneyValue
-                      amount={grossToShow}
-                      currency={proposal.currency}
-                      ufValue={ufValue}
-                    />
-                  ) : (
-                    "—"
-                  )
-                }
-              />
-              <Field label="Vigencia" value={vigencia} />
               <Field label="Ejecutivo" value={assignedUserName} />
               <Field label="Creada" value={formatDate(proposal.createdAt)} />
               {proposal.policyNumberGenerated && (
                 <Field
-                  label="N° póliza emitida"
+                  label={`N° ${emittedWord} ${isEndorsement ? "emitido" : "emitida"}`}
                   value={proposal.policyNumberGenerated}
                 />
               )}
               {proposal.policyEmissionDate && (
                 <Field
-                  label="Emisión póliza"
+                  label={`Emisión ${emittedWord}`}
                   value={formatDate(proposal.policyEmissionDate)}
                 />
               )}
               {proposal.policyReceptionDate && (
                 <Field
-                  label="Recepción póliza"
+                  label={`Recepción ${emittedWord}`}
                   value={formatDate(proposal.policyReceptionDate)}
                 />
               )}
@@ -192,6 +229,28 @@ export function ProposalDetailTabs({
               )}
             </dl>
           </div>
+          {isEndorsement ? (
+            <div className="space-y-3 rounded-xl border bg-card p-5">
+              <div>
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Detalle del endoso
+                </h3>
+                <p className="mt-1 whitespace-pre-line text-sm">
+                  {proposal.endorsementDetail || "—"}
+                </p>
+              </div>
+              {proposal.observations ? (
+                <div>
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Observaciones internas
+                  </h3>
+                  <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">
+                    {proposal.observations}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </TabsContent>
 

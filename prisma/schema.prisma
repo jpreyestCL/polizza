@@ -613,6 +613,14 @@ model Branch {
 // Propuestas (modeladas; UI llega en sub-proyecto posterior)
 // ─────────────────────────────────────────────────────────────
 
+// Tipo de propuesta: de póliza (nueva/renovación) o de endoso sobre una póliza
+// existente. Ambas recorren el mismo flujo (elaboración → envío a la cía →
+// recepción → despacho al cliente).
+enum ProposalKind {
+  POLIZA
+  ENDOSO
+}
+
 enum ProposalStatus {
   ELABORACION
   POR_ENVIAR
@@ -622,21 +630,28 @@ enum ProposalStatus {
 }
 
 model Proposal {
-  id                         String         @id @default(cuid())
+  id                         String           @id @default(cuid())
   organizationId             String
   clientId                   String
   proposalNumber             String
+  kind                       ProposalKind     @default(POLIZA)
+  // Propuesta de endoso (kind = ENDOSO): póliza endosada, tipo de endoso y
+  // detalle del endoso que va en el PDF "Solicitud de Endoso". Al despacharla
+  // se crea el Endorsement vinculado (Endorsement.proposalId).
+  endorsedPolicyId           String?
+  endorsementType            EndorsementType?
+  endorsementDetail          String?
   companyId                  String?
   lineId                     String?
   branchId                   String?
   branchTypeId               String?
   productId                  String?
-  status                     ProposalStatus @default(ELABORACION)
-  premiumNet                 Decimal?       @db.Decimal(14, 2)
-  premiumGross               Decimal?       @db.Decimal(14, 2)
-  currency                   String         @default("UF")
-  startDate                  DateTime?      @db.Date
-  endDate                    DateTime?      @db.Date
+  status                     ProposalStatus   @default(ELABORACION)
+  premiumNet                 Decimal?         @db.Decimal(14, 2)
+  premiumGross               Decimal?         @db.Decimal(14, 2)
+  currency                   String           @default("UF")
+  startDate                  DateTime?        @db.Date
+  endDate                    DateTime?        @db.Date
   // Hora de vigencia (formato "HH:mm"). La fecha vive en startDate/endDate
   // (día puro) y la hora aquí, para que el PDF muestre fecha + hora sin migrar
   // las columnas Date a DateTime (evita choque de tipos con Policy).
@@ -661,44 +676,48 @@ model Proposal {
   insuredClientId            String?
   beneficiaryClientId        String?
   // Casillas de relación con otras compañías / corredores:
-  coaseguro                  Boolean        @default(false)
+  coaseguro                  Boolean          @default(false)
   coaseguroDetails           Json?
-  coCorredor                 Boolean        @default(false)
+  coCorredor                 Boolean          @default(false)
   coCorredorDetails          Json?
-  reaseguro                  Boolean        @default(false)
+  reaseguro                  Boolean          @default(false)
   reaseguroDetails           Json?
-  deOtroCorredor             Boolean        @default(false)
-  garantiaSuscripcion        Boolean        @default(false)
-  conReserva                 Boolean        @default(false)
-  conClausulaInalterabilidad Boolean        @default(false)
-  facultativo                Boolean        @default(false)
+  deOtroCorredor             Boolean          @default(false)
+  garantiaSuscripcion        Boolean          @default(false)
+  conReserva                 Boolean          @default(false)
+  conClausulaInalterabilidad Boolean          @default(false)
+  facultativo                Boolean          @default(false)
   // Comisión a nivel propuesta (overridea producto):
-  commissionAffectPct        Decimal?       @db.Decimal(6, 3)
-  commissionExemptPct        Decimal?       @db.Decimal(6, 3)
+  commissionAffectPct        Decimal?         @db.Decimal(6, 3)
+  commissionExemptPct        Decimal?         @db.Decimal(6, 3)
   observations               String?
   assignedUserId             String?
   salespersonId              String?
   // Renovación
-  isRenewal                  Boolean        @default(false)
+  isRenewal                  Boolean          @default(false)
   previousPolicyNumberText   String?
   // Garantía de suscripción
-  garantiaExpiry             DateTime?      @db.Date
-  garantiaCompleted          Boolean        @default(false)
-  garantiaCompletedAt        DateTime?      @db.Date
+  garantiaExpiry             DateTime?        @db.Date
+  garantiaCompleted          Boolean          @default(false)
+  garantiaCompletedAt        DateTime?        @db.Date
   garantiaObservations       String?
   // PDF generado y almacenado al pasar a POR_ENVIAR. Se borra al reabrir.
   pdfBytes                   Bytes?
   pdfGeneratedAt             DateTime?
-  // Recepción de la póliza emitida por la compañía (flujo post-envío).
+  // Recepción de la póliza emitida por la compañía (flujo post-envío). En una
+  // propuesta de endoso guarda el N° de endoso emitido por la compañía.
   policyNumberGenerated      String?
-  policyEmissionDate         DateTime?      @db.Date
-  policyReceptionDate        DateTime?      @db.Date
+  policyEmissionDate         DateTime?        @db.Date
+  policyReceptionDate        DateTime?        @db.Date
   emissionErrorReason        String? // motivo de error de emisión (devuelta a la compañía)
   emissionErrorDetail        String?
-  currentStateStartedAt      DateTime       @default(now())
+  // Despacho al contratante. En una propuesta de endoso marca el fin del flujo
+  // (el endoso ya quedó registrado en la póliza al recepcionarlo).
+  dispatchedAt               DateTime?
+  currentStateStartedAt      DateTime         @default(now())
   createdById                String?
-  createdAt                  DateTime       @default(now())
-  updatedAt                  DateTime       @updatedAt
+  createdAt                  DateTime         @default(now())
+  updatedAt                  DateTime         @updatedAt
 
   client                  Client                           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   branchType              BranchType?                      @relation(fields: [branchTypeId], references: [id])
@@ -709,10 +728,12 @@ model Proposal {
   brokerParticipations    ProposalBrokerParticipation[]
   coaseguroParticipations ProposalCoaseguroParticipation[]
   policies                Policy[]
+  endorsement             Endorsement?
 
   @@unique([organizationId, proposalNumber])
   @@index([organizationId])
   @@index([clientId])
+  @@index([endorsedPolicyId])
   @@index([previousPolicyId])
   @@index([quotationId])
 }
@@ -862,17 +883,27 @@ enum EndorsementType {
 }
 
 model Endorsement {
-  id             String          @id @default(cuid())
-  organizationId String
-  policyId       String
-  type           EndorsementType
-  effectiveDate  DateTime        @db.Date
-  reason         String?
-  notes          String?
-  createdById    String?
-  createdAt      DateTime        @default(now())
+  id                String          @id @default(cuid())
+  organizationId    String
+  policyId          String
+  type              EndorsementType
+  effectiveDate     DateTime        @db.Date
+  // Fin de vigencia del endoso (por defecto, fin de la póliza).
+  endDate           DateTime?       @db.Date
+  // N° de endoso emitido por la compañía.
+  endorsementNumber String?
+  // Detalle del endoso (texto de la solicitud enviada a la compañía).
+  detail            String?
+  // Motivo: ya no se pide en el formulario; se conserva para endosos antiguos.
+  reason            String?
+  notes             String?
+  // Propuesta de endoso que originó este endoso (null = registro directo).
+  proposalId        String?         @unique
+  createdById       String?
+  createdAt         DateTime        @default(now())
 
-  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  policy   Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  proposal Proposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([policyId])
@@ -994,6 +1025,10 @@ model Policy {
   commissionAffectPct    Decimal?     @db.Decimal(6, 3)
   commissionExemptPct    Decimal?     @db.Decimal(6, 3)
   commissionFinalCompany Decimal?     @db.Decimal(14, 2)
+  // Estado de la comisión decidido en la revisión de comisiones: true = se
+  // dejó pagada por la compañía (aunque haya una diferencia menor), false = se
+  // dejó pendiente (p.ej. pago parcial a reclamar), null = automático según la
+  // suma de pagos registrados.
   commissionPaid         Boolean?
   // Snapshot del tipo de cambio al momento de la póliza: valor en pesos de la
   // moneda de la póliza (Cambio) y de la UF. Permite re-expresar montos históricos.
@@ -1109,18 +1144,19 @@ model SalespersonCommissionRate {
 // parciales / varias facturas por póliza. La póliza se considera "pagada por la
 // compañía" cuando la suma de pagos cubre Policy.commissionAmount.
 model CompanyCommissionPayment {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   policyId       String
-  paymentDate    DateTime @db.Date
-  amount         Decimal  @db.Decimal(14, 2)
-  currency       String   @default("CLP")
+  paymentDate    DateTime  @db.Date
+  amount         Decimal   @db.Decimal(14, 2)
+  currency       String    @default("CLP")
   invoiceNumber  String?
+  invoiceDate    DateTime? @db.Date
   // Factor de conversión a CLP usado al registrar (UF→$, USD→$, etc.).
-  exchangeFactor Decimal? @db.Decimal(14, 4)
+  exchangeFactor Decimal?  @db.Decimal(14, 4)
   notes          String?
   createdById    String?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime  @default(now())
 
   policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
 

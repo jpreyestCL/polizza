@@ -1,5 +1,9 @@
 import "server-only";
-import type { ProposalStatus } from "@prisma/client";
+import type {
+  EndorsementType,
+  ProposalKind,
+  ProposalStatus,
+} from "@prisma/client";
 import type { SessionContext } from "@/server/context";
 import { basePrisma, type Db } from "@/server/db";
 import { canSeeAllClients } from "@/lib/roles";
@@ -14,6 +18,8 @@ import { proposalSla, type SlaLevel } from "./sla";
 export type ProposalListItem = {
   id: string;
   proposalNumber: string;
+  kind: ProposalKind;
+  endorsementType: EndorsementType | null;
   status: ProposalStatus;
   premiumNet: number | null;
   currency: string;
@@ -46,11 +52,13 @@ export async function listProposals(
   filters: ProposalListFilters = {},
 ): Promise<Paginated<ProposalListItem>> {
   const q = filters.q?.trim();
-  // Excluye las propuestas ya despachadas (con póliza vinculada): viven en la
-  // sección "Pólizas", no en el flujo de propuestas (obs 9).
+  // Excluye las propuestas ya despachadas (con póliza vinculada, o la propuesta
+  // de endoso ya despachada al cliente): viven en la sección "Pólizas", no en
+  // el flujo de propuestas (obs 9).
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
     policies: { none: {} },
+    dispatchedAt: null,
     ...(q
       ? {
           OR: [
@@ -70,6 +78,8 @@ export async function listProposals(
       select: {
         id: true,
         proposalNumber: true,
+        kind: true,
+        endorsementType: true,
         status: true,
         premiumNet: true,
         currency: true,
@@ -112,6 +122,7 @@ export async function listAllProposalsForKanban(
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
     policies: { none: {} },
+    dispatchedAt: null,
   };
   const rows = await db.proposal.findMany({
     where,
@@ -120,6 +131,8 @@ export async function listAllProposalsForKanban(
     select: {
       id: true,
       proposalNumber: true,
+      kind: true,
+      endorsementType: true,
       status: true,
       premiumNet: true,
       currency: true,
@@ -168,13 +181,29 @@ export async function getProposalDetail(db: Db, id: string) {
         orderBy: { createdAt: "asc" },
         take: 1,
       },
+      // Endoso registrado (propuesta de endoso ya despachada).
+      endorsement: { select: { id: true, endorsementNumber: true } },
     },
   });
   if (!proposal) return null;
   const dispatchedPolicy = proposal.policies[0] ?? null;
+  // Póliza endosada (propuesta de endoso).
+  const endorsedPolicy = proposal.endorsedPolicyId
+    ? await db.policy.findFirst({
+        where: { id: proposal.endorsedPolicyId },
+        select: {
+          id: true,
+          policyNumber: true,
+          status: true,
+          startDate: true,
+          endDate: true,
+        },
+      })
+    : null;
   return {
     ...proposal,
     dispatchedPolicy,
+    endorsedPolicy,
     pdfBytes: undefined, // No filtramos los bytes hacia el cliente.
     hasStoredPdf: Boolean(proposal.pdfBytes),
     premiumNet: proposal.premiumNet ? Number(proposal.premiumNet) : null,

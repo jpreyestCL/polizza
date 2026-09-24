@@ -52,6 +52,8 @@ export const policyFormSchema = z.object({
   startDate: z.string().default(""),
   endDate: z.string().default(""),
   assignedUserId: z.string().default(""),
+  // Vendedor cuya comisión se liquida sobre esta póliza.
+  salespersonId: z.string().default(""),
   items: z.array(policyItemSchema).default([]),
   coverages: z.array(policyCoverageSchema).default([]),
 });

@@ -119,6 +119,7 @@ export default async function PropuestaDetailPage({
     ? (members.find((m) => m.userId === proposal.assignedUserId)?.name ?? null)
     : null;
   const locked = isProposalLocked(proposal.status);
+  const isEndorsement = proposal.kind === "ENDOSO";
 
   const defaultInsured = proposal.insuredClientId
     ? (clients.find((c) => c.id === proposal.insuredClientId) ?? null)
@@ -133,12 +134,24 @@ export default async function PropuestaDetailPage({
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">
+              {isEndorsement ? "Propuesta de endoso " : ""}
               {formatProposalNumber(proposal.proposalNumber)}
             </h1>
             <ProposalStatusBadge status={proposal.status} />
           </div>
           <p className="text-sm text-muted-foreground">
             {proposal.client.name}
+            {isEndorsement && proposal.endorsedPolicy ? (
+              <>
+                {" · "}
+                <Link
+                  href={`/polizas/${proposal.endorsedPolicy.id}`}
+                  className="hover:text-primary hover:underline"
+                >
+                  Póliza N° {proposal.endorsedPolicy.policyNumber}
+                </Link>
+              </>
+            ) : null}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -169,6 +182,11 @@ export default async function PropuestaDetailPage({
             }))}
             status={proposal.status}
             hasStoredPdf={proposal.hasStoredPdf}
+            endorsement={
+              isEndorsement
+                ? { policyNumber: proposal.endorsedPolicy?.policyNumber ?? null }
+                : null
+            }
           />
           <ProposalStatusButton
             proposalId={id}
@@ -208,7 +226,31 @@ export default async function PropuestaDetailPage({
         timezone={ctx.organizationTimezone}
       />
 
-      {proposal.dispatchedPolicy ? (
+      {isEndorsement && proposal.dispatchedAt ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4">
+          <div>
+            <h2 className="text-base font-semibold">Endoso despachado</h2>
+            <p className="text-sm text-muted-foreground">
+              El endoso
+              {proposal.endorsement?.endorsementNumber
+                ? ` N° ${proposal.endorsement?.endorsementNumber}`
+                : ""}{" "}
+              está registrado en la póliza
+              {proposal.endorsedPolicy
+                ? ` N° ${proposal.endorsedPolicy.policyNumber}`
+                : ""}
+              .
+            </p>
+          </div>
+          {proposal.endorsedPolicy ? (
+            <Button asChild variant="outline">
+              <Link href={`/polizas/${proposal.endorsedPolicy.id}`}>
+                Ver póliza
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      ) : proposal.dispatchedPolicy ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4">
           <div>
             <h2 className="text-base font-semibold">Póliza despachada</h2>
@@ -225,11 +267,21 @@ export default async function PropuestaDetailPage({
         </div>
       ) : (
         <>
-          <PolicyReceptionPanel proposalId={id} status={proposal.status} />
+          <PolicyReceptionPanel
+            proposalId={id}
+            status={proposal.status}
+            kind={proposal.kind}
+            defaultEffectiveDate={
+              proposal.startDate
+                ? proposal.startDate.toISOString().slice(0, 10)
+                : ""
+            }
+          />
 
           <PolicyDispatchPanel
             proposalId={id}
             status={proposal.status}
+            kind={proposal.kind}
             defaultEmail={
               proposal.contratanteEmail ?? proposal.client?.email ?? null
             }
@@ -241,6 +293,9 @@ export default async function PropuestaDetailPage({
         </>
       )}
 
+      {/* Una propuesta de endoso no lleva ítems ni plan de pago propios: el
+          cambio se describe en el detalle del endoso. */}
+      {!isEndorsement && (
       <ProposalItemsPanel
         proposalId={id}
         productId={proposal.productId ?? null}
@@ -259,7 +314,9 @@ export default async function PropuestaDetailPage({
         defaultCommissionExemptPct={proposal.commissionExemptPct}
         locked={locked}
       />
+      )}
 
+      {!isEndorsement && (
       <PaymentPlanPanel
         proposalId={id}
         currency={proposal.currency}
@@ -320,6 +377,7 @@ export default async function PropuestaDetailPage({
             : null
         }
       />
+      )}
 
       <BitacoraPanel
         proposalId={id}

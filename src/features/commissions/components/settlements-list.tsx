@@ -64,7 +64,7 @@ export function SettlementsList({
               <TableRow key={r.id}>
                 <TableCell className="font-medium">
                   <Link
-                    href={`/comisiones/liquidaciones/${r.id}`}
+                    href={`/liquidaciones-vendedores/${r.id}`}
                     className="hover:text-primary"
                   >
                     #{r.number}

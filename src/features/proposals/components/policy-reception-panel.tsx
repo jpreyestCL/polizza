@@ -33,9 +33,15 @@ import {
 export function PolicyReceptionPanel({
   proposalId,
   status,
+  kind = "POLIZA",
+  defaultEffectiveDate = "",
 }: {
   proposalId: string;
   status: string;
+  /** ENDOSO: se recepciona el endoso emitido (N° de endoso). */
+  kind?: string;
+  /** ENDOSO: inicio de vigencia propuesto (se confirma con el emitido). */
+  defaultEffectiveDate?: string;
 }) {
   const router = useRouter();
   // Tras una devolución (obs 17) el flujo natural es registrar la emisión
@@ -48,6 +54,7 @@ export function PolicyReceptionPanel({
   const [emissionDate, setEmissionDate] = useState("");
   const [receptionDate, setReceptionDate] = useState("");
   const [note, setNote] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState(defaultEffectiveDate);
 
   // Error de emisión
   const [reason, setReason] = useState<EmissionErrorReason | "">("");
@@ -61,6 +68,10 @@ export function PolicyReceptionPanel({
   // póliza fue devuelta con error y se está a la espera de la corrección
   // (DEVUELTA, obs 17).
   if (status !== "ENVIADA_COMPANIA" && status !== "DEVUELTA") return null;
+  const isEndorsement = kind === "ENDOSO";
+  const numberLabel = isEndorsement
+    ? "N° de endoso emitido *"
+    : "N° de póliza generado *";
 
   async function submitOk() {
     const parsed = policyReceptionSchema.safeParse({
@@ -68,6 +79,7 @@ export function PolicyReceptionPanel({
       emissionDate,
       receptionDate,
       note,
+      effectiveDate: kind === "ENDOSO" ? effectiveDate : "",
     });
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Datos inválidos");
@@ -80,7 +92,11 @@ export function PolicyReceptionPanel({
       toast.error(r.error);
       return;
     }
-    toast.success("Póliza registrada. Propuesta lista por despachar.");
+    toast.success(
+      isEndorsement
+        ? "Endoso registrado en la póliza. Listo para despachar al cliente."
+        : "Póliza registrada. Propuesta lista por despachar.",
+    );
     router.refresh();
   }
 
@@ -112,13 +128,34 @@ export function PolicyReceptionPanel({
         <FileCheck2 className="size-4 text-muted-foreground" />
         <h2 className="text-base font-semibold">
           {isReturned
-            ? "Corrección de la póliza devuelta"
-            : "Recepción de la póliza"}
+            ? `Corrección ${isEndorsement ? "del endoso devuelto" : "de la póliza devuelta"}`
+            : `Recepción ${isEndorsement ? "del endoso" : "de la póliza"}`}
         </h2>
       </div>
       <div className="space-y-4 p-4">
         <p className="text-sm text-muted-foreground">
-          {isReturned ? (
+          {isEndorsement ? (
+            isReturned ? (
+              <>
+                El endoso fue devuelto a la compañía por un error de emisión.
+                Cuando envíen el endoso corregido, revísalo y registra aquí la{" "}
+                <strong>emisión correcta</strong> (queda{" "}
+                <strong>Por despachar</strong>). Sube el PDF del endoso como
+                documento tipo “Endoso”.
+              </>
+            ) : (
+              <>
+                A la espera de que la compañía emita el endoso. Revisa que se
+                emitió bien y registra la emisión correcta: el endoso queda
+                registrado en la póliza (una cancelación o anulación cambia su
+                estado ahora, con vigencia desde el inicio del endoso) y la
+                propuesta queda <strong>Por despachar</strong> al cliente. Si
+                vino con error, regístralo (queda{" "}
+                <strong>Devuelta a la cía</strong>). Sube el PDF del endoso en
+                la pestaña Documentos como tipo “Endoso”.
+              </>
+            )
+          ) : isReturned ? (
             <>
               La póliza fue devuelta a la compañía por un error de emisión.
               Cuando envíen la póliza corregida, registra aquí la{" "}
@@ -166,7 +203,7 @@ export function PolicyReceptionPanel({
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <Label className="text-xs">N° de póliza generado *</Label>
+                <Label className="text-xs">{numberLabel}</Label>
                 <Input
                   value={policyNumber}
                   onChange={(e) => setPolicyNumber(e.target.value)}
@@ -189,6 +226,20 @@ export function PolicyReceptionPanel({
                   onChange={(e) => setReceptionDate(e.target.value)}
                 />
               </div>
+              {isEndorsement ? (
+                <div>
+                  <Label className="text-xs">Inicio vigencia del endoso *</Label>
+                  <Input
+                    type="date"
+                    value={effectiveDate}
+                    onChange={(e) => setEffectiveDate(e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Según el endoso emitido. Desde esta fecha rige la
+                    cancelación o anulación.
+                  </p>
+                </div>
+              ) : null}
             </div>
             <div>
               <Label className="text-xs">Nota (opcional)</Label>
@@ -213,7 +264,7 @@ export function PolicyReceptionPanel({
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
-                <Label className="text-xs">N° de póliza generado *</Label>
+                <Label className="text-xs">{numberLabel}</Label>
                 <Input
                   value={errPolicyNumber}
                   onChange={(e) => setErrPolicyNumber(e.target.value)}
