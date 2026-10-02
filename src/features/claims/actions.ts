@@ -10,6 +10,21 @@ import { canDeleteClaim } from "@/lib/roles";
 import { hasPermission } from "@/lib/factory-roles";
 import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import {
+  addCalendarDays,
+  adjustmentLegalDeadline,
+  canReopenClaim,
+  canVoidClaim,
+  claimTransitionError,
+  closeDeadline,
+  closedOnTime,
+  closureOutcomeError,
+  defaultSubstatus,
+  disputeDeadline,
+  isClaimOpen,
+  substatusError,
+  type ClaimStatusValue,
+} from "@/lib/domain/claim-lifecycle";
+import {
   claimStepDueDate,
   claimWorkflow,
   claimWorkflowFamily,
@@ -60,6 +75,35 @@ function tribool(value: string): boolean | null {
   return null;
 }
 
+const ADJUSTER_FOLLOWUP = "Pedir al liquidador el informe o la prórroga";
+
+/** 45 días; 90 si la prima anual de la póliza supera 100 UF; 180 en casco. */
+async function adjustmentContext(
+  db: Awaited<ReturnType<typeof requireOrgDb>>["db"],
+  claim: { policyId: string | null; branchTypeId: string | null },
+): Promise<{ annualPremiumUf: number | null; hull: boolean }> {
+  let annualPremiumUf: number | null = null;
+  let hull = false;
+  if (claim.policyId) {
+    const policy = await db.policy.findFirst({
+      where: { id: claim.policyId },
+      select: { premiumNet: true, currency: true },
+    });
+    if (policy?.currency === "UF" && policy.premiumNet != null) {
+      annualPremiumUf = Number(policy.premiumNet);
+    }
+  }
+  if (claim.branchTypeId) {
+    const branch = await db.branchType.findFirst({
+      where: { id: claim.branchTypeId },
+      select: { key: true, name: true },
+    });
+    const text = `${branch?.key ?? ""} ${branch?.name ?? ""}`.toLowerCase();
+    hull = text.includes("casco") || text.includes("averia") || text.includes("avería");
+  }
+  return { annualPremiumUf, hull };
+}
+
 function intOrNull(value: string): number | null {
   if (!value) return null;
   const n = Number(value);
@@ -97,6 +141,9 @@ export async function createClaimAction(
   }
   const data = parsed.data;
   const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "claims.write")) {
+    return { ok: false, error: "No tienes permiso para registrar siniestros." };
+  }
 
   const policy = await db.policy.findFirst({
     where: { id: data.policyId },
@@ -130,7 +177,9 @@ export async function createClaimAction(
             claimNumber,
             folderNumber,
             description: sanitizeRichText(data.description),
-            status: "REPORTADO",
+            status: "REPORTED",
+            substatusCode: "REPORT_PENDING_SEND",
+            closeDeadline: closeDeadline(new Date()),
             currency: "UF",
             assignedUserId: ctx.userId,
             createdById: ctx.userId,
@@ -144,8 +193,8 @@ export async function createClaimAction(
           data: {
             organizationId: ctx.organizationId,
             claimId: created.id,
-            status: "REPORTADO",
-            note: "Siniestro reportado",
+            status: "REPORTED",
+            note: "Aviso recibido. Falta enviarlo a la compañía.",
             changedById: ctx.userId,
           },
         });
@@ -233,18 +282,31 @@ export async function updateClaimDetailsAction(
 
   const existing = await db.claim.findFirst({
     where: { id },
-    select: { id: true, claimNumber: true },
+    select: { id: true, claimNumber: true, status: true },
   });
   if (!existing) {
     return { ok: false, error: "El siniestro no existe o no tienes acceso." };
   }
+  if (
+    (existing.status === "CLOSED" || existing.status === "VOID") &&
+    !hasPermission(ctx.role, "claims.edit_closed")
+  ) {
+    return {
+      ok: false,
+      error: "Un siniestro cerrado o anulado solo se edita con permiso, o reabriendo el cerrado.",
+    };
+  }
+  const notifiedAt = parseDate(data.reportedAtBroker);
 
   await db.claim.update({
     where: { id },
     data: {
       entryParty: data.entryParty === "" ? null : data.entryParty,
       entryChannel: data.entryChannel === "" ? null : data.entryChannel,
-      reportedAtBroker: parseDate(data.reportedAtBroker),
+      reportedAtBroker: notifiedAt,
+      ...(notifiedAt && isClaimOpen(existing.status)
+        ? { closeDeadline: closeDeadline(notifiedAt) }
+        : {}),
 
       reporterRut: emptyToNull(data.reporterRut),
       reporterFirstName: emptyToNull(data.reporterFirstName),
@@ -317,6 +379,10 @@ export async function updateClaimCompanyInfoAction(
   const data = parsed.data;
   const { ctx, db } = await requireOrgDb();
 
+  if (!hasPermission(ctx.role, "claims.write")) {
+    return { ok: false, error: "No tienes permiso para registrar el denuncio en la compañía." };
+  }
+
   const existing = await db.claim.findFirst({
     where: { id },
     select: {
@@ -326,15 +392,38 @@ export async function updateClaimCompanyInfoAction(
       liquidatorName: true,
       filedAtCompanyAt: true,
       status: true,
+      policyId: true,
+      branchTypeId: true,
+      adjustmentLegalDeadline: true,
     },
   });
   if (!existing) {
     return { ok: false, error: "El siniestro no existe o no tienes acceso." };
   }
+  if (existing.status === "VOID" || existing.status === "CLOSED") {
+    return { ok: false, error: "INVALID_TRANSITION: el denuncio cerrado o anulado no se reenvía." };
+  }
 
   const newCompanyClaim = emptyToNull(data.companyClaimNumber);
   const newLiquidator = emptyToNull(data.liquidatorName);
   const newFiledAt = parseDate(data.filedAtCompanyAt);
+  const preventive = tribool(data.isPreventive);
+  const willAssign =
+    Boolean(newCompanyClaim && newLiquidator) &&
+    (existing.status === "AWAITING_ASSIGNMENT" ||
+      (existing.status === "REPORTED" && Boolean(newFiledAt)));
+  if (willAssign && preventive === null) {
+    return {
+      ok: false,
+      error: "La asignación indica si el siniestro es preventivo.",
+    };
+  }
+
+  const legalInput = await adjustmentContext(db, existing);
+  const filedBase = newFiledAt ?? existing.filedAtCompanyAt;
+  const legalDeadline = filedBase
+    ? adjustmentLegalDeadline(filedBase, legalInput)
+    : existing.adjustmentLegalDeadline;
 
   await db.claim.update({
     where: { id },
@@ -342,6 +431,7 @@ export async function updateClaimCompanyInfoAction(
       companyClaimNumber: newCompanyClaim,
       liquidatorName: newLiquidator,
       filedAtCompanyAt: newFiledAt,
+      ...(preventive === null ? {} : { isPreventive: preventive }),
     },
   });
 
@@ -351,15 +441,17 @@ export async function updateClaimCompanyInfoAction(
       organizationId: ctx.organizationId,
       claimId: id,
       kind: "COMPANY_FILED",
-      message: "Denuncio ingresado en la compañía",
+      message: "Denuncio enviado a la compañía",
       userId: ctx.userId,
     });
-    if (existing.status === "REPORTADO") {
+    if (existing.status === "REPORTED") {
       await db.$transaction([
         db.claim.update({
           where: { id },
           data: {
-            status: "INGRESADO_COMPANIA",
+            status: "AWAITING_ASSIGNMENT",
+            substatusCode: "AWAITING_INSURER_ASSIGNMENT",
+            adjustmentLegalDeadline: legalDeadline,
             currentStateStartedAt: new Date(),
           },
         }),
@@ -367,13 +459,55 @@ export async function updateClaimCompanyInfoAction(
           data: {
             organizationId: ctx.organizationId,
             claimId: id,
-            status: "INGRESADO_COMPANIA",
-            note: "Ingresado automáticamente al registrar fecha de ingreso en compañía",
+            status: "AWAITING_ASSIGNMENT",
+            note: "Denuncio enviado a la compañía",
             changedById: ctx.userId,
           },
         }),
       ]);
     }
+  }
+  const sentNow =
+    Boolean(newFiledAt) && !existing.filedAtCompanyAt && existing.status === "REPORTED";
+  const statusAfterSend = sentNow ? "AWAITING_ASSIGNMENT" : existing.status;
+  if (newCompanyClaim && newLiquidator && statusAfterSend === "AWAITING_ASSIGNMENT") {
+    const followUpOn = legalDeadline ? addCalendarDays(legalDeadline, -5) : null;
+    await db.$transaction(async (tx) => {
+      await tx.claim.update({
+        where: { id },
+        data: {
+          status: "IN_ADJUSTMENT",
+          substatusCode: "REPORTED_AND_ASSIGNED",
+          isPreventive: preventive ?? false,
+          currentStateStartedAt: new Date(),
+        },
+      });
+      await tx.claimStatusHistory.create({
+        data: {
+          organizationId: ctx.organizationId,
+          claimId: id,
+          status: "IN_ADJUSTMENT",
+          note: "La compañía asignó número y liquidador",
+          changedById: ctx.userId,
+        },
+      });
+      if (followUpOn) {
+        await tx.task.create({
+          data: {
+            organizationId: ctx.organizationId,
+            title: ADJUSTER_FOLLOWUP,
+            description: "Cinco días antes del plazo legal del informe de liquidación.",
+            entityType: "CLAIM",
+            entityId: id,
+            assignedUserId: ctx.userId,
+            dueDate: followUpOn,
+            priority: "ALTA",
+            status: "PENDIENTE",
+            createdById: ctx.userId,
+          },
+        });
+      }
+    });
   }
   if (newCompanyClaim && newCompanyClaim !== existing.companyClaimNumber) {
     await logClaimEvent({
@@ -420,29 +554,122 @@ export async function changeClaimStatusAction(
   }
   const data = parsed.data;
   const { ctx, db } = await requireOrgDb();
+  const needed = data.status === "CLOSED" ? "claims.close" : "claims.write";
+  if (!hasPermission(ctx.role, needed)) {
+    return {
+      ok: false,
+      error:
+        data.status === "CLOSED"
+          ? "No tienes permiso para cerrar el siniestro."
+          : "No tienes permiso para mover el siniestro.",
+    };
+  }
 
   const claim = await db.claim.findFirst({
     where: { id },
-    select: { id: true, status: true, claimNumber: true, voidedAt: true },
+    select: {
+      id: true,
+      status: true,
+      claimNumber: true,
+      voidedAt: true,
+      companyClaimNumber: true,
+      liquidatorName: true,
+      filedAtCompanyAt: true,
+      closeDeadline: true,
+      policyId: true,
+      branchTypeId: true,
+      settledAmount: true,
+      adjustmentLegalDeadline: true,
+    },
   });
   if (!claim) {
     return { ok: false, error: "El siniestro no existe o no tienes acceso." };
   }
-  if (claim.voidedAt) {
+  if (claim.status === "VOID" || claim.voidedAt) {
     return {
       ok: false,
-      error: "INVALID_TRANSITION: el siniestro está anulado. Primero hay que reabrirlo.",
+      error: "INVALID_TRANSITION: un siniestro anulado no se reabre. La anulación es terminal.",
     };
   }
-  if (claim.status === data.status) {
-    return { ok: false, error: "El siniestro ya está en ese estado." };
+  const transitionError = claimTransitionError(claim.status, data.status);
+  if (transitionError) return { ok: false, error: transitionError };
+  if (data.status === "AWAITING_ASSIGNMENT" && !claim.filedAtCompanyAt) {
+    return {
+      ok: false,
+      error: "Registra la fecha en que el denuncio se envió a la compañía.",
+    };
+  }
+  if (
+    data.status === "IN_ADJUSTMENT" &&
+    (!claim.companyClaimNumber || !claim.liquidatorName)
+  ) {
+    return {
+      ok: false,
+      error: "La asignación necesita el número de siniestro de la compañía y el liquidador.",
+    };
+  }
+  if (data.status === "PAYMENT_PROCESS" && !(Number(claim.settledAmount) > 0)) {
+    return {
+      ok: false,
+      error: "El proceso de pago exige una indemnización mayor a cero.",
+    };
+  }
+  if (data.status === "CLOSED") {
+    const outcomeError = closureOutcomeError(claim.status, data.closureOutcome);
+    if (outcomeError) return { ok: false, error: outcomeError };
   }
 
+  const legalInput =
+    data.status === "AWAITING_ASSIGNMENT"
+      ? await adjustmentContext(db, claim)
+      : null;
+  const closing = data.status === "CLOSED" ? new Date() : null;
   await db.$transaction(async (tx) => {
     await tx.claim.update({
       where: { id },
-      data: { status: data.status, currentStateStartedAt: new Date() },
+      data: {
+        status: data.status,
+        substatusCode: defaultSubstatus(data.status as ClaimStatusValue),
+        currentStateStartedAt: new Date(),
+        ...(data.status === "AWAITING_ASSIGNMENT" && claim.filedAtCompanyAt && legalInput
+          ? {
+              adjustmentLegalDeadline: adjustmentLegalDeadline(
+                claim.filedAtCompanyAt,
+                legalInput,
+              ),
+            }
+          : {}),
+        ...(closing
+          ? {
+              closureOutcome: data.closureOutcome,
+              closedAt: closing,
+              closedOnTime: closedOnTime(closing, claim.closeDeadline),
+            }
+          : {}),
+      },
     });
+    if (data.status === "IN_ADJUSTMENT" && claim.adjustmentLegalDeadline) {
+      const already = await tx.task.findFirst({
+        where: { entityType: "CLAIM", entityId: id, title: ADJUSTER_FOLLOWUP },
+        select: { id: true },
+      });
+      if (!already) {
+        await tx.task.create({
+          data: {
+            organizationId: ctx.organizationId,
+            title: ADJUSTER_FOLLOWUP,
+            description: "Cinco días antes del plazo legal del informe de liquidación.",
+            entityType: "CLAIM",
+            entityId: id,
+            assignedUserId: ctx.userId,
+            dueDate: addCalendarDays(claim.adjustmentLegalDeadline, -5),
+            priority: "ALTA",
+            status: "PENDIENTE",
+            createdById: ctx.userId,
+          },
+        });
+      }
+    }
     await tx.claimStatusHistory.create({
       data: {
         organizationId: ctx.organizationId,
@@ -638,15 +865,26 @@ export async function voidClaimFormAction(form: FormData): Promise<void> {
   }
   const claim = await db.claim.findFirst({
     where: { id },
-    select: { id: true, claimNumber: true, voidedAt: true },
+    select: { id: true, claimNumber: true, status: true, voidedAt: true },
   });
   if (!claim) redirect(`/siniestros/${id}?aviso=${encodeURIComponent("El siniestro no existe.")}`);
-  if (claim.voidedAt) {
-    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("El siniestro ya está anulado.")}`);
+  if (!canVoidClaim(claim.status) || claim.voidedAt) {
+    redirect(
+      `/siniestros/${id}?aviso=${encodeURIComponent("INVALID_TRANSITION: solo se anula un aviso que todavía no está en liquidación.")}`,
+    );
   }
   await db.claim.update({
     where: { id },
-    data: { voidedAt: new Date(), voidReason: reason.trim() },
+    data: { status: "VOID", voidedAt: new Date(), voidReason: reason.trim() },
+  });
+  await db.claimStatusHistory.create({
+    data: {
+      organizationId: ctx.organizationId,
+      claimId: id,
+      status: "VOID",
+      note: reason.trim(),
+      changedById: ctx.userId,
+    },
   });
   await db.claimLog.create({
     data: {
@@ -680,24 +918,40 @@ export async function reopenClaimFormAction(form: FormData): Promise<void> {
   if (!hasPermission(ctx.role, "claims.reopen")) {
     redirect(`/siniestros/${id}?aviso=${encodeURIComponent("No tienes permiso para reabrir el siniestro.")}`);
   }
+  const target = String(form.get("target") ?? "IN_ADJUSTMENT");
   const claim = await db.claim.findFirst({
     where: { id },
-    select: { id: true, claimNumber: true, status: true, voidedAt: true },
+    select: { id: true, claimNumber: true, status: true, reopenCount: true },
   });
   if (!claim) redirect(`/siniestros/${id}?aviso=${encodeURIComponent("El siniestro no existe.")}`);
-  if (!claim.voidedAt && claim.status !== "CERRADO") {
+  if (!canReopenClaim(claim.status)) {
     redirect(
-      `/siniestros/${id}?aviso=${encodeURIComponent("INVALID_TRANSITION: solo se reabre un siniestro cerrado o anulado.")}`,
+      `/siniestros/${id}?aviso=${encodeURIComponent("INVALID_TRANSITION: solo se reabre un siniestro cerrado. El anulado no vuelve.")}`,
     );
+  }
+  if (target !== "IN_ADJUSTMENT" && target !== "PAYMENT_PROCESS") {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("El nuevo estado tiene que ser liquidación o proceso de pago.")}`);
   }
   await db.claim.update({
     where: { id },
     data: {
-      voidedAt: null,
-      voidReason: null,
       reopenedAt: new Date(),
-      status: "EN_EVALUACION",
+      reopenCount: claim.reopenCount + 1,
+      status: target,
+      substatusCode: defaultSubstatus(target),
+      closedAt: null,
+      closedOnTime: null,
+      closureOutcome: null,
       currentStateStartedAt: new Date(),
+    },
+  });
+  await db.claimStatusHistory.create({
+    data: {
+      organizationId: ctx.organizationId,
+      claimId: id,
+      status: target,
+      note: reason.trim(),
+      changedById: ctx.userId,
     },
   });
   await db.claimLog.create({
@@ -711,6 +965,89 @@ export async function reopenClaimFormAction(form: FormData): Promise<void> {
   });
   revalidatePath(`/siniestros/${id}`);
   redirect(`/siniestros/${id}?aviso=${encodeURIComponent("Siniestro reabierto.")}`);
+}
+
+export async function setClaimSubstatusAction(form: FormData): Promise<void> {
+  const id = String(form.get("claimId") ?? "");
+  const substatus = String(form.get("substatus") ?? "");
+  const reportOn = String(form.get("finalReportOn") ?? "");
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "claims.write")) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("No tienes permiso para liquidar el siniestro.")}`);
+  }
+  const claim = await db.claim.findFirst({
+    where: { id },
+    select: { id: true, status: true },
+  });
+  if (!claim || !isClaimOpen(claim.status)) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("INVALID_TRANSITION: el subestado solo cambia en un siniestro abierto.")}`);
+  }
+  const error = substatusError(claim.status, substatus);
+  if (error) redirect(`/siniestros/${id}?aviso=${encodeURIComponent(error)}`);
+  const reportDate = reportOn ? new Date(`${reportOn}T00:00:00.000Z`) : null;
+  if (reportOn && (!reportDate || Number.isNaN(reportDate.getTime()))) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("La fecha del informe final no es válida.")}`);
+  }
+  await db.claim.update({
+    where: { id },
+    data: {
+      substatusCode: substatus,
+      isDisputed: substatus === "DISPUTED",
+      ...(reportDate
+        ? {
+            finalReportReceivedAt: reportDate,
+            disputeDeadline: disputeDeadline(reportDate),
+          }
+        : {}),
+    },
+  });
+  revalidatePath(`/siniestros/${id}`);
+  redirect(`/siniestros/${id}?aviso=${encodeURIComponent("Subestado actualizado.")}`);
+}
+
+export async function extendAdjustmentAction(form: FormData): Promise<void> {
+  const id = String(form.get("claimId") ?? "");
+  const reason = String(form.get("reason") ?? "");
+  const next = String(form.get("newDeadline") ?? "");
+  const reasonError = sensitiveReasonError(reason);
+  if (reasonError) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent(reasonError)}`);
+  }
+  const newDeadline = new Date(`${next}T00:00:00.000Z`);
+  if (!next || Number.isNaN(newDeadline.getTime())) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("La prórroga necesita una fecha.")}`);
+  }
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "claims.write")) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("No tienes permiso para prorrogar la liquidación.")}`);
+  }
+  const claim = await db.claim.findFirst({
+    where: { id },
+    select: { id: true, status: true, adjustmentLegalDeadline: true },
+  });
+  if (!claim || !isClaimOpen(claim.status) || !claim.adjustmentLegalDeadline) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("La prórroga aplica cuando ya hay un plazo legal de liquidación.")}`);
+  }
+  if (newDeadline.getTime() <= claim.adjustmentLegalDeadline.getTime()) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("La nueva fecha tiene que ser posterior al plazo vigente.")}`);
+  }
+  await db.claimAdjustmentExtension.create({
+    data: {
+      organizationId: ctx.organizationId,
+      claimId: id,
+      requestedOn: new Date(),
+      previousDeadline: claim.adjustmentLegalDeadline,
+      newDeadline,
+      reason: reason.trim(),
+      createdById: ctx.userId,
+    },
+  });
+  await db.claim.update({
+    where: { id },
+    data: { adjustmentLegalDeadline: newDeadline },
+  });
+  revalidatePath(`/siniestros/${id}`);
+  redirect(`/siniestros/${id}?aviso=${encodeURIComponent("Prórroga registrada. El plazo legal quedó en la fecha nueva.")}`);
 }
 
 export async function searchPoliciesForClaimAction(

@@ -10,13 +10,12 @@ type BadgeVariant =
   | "muted";
 
 const STATUS_VARIANT: Record<ClaimStatusValue, BadgeVariant> = {
-  REPORTADO: "secondary",
-  INGRESADO_COMPANIA: "warning",
-  EN_EVALUACION: "default",
-  APROBADO: "success",
-  RECHAZADO: "destructive",
-  PAGADO: "success",
-  CERRADO: "muted",
+  REPORTED: "secondary",
+  AWAITING_ASSIGNMENT: "warning",
+  IN_ADJUSTMENT: "default",
+  PAYMENT_PROCESS: "warning",
+  CLOSED: "muted",
+  VOID: "destructive",
 };
 
 export function ClaimStatusBadge({ status }: { status: string }) {

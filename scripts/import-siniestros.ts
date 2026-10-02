@@ -91,12 +91,14 @@ function canonicalBranchName(raw: string): string | null {
   if (up.includes("INGENIER")) return "Riesgo de Ingeniería";
   return null;
 }
-function mapStatus(estado: string): "REPORTADO" | "INGRESADO_COMPANIA" | "EN_EVALUACION" | "APROBADO" | "RECHAZADO" | "PAGADO" | "CERRADO" {
+function mapStatus(estado: string): "REPORTED" | "AWAITING_ASSIGNMENT" | "IN_ADJUSTMENT" | "PAYMENT_PROCESS" | "CLOSED" | "VOID" {
   const e = estado.toLowerCase();
-  if (e.includes("cerrado")) return "CERRADO";
-  if (e.includes("liquidación") || e.includes("liquidacion")) return "EN_EVALUACION";
-  if (e.includes("pago")) return "APROBADO";
-  return "REPORTADO";
+  if (e.includes("anul")) return "VOID";
+  if (e.includes("cerrado")) return "CLOSED";
+  if (e.includes("liquidación") || e.includes("liquidacion")) return "IN_ADJUSTMENT";
+  if (e.includes("pago")) return "PAYMENT_PROCESS";
+  if (e.includes("asign")) return "AWAITING_ASSIGNMENT";
+  return "REPORTED";
 }
 
 async function main() {

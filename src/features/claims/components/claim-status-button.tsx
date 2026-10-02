@@ -6,10 +6,15 @@ import { toast } from "sonner";
 import { ArrowLeftRight, Loader2 } from "lucide-react";
 import { changeClaimStatusAction } from "../actions";
 import {
-  CLAIM_STATUSES,
   CLAIM_STATUS_LABELS,
+  CLOSURE_OUTCOME_LABELS,
   type ClaimStatusValue,
+  type ClosureOutcome,
 } from "../schemas";
+import {
+  closureOutcomesFor,
+  nextClaimStatuses,
+} from "@/lib/domain/claim-lifecycle";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -38,20 +43,27 @@ export function ClaimStatusButton({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [status, setStatus] = useState<ClaimStatusValue>(currentStatus);
+  const options = nextClaimStatuses(currentStatus);
+  const [status, setStatus] = useState<ClaimStatusValue>(options[0] ?? currentStatus);
+  const [outcome, setOutcome] = useState("");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setStatus(currentStatus);
+      setStatus(nextClaimStatuses(currentStatus)[0] ?? currentStatus);
+      setOutcome("");
       setNote("");
     }
   }, [open, currentStatus]);
 
   async function handleSubmit() {
     setLoading(true);
-    const result = await changeClaimStatusAction(claimId, { status, note });
+    const result = await changeClaimStatusAction(claimId, {
+      status,
+      note,
+      closureOutcome: outcome,
+    });
     setLoading(false);
     if (!result.ok) {
       toast.error(result.error);
@@ -61,6 +73,9 @@ export function ClaimStatusButton({
     setOpen(false);
     router.refresh();
   }
+
+  if (options.length === 0) return null;
+  const outcomes = closureOutcomesFor(status);
 
   return (
     <>
@@ -89,7 +104,7 @@ export function ClaimStatusButton({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CLAIM_STATUSES.map((value) => (
+                  {options.map((value) => (
                     <SelectItem key={value} value={value}>
                       {CLAIM_STATUS_LABELS[value]}
                     </SelectItem>
@@ -97,6 +112,23 @@ export function ClaimStatusButton({
                 </SelectContent>
               </Select>
             </div>
+            {outcomes.length > 0 ? (
+              <div className="space-y-1.5">
+                <Label>Resultado del cierre</Label>
+                <Select value={outcome} onValueChange={setOutcome}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Elige el resultado" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {outcomes.map((value: ClosureOutcome) => (
+                      <SelectItem key={value} value={value}>
+                        {CLOSURE_OUTCOME_LABELS[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="claim-status-note">Nota (opcional)</Label>
               <RichTextEditor

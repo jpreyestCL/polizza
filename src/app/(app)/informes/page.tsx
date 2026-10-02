@@ -13,13 +13,12 @@ const MOVEMENT_LABELS: Record<string, string> = {
 };
 
 const CLAIM_LABELS: Record<string, string> = {
-  REPORTADO: "Reportado",
-  INGRESADO_COMPANIA: "Ingresado en compañía",
-  EN_EVALUACION: "En evaluación",
-  APROBADO: "Aprobado",
-  RECHAZADO: "Rechazado",
-  PAGADO: "Pagado",
-  CERRADO: "Cerrado",
+  REPORTED: "Aviso recibido, no enviado",
+  AWAITING_ASSIGNMENT: "Denunciado, espera asignación",
+  IN_ADJUSTMENT: "En liquidación",
+  PAYMENT_PROCESS: "Proceso de pago",
+  CLOSED: "Cerrado",
+  VOID: "Anulado",
 };
 
 function pct(value: number | null): string {

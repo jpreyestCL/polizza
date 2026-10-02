@@ -199,6 +199,7 @@ export async function getReportsSnapshot(
       where: taskScope,
       select: {
         status: true,
+        closureOutcome: true,
         currency: true,
         settledAmount: true,
         estimatedAmount: true,
@@ -276,7 +277,7 @@ export async function getReportsSnapshot(
     .map((row) => ({ status: row.status, count: row._count._all }))
     .sort((a, b) => b.count - a.count);
   const claimsOpen = claimsByStatus
-    .filter((row) => row.status !== "CERRADO")
+    .filter((row) => row.status !== "CLOSED" && row.status !== "VOID")
     .reduce((sum, row) => sum + row.count, 0);
 
   const productionMap = new Map<string, ProductionRow>();
@@ -343,20 +344,17 @@ export async function getReportsSnapshot(
   }
   const paidByCurrency = new Map<string, number>();
   const openByCurrency = new Map<string, number>();
-  const openClaimStatuses = new Set([
-    "REPORTADO",
-    "INGRESADO_COMPANIA",
-    "EN_EVALUACION",
-    "APROBADO",
-  ]);
   for (const claim of claimAmounts) {
     const currency = claim.currency || "UF";
-    if (claim.status === "PAGADO") {
+    const paid =
+      claim.status === "CLOSED" &&
+      (claim.closureOutcome === "PAID" || claim.closureOutcome === "REPAIRED");
+    if (paid) {
       paidByCurrency.set(
         currency,
         (paidByCurrency.get(currency) ?? 0) + Number(claim.settledAmount ?? 0),
       );
-    } else if (openClaimStatuses.has(claim.status)) {
+    } else if (claim.status !== "CLOSED" && claim.status !== "VOID") {
       openByCurrency.set(
         currency,
         (openByCurrency.get(currency) ?? 0) + Number(claim.estimatedAmount ?? 0),

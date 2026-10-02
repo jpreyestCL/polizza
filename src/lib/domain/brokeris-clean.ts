@@ -187,7 +187,7 @@ export function mapClaimSubstatus(
 ): { status: string; note: string | null } {
   const mapped = known[code];
   if (mapped) return { status: mapped, note: null };
-  return { status: "REPORTADO", note: `Subestado sin mapa: ${code}` };
+  return { status: "REPORTED", note: `Subestado sin mapa: ${code}` };
 }
 
 /** L16. La fecha del hecho se conserva. La de registro es la de la migración. */

@@ -1445,13 +1445,12 @@ model DocumentVersion {
 // ─────────────────────────────────────────────────────────────
 
 enum ClaimStatus {
-  REPORTADO
-  INGRESADO_COMPANIA
-  EN_EVALUACION
-  APROBADO
-  RECHAZADO
-  PAGADO
-  CERRADO
+  REPORTED
+  AWAITING_ASSIGNMENT
+  IN_ADJUSTMENT
+  PAYMENT_PROCESS
+  CLOSED
+  VOID
 }
 
 enum ClaimEntryParty {
@@ -1498,7 +1497,18 @@ model Claim {
   companyClaimNumber    String?
   liquidatorName        String?
   description           String
-  status                ClaimStatus @default(REPORTADO)
+  status                ClaimStatus @default(REPORTED)
+  substatusCode         String?
+  closureOutcome        String?
+  adjustmentLegalDeadline DateTime? @db.Date
+  closeDeadline         DateTime?   @db.Date
+  closedAt              DateTime?
+  closedOnTime          Boolean?
+  reopenCount           Int         @default(0)
+  finalReportReceivedAt DateTime?   @db.Date
+  disputeDeadline       DateTime?   @db.Date
+  isDisputed            Boolean     @default(false)
+  isPreventive          Boolean     @default(false)
   currency              String      @default("UF")
   estimatedAmount       Decimal?    @db.Decimal(14, 2)
   settledAmount         Decimal?    @db.Decimal(14, 2)
@@ -1556,12 +1566,30 @@ model Claim {
   statusHistory ClaimStatusHistory[]
   thirdParties  ClaimThirdParty[]
   logs          ClaimLog[]
+  extensions    ClaimAdjustmentExtension[]
 
   @@unique([organizationId, claimNumber])
   @@unique([organizationId, folderNumber])
   @@index([organizationId])
   @@index([clientId])
   @@index([policyId])
+}
+
+model ClaimAdjustmentExtension {
+  id               String   @id @default(cuid())
+  organizationId   String
+  claimId          String
+  requestedOn      DateTime @db.Date
+  previousDeadline DateTime @db.Date
+  newDeadline      DateTime @db.Date
+  reason           String
+  createdById      String?
+  createdAt        DateTime @default(now())
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([claimId])
 }
 
 model ClaimStatusHistory {

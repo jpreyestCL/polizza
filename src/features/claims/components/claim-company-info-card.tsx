@@ -24,6 +24,8 @@ export function ClaimCompanyInfoCard({ claim }: { claim: ClaimDetail }) {
     companyClaimNumber: claim.companyClaimNumber ?? "",
     liquidatorName: claim.liquidatorName ?? "",
     filedAtCompanyAt: toDateTimeInput(claim.filedAtCompanyAt),
+    isPreventive:
+      claim.status === "REPORTED" ? "" : claim.isPreventive ? "true" : "false",
   });
   const [saving, startSaving] = useTransition();
 
@@ -45,9 +47,9 @@ export function ClaimCompanyInfoCard({ claim }: { claim: ClaimDetail }) {
       <div>
         <h3 className="text-sm font-semibold">Ingreso en la compañía</h3>
         <p className="text-xs text-muted-foreground">
-          Una vez ingresado el denuncio, la compañía asigna número de siniestro
-          y liquidador. Al guardar la fecha de ingreso por primera vez, el
-          estado pasa a <em>Ingresado en compañía</em>.
+          La fecha de envío deja el aviso en espera de asignación y calcula el
+          plazo legal del informe. Con número, liquidador y si es preventivo,
+          pasa a liquidación.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
@@ -84,6 +86,25 @@ export function ClaimCompanyInfoCard({ claim }: { claim: ClaimDetail }) {
               setValues({ ...values, liquidatorName: e.target.value })
             }
           />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase text-muted-foreground">
+            Preventivo
+          </Label>
+          <select
+            className="flex h-9 w-full rounded-md border bg-background px-3 text-sm"
+            value={values.isPreventive}
+            onChange={(e) =>
+              setValues({
+                ...values,
+                isPreventive: e.target.value as ClaimCompanyInfoValues["isPreventive"],
+              })
+            }
+          >
+            <option value="">Sin indicar</option>
+            <option value="true">Sí</option>
+            <option value="false">No</option>
+          </select>
         </div>
       </div>
       <div className="flex justify-end">

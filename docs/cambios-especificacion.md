@@ -176,12 +176,28 @@ mezcla monedas.
 
 ## Siniestros
 
-**Antes.** El siniestro tenía estados y bitácora, sin plazos por acción.
+**Antes.** El siniestro se movía a mano entre reportado, ingresado en
+compañía, en evaluación, aprobado, rechazado, pagado y cerrado. Anular
+ponía una marca y se podía reabrir igual que un cerrado. No había
+subestado, resultado de cierre ni plazo legal del informe.
 
-**Ahora.** Hay tres plantillas (vehículos, bienes y personas) con plazo y
-alerta. Al crear un denuncio con ramo, nacen las tareas de esa plantilla.
-Vehículos y SOAP usan la de vehículos; vida y accidentes, la de personas;
-el resto de generales, la de bienes.
+**Ahora.** El estado es el de la especificación: aviso recibido, denunciado
+a la espera de asignación, en liquidación, proceso de pago, cerrado y
+anulado. Solo se avanza por esos pasos. Anular vale únicamente en el aviso
+o en la espera de asignación, y no se reabre. Reabrir un cerrado vuelve a
+liquidación o a proceso de pago, con motivo y contador. El cierre guarda
+uno de los doce resultados: sin pago desde la liquidación, o pagado o
+reparado desde el proceso de pago. El subestado cambia dentro de la
+liquidación y del pago. Al enviar el denuncio nace el plazo legal del
+informe: 45 días corridos, 90 si la prima anual de la póliza en UF supera
+100, y 180 en casco. Una prórroga reemplaza esa fecha. El proceso de pago
+exige indemnización mayor a cero. La asignación pide si es preventivo y
+deja la tarea de pedir el informe cinco días antes del plazo. Si se anota
+la fecha del informe final, el plazo para impugnar queda a diez días
+hábiles. El cierre interno queda a 60 días corridos desde el aviso. Los
+siniestros que ya existían se tradujeron: pagado quedó cerrado con
+resultado pagado, rechazado quedó cerrado con resultado rechazado, y uno
+marcado anulado pasó a `VOID`.
 
 ## Migración Brokeris
 

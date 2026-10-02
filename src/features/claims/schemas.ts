@@ -1,26 +1,17 @@
 import { z } from "zod";
+import { CLAIM_STATUSES } from "@/lib/domain/claim-lifecycle";
 
-export const CLAIM_STATUSES = [
-  "REPORTADO",
-  "INGRESADO_COMPANIA",
-  "EN_EVALUACION",
-  "APROBADO",
-  "RECHAZADO",
-  "PAGADO",
-  "CERRADO",
-] as const;
-
-export type ClaimStatusValue = (typeof CLAIM_STATUSES)[number];
-
-export const CLAIM_STATUS_LABELS: Record<ClaimStatusValue, string> = {
-  REPORTADO: "Reportado",
-  INGRESADO_COMPANIA: "Ingresado en compañía",
-  EN_EVALUACION: "En evaluación",
-  APROBADO: "Aprobado",
-  RECHAZADO: "Rechazado",
-  PAGADO: "Pagado",
-  CERRADO: "Cerrado",
-};
+export {
+  CLAIM_STATUSES,
+  CLAIM_STATUS_LABELS,
+  CLAIM_SUBSTATUSES,
+  CLAIM_SUBSTATUS_LABELS,
+  CLOSURE_OUTCOMES,
+  CLOSURE_OUTCOME_LABELS,
+  type ClaimStatusValue,
+  type ClaimSubstatus,
+  type ClosureOutcome,
+} from "@/lib/domain/claim-lifecycle";
 
 export const CLAIM_ENTRY_PARTIES = ["COMPANIA", "CORREDOR"] as const;
 export type ClaimEntryPartyValue = (typeof CLAIM_ENTRY_PARTIES)[number];
@@ -164,12 +155,14 @@ export const claimCompanyInfoSchema = z.object({
   companyClaimNumber: z.string().trim().max(80).default(""),
   liquidatorName: z.string().trim().max(160).default(""),
   filedAtCompanyAt: z.string().default(""),
+  isPreventive: z.enum(["", "true", "false"]).default(""),
 });
 export type ClaimCompanyInfoValues = z.infer<typeof claimCompanyInfoSchema>;
 
 export const claimStatusChangeSchema = z.object({
   status: z.enum(CLAIM_STATUSES),
   note: z.string().trim().max(1000).default(""),
+  closureOutcome: z.string().trim().default(""),
 });
 export type ClaimStatusChangeValues = z.infer<typeof claimStatusChangeSchema>;
 

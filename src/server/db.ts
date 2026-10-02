@@ -69,6 +69,7 @@ const TENANT_MODELS = new Set<string>([
   "TenantFeature",
   "IdempotencyRecord",
   "Claim",
+  "ClaimAdjustmentExtension",
   "ClaimStatusHistory",
   "ClaimThirdParty",
   "ClaimLog",
