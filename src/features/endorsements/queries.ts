@@ -13,6 +13,8 @@ export type EndorsementRow = {
   notes: string | null;
   createdAt: Date;
   proposal: { id: string; proposalNumber: string } | null;
+  targetItem: string | null;
+  itemDescription: string | null;
 };
 
 export async function listPolicyEndorsements(
@@ -24,7 +26,19 @@ export async function listPolicyEndorsements(
     orderBy: { effectiveDate: "desc" },
     include: { proposal: { select: { id: true, proposalNumber: true } } },
   });
+  const targetIds = rows
+    .map((r) => r.targetItemId)
+    .filter((id): id is string => Boolean(id));
+  const targets = targetIds.length
+    ? await db.policyItem.findMany({
+        where: { id: { in: targetIds } },
+        select: { id: true, description: true },
+      })
+    : [];
+  const targetById = new Map(targets.map((t) => [t.id, t.description]));
   return rows.map((r) => ({
+    targetItem: r.targetItemId ? (targetById.get(r.targetItemId) ?? null) : null,
+    itemDescription: r.itemDescription,
     id: r.id,
     type: r.type,
     effectiveDate: r.effectiveDate,

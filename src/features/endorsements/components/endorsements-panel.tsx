@@ -206,6 +206,15 @@ function EndorsementItem({
               : ""}
           </span>
         </div>
+        {endorsement.targetItem || endorsement.itemDescription ? (
+          <div className="mt-1 text-xs text-muted-foreground">
+            {endorsement.targetItem ? `Ítem: ${endorsement.targetItem}` : ""}
+            {endorsement.targetItem && endorsement.itemDescription ? " → " : ""}
+            {endorsement.itemDescription
+              ? `${endorsement.targetItem ? "" : "Ítem nuevo: "}${endorsement.itemDescription}`
+              : ""}
+          </div>
+        ) : null}
         {endorsement.detail && (
           <div className="mt-1 whitespace-pre-line text-sm">
             {endorsement.detail}
@@ -442,7 +451,8 @@ function EndorsementDialog({
               />
             </div>
           ) : null}
-          {!endorsementUsesCalculatedCredit(values.type) ? (
+          {!endorsementUsesCalculatedCredit(values.type) &&
+          values.type !== "REHABILITACION" ? (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Delta prima afecta</Label>
