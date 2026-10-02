@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { refreshDraftPolicy } from "@/features/policies/draft-policy";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { logActivity } from "@/server/activity";
@@ -159,6 +160,7 @@ export async function createProposalItemAction(
     },
   });
 
+  await refreshDraftPolicy(db, ctx, proposalId);
   revalidatePath(`/propuestas/${proposalId}`);
   return { ok: true, data: { id: created.id } };
 }
@@ -217,6 +219,7 @@ export async function updateProposalItemAction(
     },
   });
 
+  await refreshDraftPolicy(db, ctx, existing.proposalId);
   revalidatePath(`/propuestas/${existing.proposalId}`);
   return { ok: true };
 }
@@ -252,6 +255,7 @@ export async function deleteProposalItemAction(
       userId: ctx.userId,
     },
   });
+  await refreshDraftPolicy(db, ctx, item.proposalId);
   revalidatePath(`/propuestas/${item.proposalId}`);
   return { ok: true };
 }
@@ -332,6 +336,7 @@ export async function bulkCreateItemsAction(
     });
   }
 
+  await refreshDraftPolicy(db, ctx, proposalId);
   revalidatePath(`/propuestas/${proposalId}`);
   if (errors.length > 0) {
     return {

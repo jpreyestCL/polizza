@@ -1,5 +1,7 @@
 import "server-only";
-import type { PolicyStatus } from "@prisma/client";
+import { Prisma, type PolicyStatus } from "@prisma/client";
+import { parseDeductible } from "@/lib/domain/deductible";
+import { setTenantGuc } from "@/server/tenant-rls";
 import {
   HIDDEN_FROM_CARTERA,
   isPreIssuePolicy,
@@ -126,6 +128,10 @@ export async function ensureDraftPolicy(
         changedById: input.userId,
       },
     });
+    await syncPolicyMateria(tx, {
+      organizationId: input.organizationId,
+      proposalId: proposal.id,
+    });
     return created.id;
   }
 
@@ -155,7 +161,142 @@ export async function ensureDraftPolicy(
       },
     });
   }
+  await syncPolicyMateria(tx, {
+    organizationId: input.organizationId,
+    proposalId: proposal.id,
+  });
   return existing.id;
+}
+
+/** Re-sincroniza la póliza borrador tras editar ítems, coberturas o plan. */
+export async function refreshDraftPolicy(
+  db: Tx,
+  ctx: { organizationId: string; userId: string },
+  proposalId: string,
+): Promise<void> {
+  await db.$transaction(async (tx: Tx) => {
+    await setTenantGuc(tx as never, ctx.organizationId);
+    await ensureDraftPolicy(tx, {
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      proposalId,
+    });
+  });
+}
+
+/**
+ * Copia ítems y coberturas de la propuesta a su póliza y le cuelga el plan
+ * de pago. Solo reescribe pólizas pre-emisión, salvo `force` (despacho).
+ * Las cuotas pasan a la póliza al emitir: antes no se cobran.
+ */
+export async function syncPolicyMateria(
+  tx: Tx,
+  input: { organizationId: string; proposalId: string; force?: boolean },
+): Promise<void> {
+  const policy = await tx.policy.findFirst({
+    where: { proposalId: input.proposalId },
+    select: { id: true, status: true, currency: true },
+  });
+  if (!policy) return;
+  if (!input.force && !isPreIssuePolicy(policy.status)) return;
+
+  const items = await tx.proposalItem.findMany({
+    where: { proposalId: input.proposalId },
+    orderBy: { order: "asc" },
+    include: {
+      branchType: { select: { name: true } },
+      coverages: { orderBy: { order: "asc" } },
+    },
+  });
+  const mapped = policyMateriaFromItems(items, {
+    organizationId: input.organizationId,
+    policyId: policy.id,
+    currency: policy.currency,
+  });
+
+  await tx.policyCoverage.deleteMany({ where: { policyId: policy.id } });
+  await tx.policyItem.deleteMany({ where: { policyId: policy.id } });
+  if (mapped.items.length > 0) {
+    await tx.policyItem.createMany({ data: mapped.items });
+  }
+  if (mapped.coverages.length > 0) {
+    await tx.policyCoverage.createMany({ data: mapped.coverages });
+  }
+
+  const plan = await tx.paymentPlan.findFirst({
+    where: { proposalId: input.proposalId },
+    select: { id: true, policyId: true },
+  });
+  if (plan && plan.policyId !== policy.id) {
+    await tx.paymentPlan.update({
+      where: { id: plan.id },
+      data: { policyId: policy.id },
+    });
+  }
+}
+
+type MateriaCoverage = {
+  name: string;
+  insuredAmount: Prisma.Decimal | null;
+  sumsToTotal: boolean;
+  deductibleText: string | null;
+  deductibleAmount: Prisma.Decimal | null;
+  deductiblePct: Prisma.Decimal | null;
+  deductibleMinimum: Prisma.Decimal | null;
+};
+
+export function policyMateriaFromItems(
+  items: Array<{
+    identification: string | null;
+    data: unknown;
+    branchType: { name: string };
+    coverages: MateriaCoverage[];
+  }>,
+  target: { organizationId: string; policyId: string; currency: string },
+) {
+  const dec = (value: number | null) =>
+    value == null ? null : new Prisma.Decimal(value.toFixed(4));
+  const policyItems = items.map((it) => {
+    const itData = (it.data ?? {}) as Record<string, unknown>;
+    const description =
+      it.identification ??
+      (typeof itData.patente === "string" ? itData.patente : null) ??
+      (typeof itData.direccion === "string" ? itData.direccion : null) ??
+      it.branchType.name;
+    const insuredAmount = it.coverages
+      .filter((c) => c.sumsToTotal)
+      .reduce((s, c) => s + (c.insuredAmount ? Number(c.insuredAmount) : 0), 0);
+    return {
+      organizationId: target.organizationId,
+      policyId: target.policyId,
+      description,
+      insuredAmount: insuredAmount > 0 ? new Prisma.Decimal(insuredAmount) : null,
+      currency: target.currency,
+    };
+  });
+  const coverages = items.flatMap((it) =>
+    it.coverages.map((c) => {
+      const parsed = parseDeductible(c.deductibleText);
+      const hasStructured =
+        c.deductibleAmount != null ||
+        c.deductiblePct != null ||
+        c.deductibleMinimum != null;
+      return {
+        organizationId: target.organizationId,
+        policyId: target.policyId,
+        name: c.name,
+        insuredAmount: c.insuredAmount,
+        currency: target.currency,
+        deductible: hasStructured ? c.deductibleText : parsed.text,
+        deductibleAmount: hasStructured ? c.deductibleAmount : dec(parsed.amount),
+        deductiblePct: hasStructured ? c.deductiblePct : dec(parsed.pct),
+        deductibleMinimum: hasStructured
+          ? c.deductibleMinimum
+          : dec(parsed.minimum),
+      };
+    }),
+  );
+  return { items: policyItems, coverages };
 }
 
 async function freePolicyNumber(

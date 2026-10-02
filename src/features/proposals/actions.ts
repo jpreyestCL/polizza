@@ -9,7 +9,6 @@ import { applyEndorsementToPolicy } from "@/features/endorsements/apply";
 import { appendPremiumMovement } from "@/features/ledger/record";
 import { recordPolicySubmission } from "@/features/proposals/submission";
 import { saveIssuanceComparison } from "@/features/proposals/issuance-comparison";
-import { parseDeductible } from "@/lib/domain/deductible";
 import { roundHalfUp } from "@/lib/domain/money";
 import { setTenantGuc } from "@/server/tenant-rls";
 import {
@@ -23,7 +22,11 @@ import {
   moveIssueCorrectionTaskToPolicy,
 } from "@/features/policies/issue-correction-task";
 import { ENDORSEMENT_TYPE_LABELS } from "@/features/endorsements/schemas";
-import { ensureDraftPolicy, isPreIssuePolicy } from "@/features/policies/draft-policy";
+import {
+  ensureDraftPolicy,
+  isPreIssuePolicy,
+  syncPolicyMateria,
+} from "@/features/policies/draft-policy";
 import { logActivity } from "@/server/activity";
 import { canDeleteProposal } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/sanitize";
@@ -1277,63 +1280,15 @@ export async function dispatchPolicyToContratanteAction(
             },
           });
 
-      const itemsData = proposalItems.map((it) => {
-        const itData = (it.data ?? {}) as Record<string, unknown>;
-        const summary =
-          it.identification ??
-          (typeof itData.patente === "string" ? itData.patente : null) ??
-          (typeof itData.direccion === "string" ? itData.direccion : null) ??
-          it.branchType.name;
-        const insuredAmount = it.coverages
-          .filter((c) => c.sumsToTotal)
-          .reduce((s, c) => s + (c.insuredAmount ? Number(c.insuredAmount) : 0), 0);
-        return {
-          organizationId: ctx.organizationId,
-          policyId: policy.id,
-          description: summary,
-          insuredAmount:
-            insuredAmount > 0 ? new Prisma.Decimal(insuredAmount) : null,
-          currency: proposal.currency,
-        };
-      });
-      const storedItems = existingPolicy
+      const storedItems = existingPolicy && !promoting
         ? await tx.policyItem.count({ where: { policyId: policy.id } })
         : 0;
-      if (storedItems === 0 && itemsData.length > 0) {
-        await tx.policyItem.createMany({ data: itemsData });
-      }
-
-      const coveragesData = proposalItems.flatMap((it) =>
-        it.coverages.map((c) => {
-          const parsed = parseDeductible(c.deductibleText);
-          const dec = (value: number | null) =>
-            value == null ? null : new Prisma.Decimal(value.toFixed(4));
-          const hasStructured =
-            c.deductibleAmount != null ||
-            c.deductiblePct != null ||
-            c.deductibleMinimum != null;
-          return {
-            organizationId: ctx.organizationId,
-            policyId: policy.id,
-            name: c.name,
-            insuredAmount: c.insuredAmount,
-            currency: proposal.currency,
-            deductible: hasStructured ? c.deductibleText : parsed.text,
-            deductibleAmount: hasStructured
-              ? c.deductibleAmount
-              : dec(parsed.amount),
-            deductiblePct: hasStructured ? c.deductiblePct : dec(parsed.pct),
-            deductibleMinimum: hasStructured
-              ? c.deductibleMinimum
-              : dec(parsed.minimum),
-          };
-        }),
-      );
-      const storedCoverages = existingPolicy
-        ? await tx.policyCoverage.count({ where: { policyId: policy.id } })
-        : 0;
-      if (storedCoverages === 0 && coveragesData.length > 0) {
-        await tx.policyCoverage.createMany({ data: coveragesData });
+      if (storedItems === 0) {
+        await syncPolicyMateria(tx, {
+          organizationId: ctx.organizationId,
+          proposalId,
+          force: true,
+        });
       }
 
       if (!existingPolicy) {

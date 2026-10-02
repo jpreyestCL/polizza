@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { refreshDraftPolicy } from "@/features/policies/draft-policy";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { splitInstallments } from "@/lib/domain/money";
@@ -140,6 +141,7 @@ export async function upsertPaymentPlanAction(
     },
   });
 
+  await refreshDraftPolicy(db, ctx, proposalId);
   revalidatePath(`/propuestas/${proposalId}`);
   return { ok: true };
 }

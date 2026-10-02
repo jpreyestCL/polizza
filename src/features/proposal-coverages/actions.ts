@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { refreshDraftPolicy } from "@/features/policies/draft-policy";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import {
@@ -98,6 +99,7 @@ export async function upsertItemCoverageAction(
   } else {
     await db.proposalItemCoverage.create({ data });
   }
+  await refreshDraftPolicy(db, ctx, item.proposalId);
   revalidatePath(`/propuestas/${item.proposalId}`);
   return { ok: true };
 }
@@ -197,6 +199,7 @@ export async function saveItemCoveragesAction(
     });
   }
 
+  await refreshDraftPolicy(db, ctx, item.proposalId);
   revalidatePath(`/propuestas/${item.proposalId}`);
   return { ok: true, data: { count: parsed.data.rows.length } };
 }
@@ -204,13 +207,14 @@ export async function saveItemCoveragesAction(
 export async function deleteItemCoverageAction(
   coverageId: string,
 ): Promise<ActionResult> {
-  const { db } = await requireOrgDb();
+  const { ctx, db } = await requireOrgDb();
   const cov = await db.proposalItemCoverage.findFirst({
     where: { id: coverageId },
     select: { itemId: true, item: { select: { proposalId: true } } },
   });
   if (!cov) return { ok: false, error: "Cobertura no existe." };
   await db.proposalItemCoverage.delete({ where: { id: coverageId } });
+  await refreshDraftPolicy(db, ctx, cov.item.proposalId);
   revalidatePath(`/propuestas/${cov.item.proposalId}`);
   return { ok: true };
 }
@@ -290,6 +294,7 @@ export async function copyProductCoveragesAction(
     })),
   });
 
+  await refreshDraftPolicy(db, ctx, item.proposalId);
   revalidatePath(`/propuestas/${item.proposalId}`);
   return { ok: true, data: { count: missing.length } };
 }
