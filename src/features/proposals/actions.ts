@@ -23,6 +23,7 @@ import {
   moveIssueCorrectionTaskToPolicy,
 } from "@/features/policies/issue-correction-task";
 import { ENDORSEMENT_TYPE_LABELS } from "@/features/endorsements/schemas";
+import { ensureDraftPolicy, isPreIssuePolicy } from "@/features/policies/draft-policy";
 import { logActivity } from "@/server/activity";
 import { canDeleteProposal } from "@/lib/roles";
 import { sanitizeRichText } from "@/lib/sanitize";
@@ -190,6 +191,11 @@ export async function createProposalAction(
           changedById: ctx.userId,
         },
       });
+      await ensureDraftPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        proposalId: created.id,
+      });
       return created;
     });
 
@@ -310,6 +316,11 @@ export async function updateProposalAction(
 
   await db.$transaction(async (tx) => {
     await replaceParticipations(tx, ctx.organizationId, id, data);
+    await ensureDraftPolicy(tx, {
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      proposalId: id,
+    });
   });
 
   await logActivity(db, {
@@ -447,6 +458,11 @@ export async function changeProposalStatusAction(
         createdById: ctx.userId,
       });
     }
+    await ensureDraftPolicy(tx, {
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      proposalId: id,
+    });
   });
 
   await logActivity(db, {
@@ -549,7 +565,8 @@ export async function saveProposalDraft(
     if (!existing) {
       return { ok: false, error: "Borrador no encontrado." };
     }
-    await db.proposal.update({
+    await db.$transaction(async (tx) => {
+    await tx.proposal.update({
       where: { id: values.proposalId },
       data: {
         clientId: data.clientId,
@@ -570,6 +587,12 @@ export async function saveProposalDraft(
         contratantePhone: emptyToNull(data.contratantePhone),
         contratanteCelular: emptyToNull(data.contratanteCelular),
       },
+    });
+    await ensureDraftPolicy(tx, {
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      proposalId: values.proposalId!,
+    });
     });
     return { ok: true, id: values.proposalId };
   }
@@ -604,14 +627,21 @@ export async function saveProposalDraft(
     select: { id: true },
   });
 
-  await db.proposalStatusHistory.create({
-    data: {
+  await db.$transaction(async (tx) => {
+    await tx.proposalStatusHistory.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId: created.id,
+        status: "ELABORACION",
+        note: "Borrador creado",
+        changedById: ctx.userId,
+      },
+    });
+    await ensureDraftPolicy(tx, {
       organizationId: ctx.organizationId,
+      userId: ctx.userId,
       proposalId: created.id,
-      status: "ELABORACION",
-      note: "Borrador creado",
-      changedById: ctx.userId,
-    },
+    });
   });
 
   return { ok: true, id: created.id };
@@ -640,9 +670,17 @@ export async function assignProposalNumber(
       basePrisma,
       ctx.organizationId,
     );
-    await db.proposal.update({
-      where: { id: proposalId },
-      data: { proposalNumber },
+    await db.$transaction(async (tx) => {
+      await tx.proposal.update({
+        where: { id: proposalId },
+        data: { proposalNumber },
+      });
+      await ensureDraftPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        proposalId,
+        policyNumber: proposalNumber,
+      });
     });
     revalidatePath("/propuestas");
     revalidatePath(`/propuestas/${proposalId}`);
@@ -689,6 +727,10 @@ export async function registerPolicyEmissionAction(
       endorsementDetail: true,
       endorsementPremiumAffected: true,
       endorsementPremiumExempt: true,
+      endorsementNewInsuredAmount: true,
+      endorsementOffsetClaimId: true,
+      endorsementCommissionAffectPct: true,
+      endorsementCommissionExemptPct: true,
       startDate: true,
       endDate: true,
     },
@@ -796,6 +838,16 @@ export async function registerPolicyEmissionAction(
             premiumExemptDelta: proposal.endorsementPremiumExempt
               ? Number(proposal.endorsementPremiumExempt)
               : null,
+            newInsuredAmount: proposal.endorsementNewInsuredAmount
+              ? Number(proposal.endorsementNewInsuredAmount)
+              : null,
+            offsetClaimId: proposal.endorsementOffsetClaimId,
+            commissionAffectPct: proposal.endorsementCommissionAffectPct
+              ? Number(proposal.endorsementCommissionAffectPct)
+              : null,
+            commissionExemptPct: proposal.endorsementCommissionExemptPct
+              ? Number(proposal.endorsementCommissionExemptPct)
+              : null,
           });
           if (!result.ok) {
             endorsementFailure = result.error;
@@ -829,6 +881,15 @@ export async function registerPolicyEmissionAction(
           userId: ctx.userId,
         },
       });
+      if (!isEndorsement) {
+        await ensureDraftPolicy(tx, {
+          organizationId: ctx.organizationId,
+          userId: ctx.userId,
+          proposalId,
+          policyNumber: data.policyNumber.trim(),
+          status: "POR_DESPACHAR",
+        });
+      }
     });
   } catch (error) {
     if (endorsementFailure) return { ok: false, error: endorsementFailure };
@@ -942,6 +1003,15 @@ export async function registerEmissionErrorAction(
         userId: ctx.userId,
       },
     });
+    if (proposal.kind !== "ENDOSO") {
+      await ensureDraftPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        proposalId,
+        policyNumber: data.policyNumber.trim(),
+        status: "POR_DESPACHAR",
+      });
+    }
   });
 
   await ensureIssueCorrectionTask(db, {
@@ -1056,9 +1126,12 @@ export async function dispatchPolicyToContratanteAction(
   // se vuelve a crear ni se reenvía el correo (review #4/#7).
   const existingPolicy = await db.policy.findFirst({
     where: { proposalId },
-    select: { id: true, reopenedIssueAt: true },
+    select: { id: true, reopenedIssueAt: true, status: true },
   });
-  if (existingPolicy && !existingPolicy.reopenedIssueAt) {
+  const promoting = Boolean(
+    existingPolicy && isPreIssuePolicy(existingPolicy.status),
+  );
+  if (existingPolicy && !existingPolicy.reopenedIssueAt && !promoting) {
     return {
       ok: false,
       error: "Esta propuesta ya fue despachada y tiene una póliza en la cartera.",
@@ -1148,21 +1221,36 @@ export async function dispatchPolicyToContratanteAction(
   try {
     policyId = await db.$transaction(async (tx) => {
       await setTenantGuc(tx, ctx.organizationId);
+      const issuedMoney = {
+        policyNumber,
+        premiumNet:
+          totalNet > 0 ? new Prisma.Decimal(totalNet) : proposal.premiumNet,
+        issueProblemCode: proposal.emissionErrorReason,
+        issueProblemDetail: proposal.emissionErrorDetail,
+        issueProblemOpenedAt: proposal.emissionErrorReason ? new Date() : null,
+        reopenedIssueAt: null,
+        reopenedIssueReason: null,
+        version: { increment: 1 },
+        ...portfolioMoney,
+      };
       const policy = existingPolicy
         ? await tx.policy.update({
             where: { id: existingPolicy.id },
-            data: {
-              policyNumber,
-              premiumNet:
-                totalNet > 0 ? new Prisma.Decimal(totalNet) : proposal.premiumNet,
-              issueProblemCode: proposal.emissionErrorReason,
-              issueProblemDetail: proposal.emissionErrorDetail,
-              issueProblemOpenedAt: proposal.emissionErrorReason ? new Date() : null,
-              reopenedIssueAt: null,
-              reopenedIssueReason: null,
-              version: { increment: 1 },
-              ...portfolioMoney,
-            },
+            data: promoting
+              ? {
+                  ...issuedMoney,
+                  clientId: proposal.clientId,
+                  companyId: proposal.companyId,
+                  lineId: proposal.lineId,
+                  branchId: proposal.branchId,
+                  status: "VIGENTE",
+                  currency: proposal.currency,
+                  startDate: proposal.startDate,
+                  endDate: proposal.endDate,
+                  previousPolicyId: proposal.previousPolicyId,
+                  assignedUserId: proposal.assignedUserId ?? ctx.userId,
+                }
+              : issuedMoney,
           })
         : await tx.policy.create({
             data: {
@@ -1208,7 +1296,10 @@ export async function dispatchPolicyToContratanteAction(
           currency: proposal.currency,
         };
       });
-      if (!existingPolicy && itemsData.length > 0) {
+      const storedItems = existingPolicy
+        ? await tx.policyItem.count({ where: { policyId: policy.id } })
+        : 0;
+      if (storedItems === 0 && itemsData.length > 0) {
         await tx.policyItem.createMany({ data: itemsData });
       }
 
@@ -1238,14 +1329,50 @@ export async function dispatchPolicyToContratanteAction(
           };
         }),
       );
-      if (!existingPolicy && coveragesData.length > 0) {
+      const storedCoverages = existingPolicy
+        ? await tx.policyCoverage.count({ where: { policyId: policy.id } })
+        : 0;
+      if (storedCoverages === 0 && coveragesData.length > 0) {
         await tx.policyCoverage.createMany({ data: coveragesData });
       }
 
-      if (proposal.isRenewal && proposal.previousPolicyId && !existingPolicy) {
+      if (!existingPolicy) {
+        const mother = proposal.previousPolicyId
+          ? await tx.policy.findFirst({
+              where: { id: proposal.previousPolicyId },
+              select: { id: true, lineageId: true, termNumber: true },
+            })
+          : null;
+        if (mother && !mother.lineageId) {
+          await tx.policy.update({
+            where: { id: mother.id },
+            data: { lineageId: mother.id, termNumber: mother.termNumber ?? 1 },
+          });
+        }
+        await tx.policy.update({
+          where: { id: policy.id },
+          data: mother
+            ? {
+                lineageId: mother.lineageId ?? mother.id,
+                termNumber: (mother.termNumber ?? 1) + 1,
+              }
+            : { lineageId: policy.id, termNumber: 1 },
+        });
+      }
+
+      if (proposal.isRenewal && proposal.previousPolicyId && (promoting || !existingPolicy)) {
         await tx.policy.update({
           where: { id: proposal.previousPolicyId },
-          data: { nextPolicyId: policy.id },
+          data: { nextPolicyId: policy.id, status: "RENOVADA" },
+        });
+        await tx.policyStatusHistory.create({
+          data: {
+            organizationId: ctx.organizationId,
+            policyId: proposal.previousPolicyId,
+            status: "RENOVADA",
+            note: `Renovada como ${policyNumber}`,
+            changedById: ctx.userId,
+          },
         });
       }
       await tx.policyStatusHistory.create({
@@ -1475,6 +1602,12 @@ export async function reopenSentProposalAction(
         note: reason.trim(),
         changedById: ctx.userId,
       },
+    });
+    await ensureDraftPolicy(tx, {
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      proposalId,
+      status: "BORRADOR",
     });
   });
   await logActivity(db, {

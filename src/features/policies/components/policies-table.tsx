@@ -220,7 +220,7 @@ export function PoliciesTable({
             <SelectValue placeholder="Estado" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos los estados</SelectItem>
+            <SelectItem value="all">Cartera, sin elaboración</SelectItem>
             {POLICY_STATUSES.map((status) => (
               <SelectItem key={status} value={status}>
                 {POLICY_STATUS_LABELS[status]}

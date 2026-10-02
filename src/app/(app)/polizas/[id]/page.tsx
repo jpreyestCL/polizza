@@ -10,6 +10,7 @@ import { listDocuments } from "@/features/documents/queries";
 import { listPolicyInstallments } from "@/features/billing/queries";
 import { getUfValue } from "@/server/uf";
 import { renewalInfo } from "@/lib/renewal";
+import { isPreIssuePolicy } from "@/lib/domain/policy-lifecycle";
 import { canDeletePolicy } from "@/lib/roles";
 import { PolicyDetailTabs } from "@/features/policies/components/policy-detail-tabs";
 import {
@@ -58,6 +59,7 @@ export default async function PolizaDetailPage({
     endorsements,
     endorsementProposals,
     renewedByProposals,
+    policyClaims,
   ] = await Promise.all([
     getPolicyActivity(db, id),
     listDocuments(db, "POLICY", id),
@@ -73,6 +75,11 @@ export default async function PolizaDetailPage({
       where: { previousPolicyId: id },
       orderBy: { createdAt: "desc" },
       select: { id: true, proposalNumber: true, status: true },
+    }),
+    db.claim.findMany({
+      where: { policyId: id },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, claimNumber: true },
     }),
   ]);
 
@@ -101,6 +108,9 @@ export default async function PolizaDetailPage({
               {policy.policyNumber}
             </h1>
             <PolicyStatusBadge status={policy.status} />
+            {policy.termNumber > 1 ? (
+              <Badge variant="outline">Período {policy.termNumber}</Badge>
+            ) : null}
             <PolicyRenewalBadge
               level={renewal.level}
               days={renewal.daysToExpiry}
@@ -133,7 +143,7 @@ export default async function PolizaDetailPage({
         </div>
         <div className="flex flex-wrap gap-2">
           <PolicyStatusButton policyId={id} currentStatus={policy.status} />
-          {canRenew && (
+          {isPreIssuePolicy(policy.status) ? null : canRenew && (
             <RenewPolicyButton
               policyId={id}
               policyNumber={policy.policyNumber}
@@ -231,6 +241,7 @@ export default async function PolizaDetailPage({
           policy.endDate ? policy.endDate.toISOString().slice(0, 10) : ""
         }
         timezone={ctx.organizationTimezone}
+        claims={policyClaims}
       />
     </div>
   );

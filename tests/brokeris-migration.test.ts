@@ -81,15 +81,16 @@ describe("mapa Brokeris", () => {
     });
     expect(mapBrokerisEndorsement(40)).toMatchObject({
       code: "REDUCE_TERM",
-      calcMethod: "MANUAL",
-      mvpEnabled: false,
+      calcMethod: "REFUND_PRORATA",
+      mvpEnabled: true,
     });
     expect(mapBrokerisEndorsement(37)?.code).toBe("EXTENSION_REVERSAL");
     expect(mapBrokerisEndorsement(23)?.code).toBe("PREMIUM_ADJUSTMENT");
     expect(mapBrokerisEndorsement(28)).toMatchObject({
       code: "DECLARATION",
       initiatedBy: "INSURER",
-      calcMethod: "MANUAL",
+      calcMethod: "NONE",
+      mvpEnabled: true,
     });
     expect(mapBrokerisEndorsement(33)?.partyChangeKind).toBe("CONTRACTOR");
     expect(mapBrokerisEndorsement(9)?.partyChangeKind).toBeNull();

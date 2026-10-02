@@ -1,6 +1,6 @@
 /**
- * Estados de la especificación sobre los estados que ya guarda la app.
- * La propuesta sigue siendo el expediente; la póliza es el documento de cartera.
+ * Estados de la especificación. La póliza es la misma fila desde el
+ * borrador: la propuesta es la ficha con la que se llena.
  */
 
 export type SpecPolicyState =
@@ -23,6 +23,11 @@ const PROPOSAL_STATE: Record<string, SpecPolicyState> = {
 };
 
 const POLICY_STATE: Record<string, SpecPolicyState> = {
+  BORRADOR: "DRAFT",
+  ENVIADA: "SENT_TO_INSURER",
+  POR_DESPACHAR: "ISSUED",
+  RECHAZADA: "REJECTED_BY_INSURER",
+  DESCARTADA: "DISCARDED",
   VIGENTE: "ISSUED",
   VENCIDA: "ISSUED",
   RENOVADA: "ISSUED",
@@ -37,6 +42,26 @@ export function specStateOfProposal(status: string): SpecPolicyState | null {
 export function specStateOfPolicy(status: string): SpecPolicyState | null {
   return POLICY_STATE[status] ?? null;
 }
+
+export const PRE_ISSUE_POLICY_STATUSES = [
+  "BORRADOR",
+  "ENVIADA",
+  "POR_DESPACHAR",
+  "RECHAZADA",
+  "DESCARTADA",
+] as const;
+
+export function isPreIssuePolicy(status: string): boolean {
+  return (PRE_ISSUE_POLICY_STATUSES as readonly string[]).includes(status);
+}
+
+/** La cartera por defecto esconde lo que aún no emitió la compañía. */
+export const HIDDEN_FROM_CARTERA = [
+  "BORRADOR",
+  "ENVIADA",
+  "RECHAZADA",
+  "DESCARTADA",
+] as const;
 
 const DISCARDABLE = new Set([
   "ELABORACION",

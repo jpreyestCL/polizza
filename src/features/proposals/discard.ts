@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireOrgDb } from "@/server/context";
 import { hasPermission } from "@/lib/factory-roles";
 import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
-import { canDiscardProposal } from "@/lib/domain/policy-lifecycle";
+import { canDiscardProposal, isPreIssuePolicy } from "@/lib/domain/policy-lifecycle";
 import { logActivity } from "@/server/activity";
 import {
   commandFingerprint,
@@ -55,21 +55,38 @@ export async function discardProposalFormAction(form: FormData): Promise<void> {
   }
   const policy = await db.policy.findFirst({
     where: { proposalId },
-    select: { id: true },
+    select: { id: true, status: true },
   });
-  if (policy) {
+  if (policy && !isPreIssuePolicy(policy.status)) {
     redirect(
       `/propuestas/${proposalId}?aviso=${encodeURIComponent("INVALID_TRANSITION: ya hay una póliza en la cartera. La corrección va por endoso o por reabrir la emisión.")}`,
     );
   }
-  await db.proposal.update({
-    where: { id: proposalId },
-    data: {
-      status: "DESCARTADA",
-      discardedAt: new Date(),
-      discardedReason: reason.trim(),
-      currentStateStartedAt: new Date(),
-    },
+  await db.$transaction(async (tx) => {
+    await tx.proposal.update({
+      where: { id: proposalId },
+      data: {
+        status: "DESCARTADA",
+        discardedAt: new Date(),
+        discardedReason: reason.trim(),
+        currentStateStartedAt: new Date(),
+      },
+    });
+    if (policy) {
+      await tx.policy.update({
+        where: { id: policy.id },
+        data: { status: "DESCARTADA" },
+      });
+      await tx.policyStatusHistory.create({
+        data: {
+          organizationId: ctx.organizationId,
+          policyId: policy.id,
+          status: "DESCARTADA",
+          note: reason.trim(),
+          changedById: ctx.userId,
+        },
+      });
+    }
   });
   await storeIdempotency(db, {
     organizationId: ctx.organizationId,

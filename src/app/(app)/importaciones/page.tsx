@@ -32,7 +32,7 @@ export default async function ImportacionesPage({
     <div className="space-y-6">
       <PageHeader
         title="Importaciones"
-        description="Clientes en RUT;nombre;teléfono;PERSONA o EMPRESA. El texto de Brokeris se traduce con el mapa de códigos y el cuadre compara los conteos del corte 29-09-2026. El lote de Brokeris no crea pólizas."
+        description="Clientes en RUT;nombre;teléfono;PERSONA o EMPRESA. El texto de Brokeris se traduce con el mapa de códigos. Al aplicar, una fila traducida con número de póliza y RUT crea la ficha; una fila en revisión se queda en el lote."
       />
       {aviso ? <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{aviso}</p> : null}
 
@@ -56,10 +56,12 @@ export default async function ImportacionesPage({
       <form action={previewBrokerisAction} className="space-y-3 rounded-xl border bg-card p-4">
         <h2 className="text-sm font-medium">Traducción Brokeris</h2>
         <p className="text-sm text-muted-foreground">
-          Columnas separadas por tabulación. Pólizas: id, estado, es renovación (1 o 0), id madre,
-          vigencia (aaaa-mm-dd o dd-mm-aaaa), número de póliza. El estado 6 sin número queda para
-          revisar. Endosos: id, tipo. Siniestros: id, estado, subestado, tipo de cierre. Documentos:
-          id, etiqueta. No renovación: id, tipo, motivo. El tipo 2 exige motivo.
+          Columnas separadas por tabulación. Pólizas: id, estado, es renovación, id madre,
+          vigencia, número, RUT, nombre, prima, moneda, inicio, fin, compañía. Sin RUT y número
+          la fila se traduce y no se crea. Endosos: id, tipo, número de póliza, vigencia, delta,
+          detalle. Siniestros: id, estado, subestado, cierre, número de póliza, relato.
+          Documentos: id, etiqueta; no se inventa el archivo. No renovación: id, tipo, motivo,
+          número de póliza. El tipo 2 exige motivo.
         </p>
         <label className="flex flex-col gap-1 text-sm">
           Perfil
@@ -165,7 +167,7 @@ export default async function ImportacionesPage({
             <form action={applyImportAction}>
               <input type="hidden" name="jobId" value={job.id} />
               <button type="submit" className="rounded-md border px-3 py-2 text-sm">
-                {job.profile === "CLIENTES" ? "Aplicar" : "Registrar lote"}
+                {job.profile === "CUADRE" ? "Registrar lote" : "Aplicar"}
               </button>
             </form>
           ) : null}

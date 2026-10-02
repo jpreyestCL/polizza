@@ -6,6 +6,7 @@ import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { hasPermission } from "@/lib/factory-roles";
 import { matchCommissionLines } from "@/lib/domain/commission-match";
+import { parseCommissionLines } from "@/lib/domain/commission-lines";
 import { withinCommissionTolerance } from "@/lib/domain/money";
 
 function text(form: FormData, key: string): string {
@@ -24,19 +25,10 @@ export async function postCommissionStatementAction(form: FormData): Promise<voi
   }
   const insurerName = text(form, "insurerName");
   const currency = text(form, "currency") || "UF";
-  const rawLines = text(form, "lines");
-  const parsed = rawLines
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [policyNumber, amountRaw] = line.split(/\s+/);
-      return {
-        policyNumber: policyNumber ?? "",
-        amount: Number((amountRaw ?? "").replace(",", ".")),
-      };
-    })
-    .filter((line) => line.policyNumber && Number.isFinite(line.amount) && line.amount > 0);
+  const uploaded = form.get("file");
+  const fileText =
+    uploaded instanceof File && uploaded.size > 0 ? await uploaded.text() : "";
+  const parsed = parseCommissionLines(`${text(form, "lines")}\n${fileText}`);
   if (!insurerName || parsed.length === 0) {
     redirect("/comisiones/liquidacion?error=datos");
   }
@@ -124,8 +116,17 @@ export async function postCommissionStatementAction(form: FormData): Promise<voi
       data: { status: "SETTLED" },
     });
   }
+  const missing = parsed
+    .filter((line) => !policyId.has(line.policyNumber))
+    .map((line) => line.policyNumber);
+  const matchedPolicies = new Set(matches.map((match) => match.lineId));
+  const withoutReceivable = lineIds
+    .filter((line) => policyId.has(line.policyNumber) && !matchedPolicies.has(line.id))
+    .map((line) => line.policyNumber);
   revalidatePath("/comisiones/liquidacion");
+  const faltan = missing.slice(0, 12).join(",");
+  const sinComision = withoutReceivable.slice(0, 12).join(",");
   redirect(
-    `/comisiones/liquidacion?ok=1&lineas=${parsed.length}&calces=${matches.length}&sinPoliza=${parsed.filter((line) => !policyId.has(line.policyNumber)).length}`,
+    `/comisiones/liquidacion?ok=1&lineas=${parsed.length}&calces=${matches.length}&sinPoliza=${missing.length}&sinComision=${withoutReceivable.length}&faltan=${encodeURIComponent(faltan)}&pendientes=${encodeURIComponent(sinComision)}`,
   );
 }

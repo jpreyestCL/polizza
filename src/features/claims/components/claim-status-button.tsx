@@ -7,13 +7,16 @@ import { ArrowLeftRight, Loader2 } from "lucide-react";
 import { changeClaimStatusAction } from "../actions";
 import {
   CLAIM_STATUS_LABELS,
+  CLAIM_SUBSTATUS_LABELS,
   CLOSURE_OUTCOME_LABELS,
   type ClaimStatusValue,
+  type ClaimSubstatus,
   type ClosureOutcome,
 } from "../schemas";
 import {
   closureOutcomesFor,
   nextClaimStatuses,
+  substatusesOf,
 } from "@/lib/domain/claim-lifecycle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +55,7 @@ export function ClaimStatusButton({
   const [companyClaimNumber, setCompanyClaimNumber] = useState("");
   const [liquidatorName, setLiquidatorName] = useState("");
   const [settledAmount, setSettledAmount] = useState("");
+  const [substatusCode, setSubstatusCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -60,6 +64,7 @@ export function ClaimStatusButton({
       setStatus(nextClaimStatuses(currentStatus)[0] ?? currentStatus);
       setOutcome("");
       setNote("");
+      setSubstatusCode("");
       setError("");
     }
   }, [open, currentStatus]);
@@ -75,6 +80,7 @@ export function ClaimStatusButton({
       companyClaimNumber,
       liquidatorName,
       settledAmount,
+      substatusCode,
     });
     setLoading(false);
     if (!result.ok) {
@@ -88,7 +94,8 @@ export function ClaimStatusButton({
   }
 
   if (options.length === 0) return null;
-  const outcomes = closureOutcomesFor(status);
+  const outcomes = status === "CLOSED" ? closureOutcomesFor(currentStatus) : [];
+  const substatuses = substatusesOf(status);
 
   return (
     <>
@@ -125,6 +132,23 @@ export function ClaimStatusButton({
                 </SelectContent>
               </Select>
             </div>
+            {substatuses.length > 1 ? (
+              <div className="space-y-1.5">
+                <Label>Subestado</Label>
+                <Select value={substatusCode} onValueChange={setSubstatusCode}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="El de la etapa, si no eliges" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {substatuses.map((value: ClaimSubstatus) => (
+                      <SelectItem key={value} value={value}>
+                        {CLAIM_SUBSTATUS_LABELS[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
             {outcomes.length > 0 ? (
               <div className="space-y-1.5">
                 <Label>Resultado del cierre</Label>

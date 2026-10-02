@@ -447,6 +447,12 @@ export async function contractResultAction(
         changedById: ctx.userId,
       },
     });
+    const { ensureDraftPolicy } = await import("@/features/policies/draft-policy");
+    await ensureDraftPolicy(tx, {
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      proposalId: created.id,
+    });
     return created;
   });
 

@@ -23,14 +23,17 @@ export default async function LiquidacionPage({
     <div className="space-y-6">
       <PageHeader
         title="Liquidación de la compañía"
-        description="Una línea por póliza: número y monto, separados por un espacio. El calce parte o junta montos contra la comisión esperada de esa póliza y esa moneda."
+        description="Una línea por póliza: número y monto, separados por espacio, tabulación o punto y coma. También puedes subir un archivo de texto o CSV. El calce parte o junta montos contra la comisión esperada de esa póliza y esa moneda."
       />
       <p className="text-sm">
         <Link href="/comisiones" className="text-primary hover:underline">Volver a revisión</Link>
       </p>
       {sp.ok === "1" ? (
         <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-          Se cargaron {sp.lineas} líneas, con {sp.calces} calces. {sp.sinPoliza} líneas no tenían esa póliza en la cartera.
+          Se cargaron {sp.lineas} líneas, con {sp.calces} calces. {sp.sinPoliza} líneas no tenían esa póliza en la cartera
+          {typeof sp.faltan === "string" && sp.faltan ? `: ${sp.faltan}` : ""}.{" "}
+          {sp.sinComision ?? 0} líneas tenían póliza y no una comisión pendiente
+          {typeof sp.pendientes === "string" && sp.pendientes ? `: ${sp.pendientes}` : ""}.
         </p>
       ) : null}
       {sp.error === "datos" ? (
@@ -38,7 +41,7 @@ export default async function LiquidacionPage({
           Indica la compañía y al menos una línea con número de póliza y monto.
         </p>
       ) : null}
-      <form action={postCommissionStatementAction} className="space-y-3 rounded-xl border bg-card p-4">
+      <form action={postCommissionStatementAction} encType="multipart/form-data" className="space-y-3 rounded-xl border bg-card p-4">
         <label className="flex flex-col gap-1 text-sm">
           Compañía
           <input name="insurerName" required className="rounded-md border bg-background px-2 py-1.5" />
@@ -48,8 +51,12 @@ export default async function LiquidacionPage({
           <input name="currency" defaultValue="UF" className="rounded-md border bg-background px-2 py-1.5" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
+          Archivo
+          <input name="file" type="file" accept=".csv,.txt,text/csv,text/plain" className="text-sm" />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
           Líneas
-          <textarea name="lines" required rows={8} placeholder={"POL-100 12.5\nPOL-200 4"} className="rounded-md border bg-background px-2 py-1.5 font-mono text-sm" />
+          <textarea name="lines" rows={8} placeholder={"POL-100 12.5\nPOL-200;4"} className="rounded-md border bg-background px-2 py-1.5 font-mono text-sm" />
         </label>
         <button type="submit" className="rounded-md border px-3 py-2 text-sm">Cargar y calzar</button>
       </form>

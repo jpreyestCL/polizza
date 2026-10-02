@@ -20,6 +20,8 @@ import {
   closureOutcomeError,
   defaultSubstatus,
   disputeDeadline,
+  substatusesOf,
+  type ClaimSubstatus,
   isClaimOpen,
   substatusError,
   type ClaimStatusValue,
@@ -641,7 +643,11 @@ export async function changeClaimStatusAction(
       where: { id },
       data: {
         status: data.status,
-        substatusCode: defaultSubstatus(data.status as ClaimStatusValue),
+        substatusCode:
+          data.substatusCode &&
+          substatusesOf(data.status).includes(data.substatusCode as ClaimSubstatus)
+            ? data.substatusCode
+            : defaultSubstatus(data.status as ClaimStatusValue),
         currentStateStartedAt: new Date(),
         ...(filedAtCompanyAt && !claim.filedAtCompanyAt
           ? { filedAtCompanyAt }

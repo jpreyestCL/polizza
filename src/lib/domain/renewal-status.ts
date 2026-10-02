@@ -1,6 +1,11 @@
 import { calendarDaysBetween } from "./term";
 
 export type PolicyStatusCode =
+  | "BORRADOR"
+  | "ENVIADA"
+  | "POR_DESPACHAR"
+  | "RECHAZADA"
+  | "DESCARTADA"
   | "VIGENTE"
   | "VENCIDA"
   | "RENOVADA"
@@ -68,6 +73,15 @@ export type RenewalFacts = {
 export function deriveRenewalStatus(facts: RenewalFacts): RenewalStatus {
   const now = facts.now ?? new Date();
   const windowDays = facts.windowDays ?? RENEWAL_WINDOW_DAYS;
+  if (
+    facts.policyStatus === "BORRADOR" ||
+    facts.policyStatus === "ENVIADA" ||
+    facts.policyStatus === "POR_DESPACHAR" ||
+    facts.policyStatus === "RECHAZADA" ||
+    facts.policyStatus === "DESCARTADA"
+  ) {
+    return "NOT_DUE";
+  }
   const expired =
     facts.endDate != null && calendarDaysBetween(now, facts.endDate) < 0;
 

@@ -13,6 +13,8 @@ import {
   translateBrokerisPaste,
 } from "@/lib/domain/brokeris-translate";
 import { logActivity } from "@/server/activity";
+import { applyBrokerisJob } from "@/features/imports/apply-brokeris";
+import { restoreEndorsementSideEffects } from "@/features/endorsements/apply";
 import {
   commandFingerprint,
   readIdempotency,
@@ -109,6 +111,39 @@ export async function applyImportAction(form: FormData): Promise<void> {
     include: { rows: { orderBy: { rowNo: "asc" } } },
   });
   if (!job) redirect("/importaciones?aviso=lote");
+  if (job.profile.startsWith("BROKERIS_")) {
+    const created = await db.$transaction(async (tx) =>
+      applyBrokerisJob(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        profile: job.profile,
+        rows: job.rows,
+      }),
+    );
+    await db.importJob.update({
+      where: { id: jobId },
+      data: { status: "APLICADO", appliedAt: new Date() },
+    });
+    await storeIdempotency(db, {
+      organizationId: ctx.organizationId,
+      key: `import:${jobId}`,
+      fingerprint,
+      command: "imports.apply",
+      resultJson: { profile: job.profile, created },
+    });
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "CLIENT",
+      entityId: ctx.organizationId,
+      action: "import_applied",
+      summary: `Lote ${job.profile} aplicado. Fichas nuevas: ${created}. Las filas en revisión quedaron sin crear.`,
+      userId: ctx.userId,
+    });
+    revalidatePath("/importaciones");
+    revalidatePath("/polizas");
+    revalidatePath("/siniestros");
+    redirect(`/importaciones?job=${jobId}&aviso=aplicado`);
+  }
   if (job.profile !== "CLIENTES") {
     await db.importJob.update({
       where: { id: jobId },
@@ -126,7 +161,7 @@ export async function applyImportAction(form: FormData): Promise<void> {
       entityType: "CLIENT",
       entityId: ctx.organizationId,
       action: "import_applied",
-      summary: `Lote ${job.profile} registrado. La traducción queda en el lote y no crea fichas.`,
+      summary: `Lote ${job.profile} registrado. El cuadre no crea fichas.`,
       userId: ctx.userId,
     });
     revalidatePath("/importaciones");
@@ -206,6 +241,70 @@ export async function revertImportAction(form: FormData): Promise<void> {
     include: { rows: true },
   });
   if (!job) redirect("/importaciones?aviso=lote");
+  if (job.profile.startsWith("BROKERIS_")) {
+    for (const row of job.rows) {
+      if (!row.createdEntityId) continue;
+      if (row.createdEntityType === "CLAIM") {
+        await db.claim.delete({ where: { id: row.createdEntityId } }).catch(() => null);
+      } else if (row.createdEntityType === "NON_RENEWAL") {
+        const prior = ((row.payload ?? {}) as { _prior?: Record<string, unknown> })._prior ?? {};
+        await db.policy.update({
+          where: { id: row.createdEntityId },
+          data: {
+            notRenewable: prior.notRenewable === true,
+            nonRenewalReason:
+              typeof prior.nonRenewalReason === "string" ? prior.nonRenewalReason : null,
+            nonRenewalAt:
+              typeof prior.nonRenewalAt === "string" ? new Date(prior.nonRenewalAt) : null,
+            nonRenewalNote:
+              typeof prior.nonRenewalNote === "string" ? prior.nonRenewalNote : null,
+          },
+        }).catch(() => null);
+      } else if (row.createdEntityType === "ENDORSEMENT") {
+        const endorsement = await db.endorsement.findFirst({
+          where: { id: row.createdEntityId },
+          select: {
+            id: true,
+            policyId: true,
+            type: true,
+            createdAt: true,
+            priorSnapshot: true,
+          },
+        });
+        if (endorsement) {
+          await restoreEndorsementSideEffects(db, endorsement, {
+            organizationId: ctx.organizationId,
+            userId: ctx.userId,
+          });
+          await db.endorsement.delete({ where: { id: endorsement.id } }).catch(() => null);
+        }
+      } else if (row.createdEntityType === "POLICY") {
+        const [endorsements, claims] = await Promise.all([
+          db.endorsement.count({ where: { policyId: row.createdEntityId } }),
+          db.claim.count({ where: { policyId: row.createdEntityId } }),
+        ]);
+        if (endorsements > 0 || claims > 0) {
+          await db.importJobRow.update({
+            where: { id: row.id },
+            data: { message: "No se borró: la póliza ya tiene endosos o siniestros." },
+          });
+          continue;
+        }
+        await db.policy.delete({ where: { id: row.createdEntityId } }).catch(() => null);
+      }
+      await db.importJobRow.update({
+        where: { id: row.id },
+        data: { action: "REVERTIDO", message: reason },
+      });
+    }
+    await db.importJob.update({
+      where: { id: jobId },
+      data: { status: "REVERTIDO", revertedAt: new Date(), decisionNote: reason },
+    });
+    revalidatePath("/importaciones");
+    revalidatePath("/polizas");
+    redirect(`/importaciones?job=${jobId}&aviso=revertido`);
+  }
   if (job.profile !== "CLIENTES") {
     await db.importJob.update({
       where: { id: jobId },
@@ -273,7 +372,7 @@ export async function previewBrokerisAction(form: FormData): Promise<void> {
       status: "PREVIEW",
       fileName: text(form, "fileName") || "brokeris.txt",
       createdById: ctx.userId,
-      decisionNote: "Traducción de códigos. No crea pólizas ni siniestros.",
+      decisionNote: "Traducción de códigos. Al aplicar se crean las filas traducidas que traen contratante, número y fechas.",
     },
     select: { id: true },
   });

@@ -11,6 +11,11 @@ type BadgeVariant =
   | "muted";
 
 const STATUS_VARIANT: Record<PolicyStatusValue, BadgeVariant> = {
+  BORRADOR: "secondary",
+  ENVIADA: "default",
+  POR_DESPACHAR: "warning",
+  RECHAZADA: "destructive",
+  DESCARTADA: "muted",
   VIGENTE: "success",
   VENCIDA: "destructive",
   RENOVADA: "secondary",

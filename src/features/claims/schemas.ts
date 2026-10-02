@@ -167,6 +167,7 @@ export const claimStatusChangeSchema = z.object({
   companyClaimNumber: z.string().trim().max(80).default(""),
   liquidatorName: z.string().trim().max(160).default(""),
   settledAmount: z.string().trim().default(""),
+  substatusCode: z.string().trim().default(""),
 });
 export type ClaimStatusChangeValues = z.infer<typeof claimStatusChangeSchema>;
 

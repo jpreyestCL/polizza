@@ -61,6 +61,7 @@ export function EndorsementsPanel({
   policyStatus,
   policyEndDate,
   timezone,
+  claims = [],
 }: {
   policyId: string;
   endorsements: EndorsementRow[];
@@ -68,6 +69,7 @@ export function EndorsementsPanel({
   policyStatus: string;
   policyEndDate: string;
   timezone?: string;
+  claims?: { id: string; claimNumber: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const blocked =
@@ -88,6 +90,7 @@ export function EndorsementsPanel({
           open={open}
           onOpenChange={setOpen}
           disabled={blocked}
+          claims={claims}
         />
       </div>
       {empty ? (
@@ -246,6 +249,10 @@ function emptyValues(policyEndDate: string): EndorsementValues {
     notes: "",
     premiumAffectedDelta: "",
     premiumExemptDelta: "",
+    newInsuredAmount: "",
+    offsetClaimId: "",
+    commissionAffectPct: "",
+    commissionExemptPct: "",
   };
 }
 
@@ -255,12 +262,14 @@ function EndorsementDialog({
   open,
   onOpenChange,
   disabled,
+  claims,
 }: {
   policyId: string;
   policyEndDate: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   disabled?: boolean;
+  claims: { id: string; claimNumber: string }[];
 }) {
   const router = useRouter();
   const [values, setValues] = useState(() => emptyValues(policyEndDate));
@@ -435,12 +444,77 @@ function EndorsementDialog({
                 cancelación o anulación el crédito se calcula solo.
               </p>
             </div>
-          ) : (
+          ) : null}
+          {values.type === "MODIFICA_MONTO_PRIMA" ? (
+            <div>
+              <Label className="text-xs">Nuevo monto asegurado del ítem</Label>
+              <Input
+                inputMode="decimal"
+                value={values.newInsuredAmount}
+                onChange={(e) =>
+                  setValues({ ...values, newInsuredAmount: e.target.value })
+                }
+                placeholder="Solo si la póliza tiene un ítem"
+              />
+            </div>
+          ) : null}
+          {values.type === "CORTE_PERDIDA_TOTAL" ? (
+            <div>
+              <Label className="text-xs">Siniestro que compensa</Label>
+              <Select
+                value={values.offsetClaimId || "none"}
+                onValueChange={(v) =>
+                  setValues({ ...values, offsetClaimId: v === "none" ? "" : v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sin siniestro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin siniestro</SelectItem>
+                  {claims.map((claim) => (
+                    <SelectItem key={claim.id} value={claim.id}>
+                      {claim.claimNumber}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                El plan de pago no se cierra. Si era el único ítem, la póliza
+                queda cancelada.
+              </p>
+            </div>
+          ) : null}
+          {values.type === "CAMBIO_COMISION" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Nueva comisión afecta %</Label>
+                <Input
+                  inputMode="decimal"
+                  value={values.commissionAffectPct}
+                  onChange={(e) =>
+                    setValues({ ...values, commissionAffectPct: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Nueva comisión exenta %</Label>
+                <Input
+                  inputMode="decimal"
+                  value={values.commissionExemptPct}
+                  onChange={(e) =>
+                    setValues({ ...values, commissionExemptPct: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+          ) : null}
+          {endorsementUsesCalculatedCredit(values.type) ? (
             <p className="text-xs text-muted-foreground">
               La prima vigente baja por el crédito de la cancelación o
               anulación. No hace falta informar un delta.
             </p>
-          )}
+          ) : null}
           <div>
             <Label className="text-xs">
               Detalle del endoso{isProposal ? " *" : ""}

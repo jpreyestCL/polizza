@@ -17,6 +17,11 @@ export const ENDORSEMENT_TYPES = [
   "PRORROGA",
   "SOLICITUD_ANULACION",
   "SOLICITUD_CANCELACION",
+  "REVERSO_PRORROGA",
+  "REDUCE_VIGENCIA",
+  "CAMBIO_COMISION",
+  "DECLARACION",
+  "AJUSTE_PRIMA",
 ] as const;
 export type EndorsementTypeValue = (typeof ENDORSEMENT_TYPES)[number];
 
@@ -37,6 +42,11 @@ export const ENDORSEMENT_TYPE_LABELS: Record<EndorsementTypeValue, string> = {
   PRORROGA: "Prórroga",
   SOLICITUD_ANULACION: "Solicitud de anulación",
   SOLICITUD_CANCELACION: "Solicitud de cancelación",
+  REVERSO_PRORROGA: "Anulación de prórroga",
+  REDUCE_VIGENCIA: "Rebaja de vigencia",
+  CAMBIO_COMISION: "Cambio de comisión",
+  DECLARACION: "Declaración",
+  AJUSTE_PRIMA: "Ajuste de prima",
 };
 
 /**
@@ -120,6 +130,10 @@ export const endorsementSchema = z
     notes: optionalString,
     premiumAffectedDelta: optionalPremiumDelta,
     premiumExemptDelta: optionalPremiumDelta,
+    newInsuredAmount: optionalPremiumDelta,
+    offsetClaimId: optionalString,
+    commissionAffectPct: optionalPremiumDelta,
+    commissionExemptPct: optionalPremiumDelta,
   })
   .superRefine((val, ctx) => {
     if (val.mode === "PROPUESTA" && !val.detail) {
@@ -154,6 +168,10 @@ export const endorsementProposalSchema = z
     observations: optionalString,
     premiumAffectedDelta: optionalPremiumDelta,
     premiumExemptDelta: optionalPremiumDelta,
+    newInsuredAmount: optionalPremiumDelta,
+    offsetClaimId: optionalString,
+    commissionAffectPct: optionalPremiumDelta,
+    commissionExemptPct: optionalPremiumDelta,
   })
   .superRefine((val, ctx) => {
     if (val.endDate && val.endDate < val.effectiveDate) {

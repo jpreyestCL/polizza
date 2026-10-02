@@ -1,6 +1,7 @@
 /**
- * Dieciocho tipos de la especificación. Los que la app ya usa se traducen
- * aquí. Cinco quedan apagados y, si aparecen, se tratan como otro.
+ * Dieciocho tipos de la especificación. Todos se pueden registrar.
+ * Reemplazar ítems sigue en cálculo manual: no hay una lista de ítems
+ * nuevos que la compañía haya emitido.
  */
 
 export type SpecEndorsementType =
@@ -36,14 +37,6 @@ export type SpecEndorsement = {
   mvpEnabled: boolean;
   calcMethod: CalcMethod;
 };
-
-const DISABLED = new Set<SpecEndorsementType>([
-  "EXTENSION_REVERSAL",
-  "REDUCE_TERM",
-  "COMMISSION_CHANGE",
-  "DECLARATION",
-  "PREMIUM_ADJUSTMENT",
-]);
 
 const CALC: Record<SpecEndorsementType, CalcMethod> = {
   ADD_ITEM: "PRORATA_DAYS",
@@ -83,6 +76,11 @@ const APP_TYPE: Record<string, SpecEndorsementType> = {
   PRORROGA: "EXTENSION",
   SOLICITUD_ANULACION: "ANNULMENT",
   SOLICITUD_CANCELACION: "CANCELLATION",
+  REVERSO_PRORROGA: "EXTENSION_REVERSAL",
+  REDUCE_VIGENCIA: "REDUCE_TERM",
+  CAMBIO_COMISION: "COMMISSION_CHANGE",
+  DECLARACION: "DECLARATION",
+  AJUSTE_PRIMA: "PREMIUM_ADJUSTMENT",
 };
 
 const CLAUSE_TYPES = new Set<SpecEndorsementType>([
@@ -96,9 +94,35 @@ export function specEndorsementOf(appType: string): SpecEndorsement {
   const code = APP_TYPE[appType] ?? "OTHER";
   return {
     code,
-    mvpEnabled: !DISABLED.has(code),
+    mvpEnabled: true,
     calcMethod: CALC[code],
   };
+}
+
+const SPEC_TO_APP: Record<SpecEndorsementType, string> = {
+  ADD_ITEM: "AGREGA_ITEMS",
+  REMOVE_ITEM: "ELIMINA_ITEMS",
+  REPLACE_ITEMS: "MODIFICACION",
+  MODIFY_SUM_INSURED_PREMIUM: "MODIFICA_MONTO_PRIMA",
+  MODIFY_DATA: "MODIFICACION",
+  CHANGE_PARTY: "CAMBIO_ASEGURADO_POLIZA",
+  EXTENSION: "PRORROGA",
+  CANCELLATION: "CANCELACION_COMPANIA",
+  TOTAL_LOSS_TERMINATION: "CORTE_PERDIDA_TOTAL",
+  ANNULMENT: "ANULACION_COMPANIA",
+  REINSTATEMENT: "ENDOSO_INTERNO",
+  BROKER_CHANGE: "ENDOSO_INTERNO",
+  OTHER: "ENDOSO_INTERNO",
+  EXTENSION_REVERSAL: "REVERSO_PRORROGA",
+  REDUCE_TERM: "REDUCE_VIGENCIA",
+  COMMISSION_CHANGE: "CAMBIO_COMISION",
+  DECLARATION: "DECLARACION",
+  PREMIUM_ADJUSTMENT: "AJUSTE_PRIMA",
+};
+
+/** Código de la especificación → tipo que guarda la póliza. */
+export function appTypeForSpec(code: string): string {
+  return SPEC_TO_APP[code as SpecEndorsementType] ?? "ENDOSO_INTERNO";
 }
 
 export type InalterabilityInput = {

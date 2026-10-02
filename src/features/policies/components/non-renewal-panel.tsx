@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import {
   NON_RENEWAL_REASONS,
-  NON_RENEWAL_REASON_LABELS,
+  nonRenewalReasonLabel,
   type NonRenewalReason,
 } from "../schemas";
 import {
@@ -39,7 +39,7 @@ export function NonRenewalPanel({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<NonRenewalReason>("CLIENTE_NO_RENOVO");
+  const [selected, setSelected] = useState<NonRenewalReason>("CLIENT_REQUEST");
   const [comment, setComment] = useState("");
 
   async function run(task: () => Promise<{ ok: boolean; error?: string }>, success: string) {
@@ -86,9 +86,7 @@ export function NonRenewalPanel({
         <div className="flex flex-col gap-2 rounded-lg bg-muted/40 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
           <p>
             No se renueva
-            {reason && reason in NON_RENEWAL_REASON_LABELS
-              ? `: ${NON_RENEWAL_REASON_LABELS[reason as NonRenewalReason]}`
-              : ""}
+            {reason ? `: ${nonRenewalReasonLabel(reason)}` : ""}
             {note ? `. ${note}` : ""}
           </p>
           <Button
@@ -133,7 +131,7 @@ export function NonRenewalPanel({
               <SelectContent>
                 {NON_RENEWAL_REASONS.map((code) => (
                   <SelectItem key={code} value={code}>
-                    {NON_RENEWAL_REASON_LABELS[code]}
+                    {nonRenewalReasonLabel(code)}
                   </SelectItem>
                 ))}
               </SelectContent>

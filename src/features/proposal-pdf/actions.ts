@@ -9,6 +9,7 @@ import { saveUploadedFile } from "@/server/storage";
 import type { Db } from "@/server/db";
 import { buildProposalPdfData } from "./build-pdf-data";
 import { recordPolicySubmission } from "@/features/proposals/submission";
+import { ensureDraftPolicy } from "@/features/policies/draft-policy";
 import { setTenantGuc } from "@/server/tenant-rls";
 import { renderEmailTemplate } from "@/lib/email-templates";
 
@@ -251,6 +252,12 @@ export async function sendProposalByEmailAction(
         sentAt,
         createdById: ctx.userId,
       });
+      await ensureDraftPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        proposalId,
+        status: "ENVIADA",
+      });
     });
     // Obs 14: aun marcando como enviada (sin envío real), guarda el PDF de la
     // propuesta en sus documentos.
@@ -478,6 +485,12 @@ export async function sendProposalByEmailAction(
       proposalId,
       sentAt,
       createdById: ctx.userId,
+    });
+    await ensureDraftPolicy(tx, {
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      proposalId,
+      status: "ENVIADA",
     });
   });
   // Obs 14: guarda el PDF enviado en los documentos de la propuesta.

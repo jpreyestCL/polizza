@@ -7,7 +7,7 @@ import { basePrisma } from "@/server/db";
 import { logActivity } from "@/server/activity";
 import { generateProposalNumber } from "@/features/proposals/number-generator";
 import { isProposalLocked } from "@/features/proposals/schemas";
-import { applyEndorsementToPolicy } from "./apply";
+import { applyEndorsementToPolicy, restoreEndorsementSideEffects } from "./apply";
 import {
   reopenPlanAfterTermination,
   terminationKindOf,
@@ -130,6 +130,8 @@ export async function createEndorsementAction(
     });
     const fills =
       data.type === "PRORROGA" ||
+      data.type === "REVERSO_PRORROGA" ||
+      data.type === "REDUCE_VIGENCIA" ||
       data.type === "CORTE_PERDIDA_TOTAL" ||
       endorsementUsesCalculatedCredit(data.type);
     if (estimate && fills) {
@@ -207,6 +209,10 @@ export async function createEndorsementAction(
         premiumExemptDelta: exemptDelta,
         inalterabilityNote,
         initiatedBy: data.type === "CANCELACION_NO_PAGO" ? "NON_PAYMENT" : "BROKER",
+        newInsuredAmount: parsePremiumDelta(data.newInsuredAmount),
+        offsetClaimId: toNullable(data.offsetClaimId),
+        commissionAffectPct: parsePremiumDelta(data.commissionAffectPct),
+        commissionExemptPct: parsePremiumDelta(data.commissionExemptPct),
       }),
     );
     if (!result.ok) return result;
@@ -275,6 +281,19 @@ export async function createEndorsementAction(
             affectedDelta == null ? null : new Prisma.Decimal(affectedDelta.toFixed(4)),
           endorsementPremiumExempt:
             exemptDelta == null ? null : new Prisma.Decimal(exemptDelta.toFixed(4)),
+          endorsementNewInsuredAmount:
+            parsePremiumDelta(data.newInsuredAmount) == null
+              ? null
+              : new Prisma.Decimal(parsePremiumDelta(data.newInsuredAmount)!.toFixed(2)),
+          endorsementOffsetClaimId: toNullable(data.offsetClaimId),
+          endorsementCommissionAffectPct:
+            parsePremiumDelta(data.commissionAffectPct) == null
+              ? null
+              : new Prisma.Decimal(parsePremiumDelta(data.commissionAffectPct)!.toFixed(3)),
+          endorsementCommissionExemptPct:
+            parsePremiumDelta(data.commissionExemptPct) == null
+              ? null
+              : new Prisma.Decimal(parsePremiumDelta(data.commissionExemptPct)!.toFixed(3)),
           observations: [toNullable(data.notes), inalterabilityNote]
             .filter(Boolean)
             .join("\n") || null,
@@ -388,6 +407,10 @@ export async function updateEndorsementProposalAction(
       endorsementDetail: data.detail,
       endorsementPremiumAffected: deltaDecimal(data.premiumAffectedDelta),
       endorsementPremiumExempt: deltaDecimal(data.premiumExemptDelta),
+      endorsementNewInsuredAmount: deltaDecimal(data.newInsuredAmount),
+      endorsementOffsetClaimId: toNullable(data.offsetClaimId),
+      endorsementCommissionAffectPct: deltaDecimal(data.commissionAffectPct),
+      endorsementCommissionExemptPct: deltaDecimal(data.commissionExemptPct),
       startDate: effective,
       endDate: toDate(data.endDate),
       observations: toNullable(data.observations),
@@ -412,9 +435,20 @@ export async function deleteEndorsementAction(
   const { ctx, db } = await requireOrgDb();
   const endorsement = await db.endorsement.findFirst({
     where: { id: endorsementId },
-    select: { id: true, policyId: true, type: true },
+    select: {
+      id: true,
+      policyId: true,
+      type: true,
+      createdAt: true,
+      priorSnapshot: true,
+    },
   });
   if (!endorsement) return { ok: false, error: "Endoso no existe." };
+
+  await restoreEndorsementSideEffects(db, endorsement, {
+    organizationId: ctx.organizationId,
+    userId: ctx.userId,
+  });
 
   // Si movía el estado y es el último endoso de ese tipo, revertir la póliza.
   if (endorsementStatusEffect(endorsement.type)) {

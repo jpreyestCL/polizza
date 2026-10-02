@@ -1,5 +1,6 @@
 import "server-only";
 import type { PolicyStatus } from "@prisma/client";
+import { HIDDEN_FROM_CARTERA } from "@/lib/domain/policy-lifecycle";
 import type { SessionContext } from "@/server/context";
 import { computeGross } from "./premium";
 import type { Db } from "@/server/db";
@@ -132,7 +133,9 @@ export async function listPolicies(
           ],
         }
       : {}),
-    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.status
+      ? { status: filters.status }
+      : { status: { notIn: [...HIDDEN_FROM_CARTERA] } }),
     ...(filters.companyId ? { companyId: filters.companyId } : {}),
   };
   const [rows, total] = await Promise.all([
@@ -241,7 +244,10 @@ export async function listAllPoliciesForDashboard(
   ctx: SessionContext,
   db: Db,
 ): Promise<PolicyListItem[]> {
-  const where = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
+  const where = {
+    ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
+    status: { notIn: [...HIDDEN_FROM_CARTERA] },
+  };
   const rows = await db.policy.findMany({
     where,
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],

@@ -9,6 +9,8 @@ const OPEN_PROPOSAL_STATUSES = new Set([
 ]);
 
 const ISSUED_CHILD = new Set(["VIGENTE", "VENCIDA", "RENOVADA"]);
+const OPEN_CHILD = new Set(["BORRADOR", "ENVIADA", "POR_DESPACHAR"]);
+const LOST_CHILD = new Set(["ANULADA", "CANCELADA", "RECHAZADA", "DESCARTADA"]);
 const LOST_PROPOSAL = new Set(["RECHAZADA", "DESCARTADA"]);
 
 /**
@@ -28,11 +30,14 @@ export function successorState(input: {
   ) {
     return "ISSUED";
   }
-  if (input.proposalStatuses.some((status) => OPEN_PROPOSAL_STATUSES.has(status))) {
+  if (
+    input.childStatuses.some((status) => OPEN_CHILD.has(status)) ||
+    input.proposalStatuses.some((status) => OPEN_PROPOSAL_STATUSES.has(status))
+  ) {
     return "IN_PROGRESS";
   }
   if (
-    input.childStatuses.some((status) => status === "ANULADA" || status === "CANCELADA") ||
+    input.childStatuses.some((status) => LOST_CHILD.has(status)) ||
     input.proposalStatuses.some((status) => LOST_PROPOSAL.has(status))
   ) {
     return "LOST";

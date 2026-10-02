@@ -44,6 +44,7 @@ import {
 } from "@/features/proposals/actions";
 import { discardProposalFormAction } from "@/features/proposals/discard";
 import { canDiscardProposal } from "@/lib/domain/policy-lifecycle";
+import { POLICY_STATUS_LABELS } from "@/features/policies/schemas";
 import { hasPermission } from "@/lib/factory-roles";
 import { ClientAlertBanner } from "@/components/alert-banner";
 import { Button } from "@/components/ui/button";
@@ -165,6 +166,16 @@ export default async function PropuestaDetailPage({
                   className="hover:text-primary hover:underline"
                 >
                   Póliza N° {proposal.endorsedPolicy.policyNumber}
+                </Link>
+              </>
+            ) : proposal.draftPolicy ? (
+              <>
+                {" · "}
+                <Link
+                  href={`/polizas/${proposal.draftPolicy.id}`}
+                  className="hover:text-primary hover:underline"
+                >
+                  La misma póliza, {POLICY_STATUS_LABELS[proposal.draftPolicy.status].toLowerCase()}
                 </Link>
               </>
             ) : null}

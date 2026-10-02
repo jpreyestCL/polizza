@@ -125,6 +125,42 @@ export function EndorsementProposalForm({
           />
         </div>
       </div>
+      {values.type === "MODIFICA_MONTO_PRIMA" ? (
+        <div>
+          <Label className="text-xs">Nuevo monto asegurado del ítem</Label>
+          <Input
+            inputMode="decimal"
+            value={values.newInsuredAmount}
+            onChange={(e) =>
+              setValues({ ...values, newInsuredAmount: e.target.value })
+            }
+          />
+        </div>
+      ) : null}
+      {values.type === "CAMBIO_COMISION" ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <Label className="text-xs">Nueva comisión afecta %</Label>
+            <Input
+              inputMode="decimal"
+              value={values.commissionAffectPct}
+              onChange={(e) =>
+                setValues({ ...values, commissionAffectPct: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Nueva comisión exenta %</Label>
+            <Input
+              inputMode="decimal"
+              value={values.commissionExemptPct}
+              onChange={(e) =>
+                setValues({ ...values, commissionExemptPct: e.target.value })
+              }
+            />
+          </div>
+        </div>
+      ) : null}
       <div>
         <Label className="text-xs">Detalle del endoso *</Label>
         <Textarea

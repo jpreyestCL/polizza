@@ -655,6 +655,12 @@ model Proposal {
   // anulación no lo usan: su crédito se calcula al registrar la emisión.
   endorsementPremiumAffected Decimal?         @db.Decimal(18, 4)
   endorsementPremiumExempt   Decimal?         @db.Decimal(18, 4)
+  // Monto asegurado que queda en el ítem, siniestro de la pérdida total
+  // y nueva comisión. Viajan con la propuesta hasta que el endoso se aplica.
+  endorsementNewInsuredAmount    Decimal? @db.Decimal(16, 2)
+  endorsementOffsetClaimId       String?
+  endorsementCommissionAffectPct Decimal? @db.Decimal(6, 3)
+  endorsementCommissionExemptPct Decimal? @db.Decimal(6, 3)
   companyId                  String?
   lineId                     String?
   branchId                   String?
@@ -909,6 +915,11 @@ enum EndorsementType {
   PRORROGA
   SOLICITUD_ANULACION
   SOLICITUD_CANCELACION
+  REVERSO_PRORROGA
+  REDUCE_VIGENCIA
+  CAMBIO_COMISION
+  DECLARACION
+  AJUSTE_PRIMA
 }
 
 model Endorsement {
@@ -936,6 +947,14 @@ model Endorsement {
   calcMethod           String?
   initiatedBy          String?
   inalterabilityNote   String?
+  // Ítem único: monto asegurado que deja MODIFICA_MONTO_PRIMA.
+  newInsuredAmount  Decimal?        @db.Decimal(16, 2)
+  // Siniestro que origina el corte por pérdida total. No cierra el plan.
+  offsetClaimId     String?
+  commissionAffectPct Decimal?      @db.Decimal(6, 3)
+  commissionExemptPct Decimal?      @db.Decimal(6, 3)
+  // Estado de la póliza antes de aplicar este endoso, para poder revertirlo.
+  priorSnapshot     Json?
   createdById       String?
   createdAt         DateTime        @default(now())
 
@@ -1030,6 +1049,11 @@ model ProposalCoaseguroParticipation {
 // ─────────────────────────────────────────────────────────────
 
 enum PolicyStatus {
+  BORRADOR
+  ENVIADA
+  POR_DESPACHAR
+  RECHAZADA
+  DESCARTADA
   VIGENTE
   VENCIDA
   RENOVADA
@@ -1075,6 +1099,10 @@ model Policy {
   endDate                DateTime?    @db.Date
   previousPolicyId       String?
   nextPolicyId           String?
+  // Cadena de renovación. La madre usa su propio id; cada sucesora
+  // repite ese id y sube el período.
+  lineageId              String?
+  termNumber             Int          @default(1)
   externalId             String?
   // Producto contratado. En pólizas emitidas en Polizza se hereda de la
   // propuesta; en las importadas lo setea el import desde el catálogo legacy.
@@ -1130,6 +1158,7 @@ model Policy {
   @@index([clientId])
   @@index([productId])
   @@index([organizationId, salespersonId])
+  @@index([organizationId, lineageId])
 }
 
 model PolicyItem {
@@ -1743,8 +1772,7 @@ model CommissionReceivable {
   @@index([policyId])
 }
 
-// Snapshot inmutable de cada envío a la compañía. La propuesta sigue siendo
-// el expediente editable; este registro no se reescribe.
+// Snapshot inmutable de cada envío a la compañía. No se reescribe.
 model PolicySubmission {
   id             String   @id @default(cuid())
   organizationId String

@@ -75,6 +75,13 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
     const mother = row[3] || null;
     const sortKey = row[4] || "";
     const policyNumber = row[5] || "";
+    const clientRut = row[6] || "";
+    const clientName = row[7] || "";
+    const premium = row[8] || "";
+    const currency = row[9] || "";
+    const startDate = row[10] || "";
+    const endDate = row[11] || "";
+    const companyName = row[12] || "";
     const status =
       statusCode == null
         ? null
@@ -88,6 +95,13 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
       mother,
       sortKey,
       policyNumber,
+      clientRut,
+      clientName,
+      premium,
+      currency,
+      startDate,
+      endDate,
+      companyName,
     };
   });
   const chain = assignRenewalLineage(
@@ -107,6 +121,9 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
     } else if (!row.status?.status) notes.push("Estado sin mapa.");
     if (row.renewalFlag && !row.mother) notes.push("Renovación sin póliza madre.");
     if (link?.note) notes.push(link.note);
+    if (row.premium && !Number.isFinite(Number(row.premium.replace(",", ".")))) {
+      notes.push("La prima no es un número.");
+    }
     const mapped = ambiguousAnnulment ? "sin clasificar" : (row.status?.status ?? "sin mapa");
     const observation = row.status?.insurerObservation ? ", con observación" : "";
     const chainText = link ? `, cadena ${link.lineageId} período ${link.termNumber}` : "";
@@ -120,6 +137,14 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
         lineageId: link?.lineageId ?? null,
         termNumber: link?.termNumber ?? null,
         renewedFromId: link?.renewedFromId ?? null,
+        policyNumber: row.policyNumber,
+        clientRut: row.clientRut,
+        clientName: row.clientName,
+        premium: row.premium || null,
+        currency: row.currency || null,
+        startDate: row.startDate || null,
+        endDate: row.endDate || null,
+        companyName: row.companyName || null,
       },
       message: `${row.id}: estado ${row.statusCode ?? "—"} → ${mapped}${observation}${chainText}${
         notes.length ? `. ${notes.join(" ")}` : ""
@@ -134,6 +159,10 @@ function translateEndorsements(parsed: string[][]): BrokerisTranslatedRow[] {
     const typeId = numberAt(row, 1);
     const kind = typeId == null ? null : mapBrokerisMovementKind(typeId);
     const mapped = typeId == null ? null : mapBrokerisEndorsement(typeId);
+    const policyNumber = row[2] || "";
+    const effectiveDate = row[3] || "";
+    const premiumDelta = row[4] || "";
+    const detail = row[5] || "";
     const notes: string[] = [];
     if (kind === "ISSUE") notes.push("Es la emisión, no un endoso.");
     if (typeId != null && kind == null) notes.push("Tipo sin mapa.");
@@ -153,6 +182,10 @@ function translateEndorsements(parsed: string[][]): BrokerisTranslatedRow[] {
         mvpEnabled: mapped?.mvpEnabled ?? null,
         partyChangeKind: mapped?.partyChangeKind ?? null,
         note: mapped?.note ?? null,
+        policyNumber,
+        effectiveDate: effectiveDate || null,
+        premiumDelta: premiumDelta || null,
+        detail: detail || null,
       },
       message: `${id}: tipo ${typeId ?? "—"} → ${label}${who}${notes.length ? `. ${notes.join(" ")}` : ""}${
         mapped?.note && !mapped.needsReview ? `. ${mapped.note}` : ""
@@ -170,6 +203,8 @@ function translateClaims(parsed: string[][]): BrokerisTranslatedRow[] {
     const status = statusId == null ? null : mapBrokerisClaimStatus(statusId);
     const substatus = substatusId == null ? null : mapBrokerisClaimSubstatus(substatusId, status);
     const closure = closureId == null ? null : mapBrokerisClaimClosure(closureId);
+    const policyNumber = row[4] || "";
+    const description = row[5] || "";
     const notes: string[] = [];
     if (!status) notes.push("Estado sin mapa.");
     if (substatus?.note) notes.push(substatus.note);
@@ -183,6 +218,8 @@ function translateClaims(parsed: string[][]): BrokerisTranslatedRow[] {
         substatus: substatus?.status ?? null,
         closureOutcome: closure?.outcome ?? null,
         closureLabel: closure?.label ?? null,
+        policyNumber,
+        description: description || null,
       },
       message: `${id}: estado ${status ?? "sin mapa"}${
         substatus ? `, subestado ${substatus.status}` : ""
@@ -213,6 +250,7 @@ function translateNonRenewals(parsed: string[][]): BrokerisTranslatedRow[] {
     const reasonId = numberAt(row, 2);
     const type = typeId == null ? null : mapBrokerisNonRenewalType(typeId);
     const reason = reasonId == null ? null : mapBrokerisNonRenewalReason(reasonId);
+    const policyNumber = row[3] || "";
     const notes: string[] = [];
     if (!type) notes.push("Tipo sin mapa.");
     if (type === "NOT_RENEWED" && !reason) {
@@ -221,7 +259,7 @@ function translateNonRenewals(parsed: string[][]): BrokerisTranslatedRow[] {
     return {
       rowNo: index + 1,
       action: notes.length === 0 ? "TRADUCIDO" : "REVISAR",
-      payload: { id, type, reason },
+      payload: { id, type, reason, policyNumber },
       message: `${id}: ${type ?? "sin mapa"}${reason ? `, motivo ${reason}` : ""}${
         notes.length ? `. ${notes.join(" ")}` : ""
       }`,

@@ -18,7 +18,7 @@ import {
   policyFormSchema,
   policyStatusChangeSchema,
   nonRenewalSchema,
-  NON_RENEWAL_REASON_LABELS,
+  nonRenewalReasonLabel,
   POLICY_STATUS_LABELS,
   type NonRenewalValues,
   type PolicyFormValues,
@@ -583,6 +583,12 @@ export async function renewPolicyAction(id: string): Promise<ActionResult> {
           });
         }
       }
+      const { ensureDraftPolicy } = await import("@/features/policies/draft-policy");
+      await ensureDraftPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        proposalId: proposal.id,
+      });
       return proposal;
     });
 
@@ -632,10 +638,18 @@ async function issueRenewalCopy(id: string): Promise<ActionResult> {
           startDate: policy.endDate,
           endDate: addYear(policy.endDate),
           previousPolicyId: policy.id,
+          lineageId: policy.lineageId ?? policy.id,
+          termNumber: (policy.termNumber ?? 1) + 1,
           assignedUserId: policy.assignedUserId,
           createdById: ctx.userId,
         },
       });
+      if (!policy.lineageId) {
+        await tx.policy.update({
+          where: { id: policy.id },
+          data: { lineageId: policy.id, termNumber: policy.termNumber ?? 1 },
+        });
+      }
       if (policy.items.length > 0) {
         await tx.policyItem.createMany({
           data: policy.items.map((item) => ({
@@ -782,7 +796,7 @@ export async function recordNonRenewalAction(
     entityType: "POLICY",
     entityId: id,
     action: "non_renewal",
-    summary: `Póliza ${policy.policyNumber} no se renueva: ${NON_RENEWAL_REASON_LABELS[parsed.data.reason]}`,
+    summary: `Póliza ${policy.policyNumber} no se renueva: ${nonRenewalReasonLabel(parsed.data.reason)}`,
     userId: ctx.userId,
   });
   revalidatePath("/polizas");

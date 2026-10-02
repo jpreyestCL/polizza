@@ -138,6 +138,14 @@ export async function moveQuoteRequestAction(form: FormData): Promise<void> {
         createdById: ctx.userId,
       },
     });
+    const { ensureDraftPolicy } = await import("@/features/policies/draft-policy");
+    await db.$transaction(async (tx) => {
+      await ensureDraftPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        proposalId: proposal.id,
+      });
+    });
     await db.quoteRequest.update({
       where: { id: requestId },
       data: { status: "GANADA", proposalId: proposal.id },

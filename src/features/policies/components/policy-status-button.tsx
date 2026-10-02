@@ -6,10 +6,11 @@ import { toast } from "sonner";
 import { ArrowLeftRight, Loader2 } from "lucide-react";
 import { changePolicyStatusAction } from "../actions";
 import {
-  POLICY_STATUSES,
+  PORTFOLIO_POLICY_STATUSES,
   POLICY_STATUS_LABELS,
   type PolicyStatusValue,
 } from "../schemas";
+import { isPreIssuePolicy } from "@/lib/domain/policy-lifecycle";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -51,7 +52,14 @@ export function PolicyStatusButton({
 
   async function handleSubmit() {
     setLoading(true);
-    const result = await changePolicyStatusAction(policyId, { status, note });
+    if (!(PORTFOLIO_POLICY_STATUSES as readonly string[]).includes(status)) {
+      setLoading(false);
+      return;
+    }
+    const result = await changePolicyStatusAction(policyId, {
+      status: status as (typeof PORTFOLIO_POLICY_STATUSES)[number],
+      note,
+    });
     setLoading(false);
     if (!result.ok) {
       toast.error(result.error);
@@ -61,6 +69,8 @@ export function PolicyStatusButton({
     setOpen(false);
     router.refresh();
   }
+
+  if (isPreIssuePolicy(currentStatus)) return null;
 
   return (
     <>
@@ -89,7 +99,7 @@ export function PolicyStatusButton({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {POLICY_STATUSES.map((value) => (
+                  {PORTFOLIO_POLICY_STATUSES.map((value) => (
                     <SelectItem key={value} value={value}>
                       {POLICY_STATUS_LABELS[value]}
                     </SelectItem>

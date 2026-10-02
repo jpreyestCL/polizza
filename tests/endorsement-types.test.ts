@@ -10,8 +10,17 @@ import {
 } from "@/features/endorsements/schemas";
 
 describe("tipos de endoso", () => {
-  it("expone los 16 tipos operativos, cada uno con etiqueta", () => {
-    expect(ENDORSEMENT_TYPES).toHaveLength(16);
+  it("expone los 21 tipos operativos, cada uno con etiqueta", () => {
+    expect(ENDORSEMENT_TYPES).toHaveLength(21);
+    for (const type of [
+      "REVERSO_PRORROGA",
+      "REDUCE_VIGENCIA",
+      "CAMBIO_COMISION",
+      "DECLARACION",
+      "AJUSTE_PRIMA",
+    ] as const) {
+      expect(ENDORSEMENT_TYPES).toContain(type);
+    }
     for (const t of ENDORSEMENT_TYPES) {
       expect(ENDORSEMENT_TYPE_LABELS[t]).toBeTruthy();
     }
@@ -42,6 +51,11 @@ describe("tipos de endoso", () => {
       "MODIFICA_MONTO_PRIMA",
       "MODIFICACION",
       "PRORROGA",
+      "REVERSO_PRORROGA",
+      "REDUCE_VIGENCIA",
+      "CAMBIO_COMISION",
+      "DECLARACION",
+      "AJUSTE_PRIMA",
     ] as const) {
       expect(endorsementStatusEffect(t)).toBeNull();
     }

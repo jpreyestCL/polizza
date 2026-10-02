@@ -13,7 +13,14 @@ import {
   type PageParams,
   type Paginated,
 } from "@/lib/pagination";
+import { PRE_ISSUE_POLICY_STATUSES, isPreIssuePolicy } from "@/lib/domain/policy-lifecycle";
 import { proposalSla, type SlaLevel } from "./sla";
+
+/** Una póliza previa a la cartera no saca la propuesta del flujo. */
+const OPEN_FLOW = {
+  dispatchedAt: null,
+  policies: { none: { status: { notIn: [...PRE_ISSUE_POLICY_STATUSES] } } },
+};
 
 export type ProposalListItem = {
   id: string;
@@ -57,8 +64,7 @@ export async function listProposals(
   // el flujo de propuestas (obs 9).
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
-    policies: { none: {} },
-    dispatchedAt: null,
+    ...OPEN_FLOW,
     ...(q
       ? {
           OR: [
@@ -121,8 +127,7 @@ export async function listAllProposalsForKanban(
 ): Promise<ProposalListItem[]> {
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
-    policies: { none: {} },
-    dispatchedAt: null,
+    ...OPEN_FLOW,
   };
   const rows = await db.proposal.findMany({
     where,
@@ -177,7 +182,7 @@ export async function getProposalDetail(db: Db, id: string) {
       // Póliza vinculada (si ya fue despachada): se usa para ocultar los
       // paneles de recepción/despacho y mostrar el acceso a la cartera.
       policies: {
-        select: { id: true, policyNumber: true },
+        select: { id: true, policyNumber: true, status: true },
         orderBy: { createdAt: "asc" },
         take: 1,
       },
@@ -186,7 +191,11 @@ export async function getProposalDetail(db: Db, id: string) {
     },
   });
   if (!proposal) return null;
-  const dispatchedPolicy = proposal.policies[0] ?? null;
+  const linkedPolicy = proposal.policies[0] ?? null;
+  const dispatchedPolicy =
+    linkedPolicy && !isPreIssuePolicy(linkedPolicy.status) ? linkedPolicy : null;
+  const draftPolicy =
+    linkedPolicy && isPreIssuePolicy(linkedPolicy.status) ? linkedPolicy : null;
   // Póliza endosada (propuesta de endoso).
   const endorsedPolicy = proposal.endorsedPolicyId
     ? await db.policy.findFirst({
@@ -206,6 +215,7 @@ export async function getProposalDetail(db: Db, id: string) {
   return {
     ...plain,
     dispatchedPolicy,
+    draftPolicy,
     endorsedPolicy,
     hasStoredPdf: Boolean(pdfBytes),
     premiumNet: asNumber(proposal.premiumNet),
@@ -214,6 +224,9 @@ export async function getProposalDetail(db: Db, id: string) {
     commissionExemptPct: asNumber(proposal.commissionExemptPct),
     endorsementPremiumAffected: asNumber(proposal.endorsementPremiumAffected),
     endorsementPremiumExempt: asNumber(proposal.endorsementPremiumExempt),
+    endorsementNewInsuredAmount: asNumber(proposal.endorsementNewInsuredAmount),
+    endorsementCommissionAffectPct: asNumber(proposal.endorsementCommissionAffectPct),
+    endorsementCommissionExemptPct: asNumber(proposal.endorsementCommissionExemptPct),
   };
 }
 

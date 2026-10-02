@@ -56,7 +56,20 @@ export default async function EditarPropuestaPage({
                 : "",
             premiumExemptDelta:
               proposal.endorsementPremiumExempt != null
-                ? String(Number(proposal.endorsementPremiumExempt))
+                ? String(proposal.endorsementPremiumExempt)
+                : "",
+            newInsuredAmount:
+              proposal.endorsementNewInsuredAmount != null
+                ? String(proposal.endorsementNewInsuredAmount)
+                : "",
+            offsetClaimId: proposal.endorsementOffsetClaimId ?? "",
+            commissionAffectPct:
+              proposal.endorsementCommissionAffectPct != null
+                ? String(proposal.endorsementCommissionAffectPct)
+                : "",
+            commissionExemptPct:
+              proposal.endorsementCommissionExemptPct != null
+                ? String(proposal.endorsementCommissionExemptPct)
                 : "",
           }}
         />
