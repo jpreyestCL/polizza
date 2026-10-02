@@ -14,6 +14,24 @@ export function calendarDaysBetween(from: Date, to: Date): number {
  * Un año calendario después. El 29 de febrero cae en el 28 de febrero
  * del año siguiente.
  */
+/** Suma meses sobre una fecha de negocio (medianoche UTC), sin correr el día. */
+export function addUtcMonths(date: Date, months: number): Date {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + months;
+  const day = date.getUTCDate();
+  const firstOfTarget = new Date(Date.UTC(year, month, 1));
+  const lastDay = new Date(
+    Date.UTC(firstOfTarget.getUTCFullYear(), firstOfTarget.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  return new Date(
+    Date.UTC(
+      firstOfTarget.getUTCFullYear(),
+      firstOfTarget.getUTCMonth(),
+      Math.min(day, lastDay),
+    ),
+  );
+}
+
 export function addCalendarYear(date: Date): Date {
   if (date.getUTCMonth() === 1 && date.getUTCDate() === 29) {
     return new Date(Date.UTC(date.getUTCFullYear() + 1, 1, 28));

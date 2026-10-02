@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Users } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
+import { seedOrganizationCatalog } from "@/server/seed-org";
 import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
 import { listActiveBrokers } from "@/features/brokers/queries";
 import { getProposalFormCatalog } from "@/features/proposals/queries";
@@ -12,6 +13,7 @@ import type { ProposalFormValues } from "@/features/proposals/schemas";
 
 export default async function NuevaPropuestaPage() {
   const { ctx, db } = await requireOrgDb();
+  await seedOrganizationCatalog(db, ctx.organizationId);
   const [clients, members, catalog, brokers] = await Promise.all([
     listClientsForSelect(ctx, db),
     getOrgMembers(ctx.organizationId),

@@ -200,22 +200,20 @@ export async function getProposalDetail(db: Db, id: string) {
         },
       })
     : null;
+  const { pdfBytes, ...plain } = proposal;
+  const asNumber = (value: { toString(): string } | null) =>
+    value == null ? null : Number(value);
   return {
-    ...proposal,
+    ...plain,
     dispatchedPolicy,
     endorsedPolicy,
-    pdfBytes: undefined, // No filtramos los bytes hacia el cliente.
-    hasStoredPdf: Boolean(proposal.pdfBytes),
-    premiumNet: proposal.premiumNet ? Number(proposal.premiumNet) : null,
-    premiumGross: proposal.premiumGross
-      ? Number(proposal.premiumGross)
-      : null,
-    commissionAffectPct: proposal.commissionAffectPct
-      ? Number(proposal.commissionAffectPct)
-      : null,
-    commissionExemptPct: proposal.commissionExemptPct
-      ? Number(proposal.commissionExemptPct)
-      : null,
+    hasStoredPdf: Boolean(pdfBytes),
+    premiumNet: asNumber(proposal.premiumNet),
+    premiumGross: asNumber(proposal.premiumGross),
+    commissionAffectPct: asNumber(proposal.commissionAffectPct),
+    commissionExemptPct: asNumber(proposal.commissionExemptPct),
+    endorsementPremiumAffected: asNumber(proposal.endorsementPremiumAffected),
+    endorsementPremiumExempt: asNumber(proposal.endorsementPremiumExempt),
   };
 }
 

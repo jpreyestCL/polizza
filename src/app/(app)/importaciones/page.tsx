@@ -57,8 +57,9 @@ export default async function ImportacionesPage({
         <h2 className="text-sm font-medium">Traducción Brokeris</h2>
         <p className="text-sm text-muted-foreground">
           Columnas separadas por tabulación. Pólizas: id, estado, es renovación (1 o 0), id madre,
-          vigencia. Endosos: id, tipo. Siniestros: id, estado, subestado, tipo de cierre. Documentos:
-          id, etiqueta. No renovación: id, tipo, motivo.
+          vigencia (aaaa-mm-dd o dd-mm-aaaa), número de póliza. El estado 6 sin número queda para
+          revisar. Endosos: id, tipo. Siniestros: id, estado, subestado, tipo de cierre. Documentos:
+          id, etiqueta. No renovación: id, tipo, motivo. El tipo 2 exige motivo.
         </p>
         <label className="flex flex-col gap-1 text-sm">
           Perfil
@@ -77,7 +78,7 @@ export default async function ImportacionesPage({
             required
             rows={6}
             className={`${inputClass} font-mono text-xs`}
-            placeholder={"pol-1\t4\t1\tpol-0\t2026-01-01"}
+            placeholder={"pol-1\t4\t1\tpol-0\t01-01-2026\tPOL-100"}
           />
         </label>
         <button type="submit" className="rounded-md border px-3 py-2 text-sm">
@@ -88,49 +89,52 @@ export default async function ImportacionesPage({
       <form action={previewCuadreAction} className="space-y-3 rounded-xl border bg-card p-4">
         <h2 className="text-sm font-medium">Cuadre del corte 29-09-2026</h2>
         <p className="text-sm text-muted-foreground">
-          Q2 es informativo y no entra al Gate A. El orden de carga es{" "}
-          {BROKERIS_LOAD_ORDER.join(" → ")}.
+          Q2 es informativo y no entra al Gate A. Los campos nacen vacíos: comparar sin conteos
+          deja el Gate A fuera. La referencia del 29-09-2026 va entre paréntesis. El orden de carga
+          es {BROKERIS_LOAD_ORDER.join(" → ")}.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <NumberField name="policiesInForce" label="Q1 pólizas vigentes" defaultValue={ref.policiesInForce} />
-          <NumberField name="endorsementsInForce" label="Q2 endosos vigentes" defaultValue={ref.endorsementsInForce} />
-          <NumberField name="contractors" label="Q5 contratantes" defaultValue={ref.contractors} />
-          <NumberField name="insureds" label="Q5 asegurados" defaultValue={ref.insureds} />
-          <NumberField name="companiesBeforeMerge" label="Q6 empresas antes" defaultValue={ref.companies} />
-          <NumberField name="personsBeforeMerge" label="Q6 particulares antes" defaultValue={ref.persons} />
-          <NumberField name="companiesAfterMerge" label="Q6 empresas después" defaultValue={ref.companies} />
-          <NumberField name="personsAfterMerge" label="Q6 particulares después" defaultValue={ref.persons} />
-          <NumberField name="renewalsCutMonth" label="Q7 renovaciones del mes" defaultValue={ref.renewalsCutMonth} />
-          <NumberField name="renewalsNextMonth" label="Q7 renovaciones del siguiente" defaultValue={ref.renewalsNextMonth} />
-          <NumberField name="openClaims" label="Q8 siniestros abiertos" defaultValue={ref.openClaims} />
-          <NumberField name="claimsToExtend" label="Q8 por prorrogar" defaultValue={ref.claimsToExtend} />
-          <NumberField name="approvedInstallmentCount" label="Q9 cuotas aprobadas" defaultValue={0} />
-          <NumberField name="pendingInstallmentCount" label="Q9 cuotas pendientes" defaultValue={0} />
-          <NumberField name="approvedInstallmentAmount" label="Q9 monto aprobado" defaultValue={0} />
-          <NumberField name="pendingInstallmentAmount" label="Q9 monto pendiente" defaultValue={0} />
-          <NumberField name="commissionYear" label="Q10 año" defaultValue={2025} />
-          <NumberField name="brokerisCommissionClp" label="Q10 pesos en Brokeris" defaultValue={1000000} />
-          <NumberField name="polizzaCommissionClp" label="Q10 pesos en Polizza" defaultValue={1000000} />
-          <NumberField name="grossPremium2025Clp" label="Q11 prima bruta 2025" defaultValue={ref.grossPremium2025Clp} />
-          <NumberField name="commissions2025Clp" label="Q11 comisiones 2025" defaultValue={ref.commissions2025Clp} />
-          <NumberField name="documentsTotal" label="Q12 documentos" defaultValue={1} />
-          <NumberField name="documentsLinked" label="Q12 enlazados" defaultValue={1} />
-          <NumberField name="maxProposal" label="Q13 máximo de propuesta" defaultValue={ref.maxProposal} />
-          <NumberField name="counterProposal" label="Q13 contador de propuesta" defaultValue={ref.maxProposal + 1} />
-          <NumberField name="maxClaimFolder" label="Q13 máximo de carpeta" defaultValue={ref.maxClaimFolder} />
-          <NumberField name="counterClaimFolder" label="Q13 contador de carpeta" defaultValue={ref.maxClaimFolder + 1} />
-          <NumberField name="maxPlan" label="Q13 máximo de plan" defaultValue={ref.maxPlan} />
-          <NumberField name="counterPlan" label="Q13 contador de plan" defaultValue={ref.maxPlan + 1} />
+          <NumberField name="policiesInForce" label={`Q1 pólizas vigentes (${ref.policiesInForce})`} />
+          <NumberField name="endorsementsInForce" label={`Q2 endosos vigentes (${ref.endorsementsInForce})`} />
+          <NumberField name="contractors" label={`Q5 contratantes (${ref.contractors})`} />
+          <NumberField name="insureds" label={`Q5 asegurados (${ref.insureds})`} />
+          <NumberField name="companiesBeforeMerge" label={`Q6 empresas antes (${ref.companies})`} />
+          <NumberField name="personsBeforeMerge" label={`Q6 particulares antes (${ref.persons})`} />
+          <NumberField name="companiesAfterMerge" label={`Q6 empresas después (${ref.companies})`} />
+          <NumberField name="personsAfterMerge" label={`Q6 particulares después (${ref.persons})`} />
+          <NumberField name="renewalsCutMonth" label={`Q7 renovaciones del mes (${ref.renewalsCutMonth})`} />
+          <NumberField name="renewalsNextMonth" label={`Q7 renovaciones del siguiente (${ref.renewalsNextMonth})`} />
+          <NumberField name="openClaims" label={`Q8 siniestros abiertos (${ref.openClaims})`} />
+          <NumberField name="claimsToExtend" label={`Q8 por prorrogar (${ref.claimsToExtend})`} />
+          <NumberField name="approvedInstallmentCount" label="Q9 cuotas de la decisión" />
+          <NumberField name="pendingInstallmentCount" label="Q9 cuotas pendientes" />
+          <NumberField name="approvedInstallmentAmount" label="Q9 monto de la decisión" />
+          <NumberField name="pendingInstallmentAmount" label="Q9 monto pendiente" />
+          <NumberField name="commissionYear" label="Q10 año" />
+          <NumberField name="brokerisCommissionClp" label="Q10 pesos en Brokeris" />
+          <NumberField name="polizzaCommissionClp" label="Q10 pesos en Polizza" />
+          <NumberField name="grossPremium2025Clp" label={`Q11 prima bruta 2025 (${ref.grossPremium2025Clp})`} />
+          <NumberField name="commissions2025Clp" label={`Q11 comisiones 2025 (${ref.commissions2025Clp})`} />
+          <NumberField name="documentsTotal" label="Q12 documentos" />
+          <NumberField name="documentsLinked" label="Q12 enlazados" />
+          <NumberField name="maxProposal" label={`Q13 máximo de propuesta (${ref.maxProposal})`} />
+          <NumberField name="counterProposal" label={`Q13 contador de propuesta (${ref.maxProposal + 1})`} />
+          <NumberField name="maxClaimFolder" label={`Q13 máximo de carpeta (${ref.maxClaimFolder})`} />
+          <NumberField name="counterClaimFolder" label={`Q13 contador de carpeta (${ref.maxClaimFolder + 1})`} />
+          <NumberField name="maxPlan" label={`Q13 máximo de plan (${ref.maxPlan})`} />
+          <NumberField name="counterPlan" label={`Q13 contador de plan (${ref.maxPlan + 1})`} />
         </div>
         <label className="flex flex-col gap-1 text-sm">
-          Q3 diferencias de prima en UF, una por póliza
-          <input name="policyPremiumDiffsUf" defaultValue="0" className={inputClass} />
+          Q3 diferencias de prima en UF, una por póliza. La coma es decimal: 0,01
+          <input name="policyPremiumDiffsUf" className={inputClass} placeholder="0,01" />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           Q4 diferencias de comisión en UF, una por movimiento
-          <input name="commissionDiffsUf" defaultValue="0" className={inputClass} />
+          <input name="commissionDiffsUf" className={inputClass} placeholder="0,01" />
         </label>
         <div className="flex flex-col gap-1 text-sm">
+          <Check name="installmentDecisionRecorded" label="Q9: la dueña ya eligió el grupo A, B, C o D" />
+          <Check name="documentsCounted" label="Q12: el conteo de documentos ya está hecho" />
           <Check name="endorsementDifferenceExplained" label="Q2: la diferencia de endosos está explicada" />
           <Check name="commissionLargerDiffsExplained" label="Q4: las diferencias sobre 0,01 UF están explicadas" />
           <Check name="clientsAfterExplained" label="Q6: el conteo después de fusionar está explicado" />
@@ -183,19 +187,11 @@ export default async function ImportacionesPage({
   );
 }
 
-function NumberField({
-  name,
-  label,
-  defaultValue,
-}: {
-  name: string;
-  label: string;
-  defaultValue: number;
-}) {
+function NumberField({ name, label }: { name: string; label: string }) {
   return (
     <label className="flex flex-col gap-1 text-sm">
       {label}
-      <input name={name} type="number" step="any" defaultValue={defaultValue} className={inputClass} />
+      <input name={name} type="number" step="any" className={inputClass} />
     </label>
   );
 }

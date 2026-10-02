@@ -12,6 +12,7 @@ import { FullClientDialog } from "@/features/clients/components/full-client-dial
 import { ClientCombobox } from "@/components/ui/client-combobox";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { CURRENCIES, currencyLabel } from "@/lib/money";
+import { addCalendarYear } from "@/lib/domain/term";
 import { roleLabel } from "@/lib/roles";
 import { proposalFormSchema, type ProposalFormValues } from "../schemas";
 import {
@@ -155,6 +156,12 @@ export function ProposalForm({
       ),
     [catalog.policies, selectedClientId],
   );
+
+  useEffect(() => {
+    if (!selectedProductId) return;
+    if (filteredProducts.some((product) => product.id === selectedProductId)) return;
+    form.setValue("productId", "", { shouldDirty: true });
+  }, [filteredProducts, selectedProductId, form]);
 
   const selectedCompany = catalog.companies.find(
     (c) => c.id === selectedCompanyId,
@@ -300,10 +307,9 @@ export function ProposalForm({
       toast.error("Define primero la fecha de inicio");
       return;
     }
-    const d = new Date(start);
+    const d = new Date(`${start}T00:00:00Z`);
     if (Number.isNaN(d.getTime())) return;
-    d.setFullYear(d.getFullYear() + 1);
-    const iso = d.toISOString().slice(0, 10);
+    const iso = addCalendarYear(d).toISOString().slice(0, 10);
     form.setValue("endDate", iso, { shouldDirty: true });
   }
 
@@ -318,6 +324,13 @@ export function ProposalForm({
       l: watched.lineId,
       br: watched.branchId,
       pid: currentId,
+      start: watched.startDate,
+      end: watched.endDate,
+      cur: watched.currency,
+      email: watched.recipientEmail,
+      ce: watched.contratanteEmail,
+      cp: watched.contratantePhone,
+      cc: watched.contratanteCelular,
     });
     if (!watched.clientId || !watched.insuranceCompanyId) return;
     if (!watched.branchTypeId && !(watched.lineId && watched.branchId)) return;
@@ -335,6 +348,13 @@ export function ProposalForm({
         beneficiaryClientId: watched.beneficiaryClientId ?? "",
         commissionAffectPct: watched.commissionAffectPct ?? "",
         commissionExemptPct: watched.commissionExemptPct ?? "",
+        currency: watched.currency ?? "",
+        startDate: watched.startDate ?? "",
+        endDate: watched.endDate ?? "",
+        recipientEmail: watched.recipientEmail ?? "",
+        contratanteEmail: watched.contratanteEmail ?? "",
+        contratantePhone: watched.contratantePhone ?? "",
+        contratanteCelular: watched.contratanteCelular ?? "",
       });
       if (!result.ok) return;
       lastSavedSigRef.current = sig;
@@ -358,6 +378,13 @@ export function ProposalForm({
     watched.insuredClientId,
     watched.beneficiaryClientId,
     watched.productId,
+    watched.startDate,
+    watched.endDate,
+    watched.currency,
+    watched.recipientEmail,
+    watched.contratanteEmail,
+    watched.contratantePhone,
+    watched.contratanteCelular,
   ]);
 
   async function maybeAssignNumber(id: string) {
@@ -403,6 +430,13 @@ export function ProposalForm({
       beneficiaryClientId: v.beneficiaryClientId,
       commissionAffectPct: v.commissionAffectPct,
       commissionExemptPct: v.commissionExemptPct,
+      currency: v.currency,
+      startDate: v.startDate,
+      endDate: v.endDate,
+      recipientEmail: v.recipientEmail,
+      contratanteEmail: v.contratanteEmail,
+      contratantePhone: v.contratantePhone,
+      contratanteCelular: v.contratanteCelular,
     });
     if (!r.ok) {
       toast.error(r.error);
@@ -495,7 +529,7 @@ export function ProposalForm({
             name="insuredClientId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Asegurado (default para ítems)</FormLabel>
+                <FormLabel>Asegurado (default para ítems) *</FormLabel>
                 <ClientCombobox
                   value={field.value}
                   onChange={(id, c) => {
@@ -508,6 +542,7 @@ export function ProposalForm({
                     }
                   }}
                   initial={localClients.find((c) => c.id === field.value) ?? null}
+                  placeholder="Buscar asegurado por nombre o RUT"
                   onCreate={(q) => openCreateDialog("insuredClientId", q)}
                 />
                 <FormMessage />
@@ -519,7 +554,7 @@ export function ProposalForm({
             name="beneficiaryClientId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Beneficiario (default para ítems)</FormLabel>
+                <FormLabel>Beneficiario (default para ítems) *</FormLabel>
                 <ClientCombobox
                   value={field.value}
                   onChange={(id, c) => {
@@ -532,6 +567,7 @@ export function ProposalForm({
                     }
                   }}
                   initial={localClients.find((c) => c.id === field.value) ?? null}
+                  placeholder="Buscar beneficiario por nombre o RUT"
                   onCreate={(q) => openCreateDialog("beneficiaryClientId", q)}
                 />
                 <FormMessage />
@@ -652,9 +688,9 @@ export function ProposalForm({
             name="insuranceCompanyId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Compañía aseguradora</FormLabel>
+                <FormLabel>Compañía aseguradora *</FormLabel>
                 <Select
-                  value={field.value || undefined}
+                  value={field.value ?? ""}
                   onValueChange={(v) => {
                     field.onChange(v);
                     applyCompanyDefaultEmail(v);
@@ -682,9 +718,9 @@ export function ProposalForm({
             name="branchTypeId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Ramo</FormLabel>
+                <FormLabel>Ramo *</FormLabel>
                 <Select
-                  value={field.value || undefined}
+                  value={field.value ?? ""}
                   onValueChange={field.onChange}
                 >
                   <FormControl>
@@ -709,9 +745,9 @@ export function ProposalForm({
             name="productId"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Producto</FormLabel>
+                <FormLabel>Producto *</FormLabel>
                 <Select
-                  value={field.value || undefined}
+                  value={field.value ?? ""}
                   onValueChange={(v) => {
                     field.onChange(v);
                     applyProductCommission(v);
@@ -722,9 +758,11 @@ export function ProposalForm({
                     <SelectTrigger>
                       <SelectValue
                         placeholder={
-                          filteredProducts.length === 0
-                            ? "Filtra por compañía/ramo"
-                            : "Selecciona producto"
+                          catalog.products.length === 0
+                            ? "No hay productos en la corredora"
+                            : filteredProducts.length === 0
+                              ? "Sin producto para esta compañía y ramo"
+                              : "Selecciona producto"
                         }
                       />
                     </SelectTrigger>
@@ -738,6 +776,14 @@ export function ProposalForm({
                   </SelectContent>
                 </Select>
                 <FormMessage />
+                {catalog.products.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    <Link href="/configuracion/productos" className="underline">
+                      Crea un producto
+                    </Link>{" "}
+                    antes de armar la propuesta.
+                  </p>
+                ) : null}
               </FormItem>
             )}
           />
@@ -752,7 +798,7 @@ export function ProposalForm({
             name="startDate"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Inicio de vigencia</FormLabel>
+                <FormLabel>Inicio de vigencia *</FormLabel>
                 <FormControl>
                   <Input type="date" {...field} />
                 </FormControl>
@@ -766,7 +812,7 @@ export function ProposalForm({
             render={({ field }) => (
               <FormItem>
                 <div className="flex items-end justify-between">
-                  <FormLabel>Fin de vigencia</FormLabel>
+                    <FormLabel>Fin de vigencia *</FormLabel>
                   <Button
                     type="button"
                     variant="ghost"
@@ -818,7 +864,7 @@ export function ProposalForm({
               <FormItem>
                 <FormLabel>Cotización origen</FormLabel>
                 <Select
-                  value={field.value || undefined}
+                  value={field.value ?? ""}
                   onValueChange={(v) => field.onChange(v === "__NONE" ? "" : v)}
                   disabled={clientQuotations.length === 0}
                 >
@@ -869,7 +915,7 @@ export function ProposalForm({
               <FormItem>
                 <FormLabel>Contacto destinatario</FormLabel>
                 <Select
-                  value={field.value || undefined}
+                  value={field.value ?? ""}
                   onValueChange={(v) => {
                     field.onChange(v === "__NONE" ? "" : v);
                     if (v && v !== "__NONE") {
@@ -912,7 +958,7 @@ export function ProposalForm({
             name="recipientEmail"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Email destinatario</FormLabel>
+                <FormLabel>Email destinatario *</FormLabel>
                 <FormControl>
                   <Input type="email" {...field} />
                 </FormControl>
@@ -928,7 +974,7 @@ export function ProposalForm({
             name="commissionAffectPct"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>% Comisión afecta</FormLabel>
+                <FormLabel>% Comisión afecta *</FormLabel>
                 <FormControl>
                   <Input inputMode="decimal" placeholder="0" {...field} />
                 </FormControl>
@@ -947,7 +993,7 @@ export function ProposalForm({
             name="commissionExemptPct"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>% Comisión exenta</FormLabel>
+                <FormLabel>% Comisión exenta *</FormLabel>
                 <FormControl>
                   <Input inputMode="decimal" placeholder="0" {...field} />
                 </FormControl>
@@ -992,7 +1038,7 @@ export function ProposalForm({
               <FormItem>
                 <FormLabel>Ejecutivo asignado</FormLabel>
                 <Select
-                  value={field.value || undefined}
+                  value={field.value ?? ""}
                   onValueChange={field.onChange}
                 >
                   <FormControl>

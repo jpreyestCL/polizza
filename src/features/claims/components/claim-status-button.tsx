@@ -16,6 +16,7 @@ import {
   nextClaimStatuses,
 } from "@/lib/domain/claim-lifecycle";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import {
@@ -47,6 +48,11 @@ export function ClaimStatusButton({
   const [status, setStatus] = useState<ClaimStatusValue>(options[0] ?? currentStatus);
   const [outcome, setOutcome] = useState("");
   const [note, setNote] = useState("");
+  const [filedAtCompanyAt, setFiledAtCompanyAt] = useState("");
+  const [companyClaimNumber, setCompanyClaimNumber] = useState("");
+  const [liquidatorName, setLiquidatorName] = useState("");
+  const [settledAmount, setSettledAmount] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -54,18 +60,25 @@ export function ClaimStatusButton({
       setStatus(nextClaimStatuses(currentStatus)[0] ?? currentStatus);
       setOutcome("");
       setNote("");
+      setError("");
     }
   }, [open, currentStatus]);
 
   async function handleSubmit() {
     setLoading(true);
+    setError("");
     const result = await changeClaimStatusAction(claimId, {
       status,
       note,
       closureOutcome: outcome,
+      filedAtCompanyAt,
+      companyClaimNumber,
+      liquidatorName,
+      settledAmount,
     });
     setLoading(false);
     if (!result.ok) {
+      setError(result.error);
       toast.error(result.error);
       return;
     }
@@ -128,6 +141,57 @@ export function ClaimStatusButton({
                   </SelectContent>
                 </Select>
               </div>
+            ) : null}
+            {status === "AWAITING_ASSIGNMENT" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="claim-filed-at">
+                  Fecha de envío a la compañía
+                </Label>
+                <Input
+                  id="claim-filed-at"
+                  type="datetime-local"
+                  value={filedAtCompanyAt}
+                  onChange={(e) => setFiledAtCompanyAt(e.target.value)}
+                />
+              </div>
+            ) : null}
+            {status === "IN_ADJUSTMENT" ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="claim-company-number">
+                    N° siniestro compañía
+                  </Label>
+                  <Input
+                    id="claim-company-number"
+                    value={companyClaimNumber}
+                    onChange={(e) => setCompanyClaimNumber(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="claim-liquidator">Liquidador</Label>
+                  <Input
+                    id="claim-liquidator"
+                    value={liquidatorName}
+                    onChange={(e) => setLiquidatorName(e.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
+            {status === "PAYMENT_PROCESS" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="claim-settled">Indemnización</Label>
+                <Input
+                  id="claim-settled"
+                  inputMode="decimal"
+                  value={settledAmount}
+                  onChange={(e) => setSettledAmount(e.target.value)}
+                />
+              </div>
+            ) : null}
+            {error ? (
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
             ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="claim-status-note">Nota (opcional)</Label>

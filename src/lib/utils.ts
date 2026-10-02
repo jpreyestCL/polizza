@@ -10,16 +10,23 @@ export function cn(...inputs: ClassValue[]) {
  * Usa UTC: los campos `@db.Date` (vigencias, fechas) llegan a medianoche UTC
  * y formatearlos en zona local los desfasaría un día.
  */
+/** Node y el navegador no coinciden en el espacio estrecho de es-CL (p. m.). */
+function normalizeLocaleSpaces(value: string): string {
+  return value.replace(/[\u00a0\u202f\u2009]/g, " ");
+}
+
 export function formatDate(value: Date | string | null | undefined): string {
   if (!value) return "—";
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-CL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(date);
+  return normalizeLocaleSpaces(
+    new Intl.DateTimeFormat("es-CL", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(date),
+  );
 }
 
 /**
@@ -34,14 +41,33 @@ export function formatDateTime(
   if (!value) return "—";
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-CL", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: timeZone || undefined,
-  }).format(date);
+  return normalizeLocaleSpaces(
+    new Intl.DateTimeFormat("es-CL", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: timeZone || undefined,
+    }).format(date),
+  );
+}
+
+/** Hora chilena, sin la fecha. Misma normalización que `formatDateTime`. */
+export function formatTime(
+  value: Date | string | null | undefined,
+  timeZone?: string,
+): string {
+  if (!value) return "—";
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "—";
+  return normalizeLocaleSpaces(
+    new Intl.DateTimeFormat("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: timeZone || undefined,
+    }).format(date),
+  );
 }
 
 /** Convierte un texto a slug (a-z0-9 y guiones). */

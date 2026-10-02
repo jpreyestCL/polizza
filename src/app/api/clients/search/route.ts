@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireOrgDb } from "@/server/context";
 import { searchClients } from "@/features/clients/queries";
+import { formatRut } from "@/lib/rut";
 
 export async function GET(req: Request) {
   const { ctx, db } = await requireOrgDb();
@@ -11,5 +12,10 @@ export async function GET(req: Request) {
     50,
   );
   const rows = await searchClients(ctx, db, q, limit);
-  return NextResponse.json({ items: rows });
+  return NextResponse.json({
+    items: rows.map((row) => ({
+      ...row,
+      rut: row.rut ? formatRut(row.rut) : row.rut,
+    })),
+  });
 }

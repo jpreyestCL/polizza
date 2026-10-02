@@ -10,6 +10,7 @@ import {
   deleteClaimThirdPartyAction,
 } from "../actions";
 import type { ClaimThirdPartyValues } from "../schemas";
+import { formatRut } from "@/lib/rut";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -129,7 +130,7 @@ function ThirdPartyCard({
             )}
           </div>
           {tp.rut && (
-            <p className="text-xs text-muted-foreground">RUT: {tp.rut}</p>
+            <p className="text-xs text-muted-foreground">RUT: {formatRut(tp.rut)}</p>
           )}
         </div>
         <Button

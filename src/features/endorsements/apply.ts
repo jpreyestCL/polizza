@@ -186,6 +186,7 @@ async function postPremiumDelta(
     select: {
       id: true,
       organizationId: true,
+      proposalId: true,
       premiumAffect: true,
       premiumExempt: true,
       premiumNet: true,
@@ -197,6 +198,28 @@ async function postPremiumDelta(
     },
   });
   if (!policy) return;
+  // Pólizas emitidas antes de copiar la comisión a la cartera no tienen el
+  // porcentaje. El endoso usa el de la propuesta de origen para no dejar la
+  // comisión en cero.
+  const source =
+    policy.commissionAffectPct == null || policy.commissionExemptPct == null
+      ? await tx.proposal.findFirst({
+          where: { id: policy.proposalId ?? "" },
+          select: { commissionAffectPct: true, commissionExemptPct: true },
+        })
+      : null;
+  const pctAffected =
+    policy.commissionAffectPct != null
+      ? Number(policy.commissionAffectPct)
+      : source?.commissionAffectPct != null
+        ? Number(source.commissionAffectPct)
+        : 0;
+  const pctExempt =
+    policy.commissionExemptPct != null
+      ? Number(policy.commissionExemptPct)
+      : source?.commissionExemptPct != null
+        ? Number(source.commissionExemptPct)
+        : 0;
   await ensureIssueMovement(tx, policy);
   await appendPremiumMovement(tx, {
     organizationId: input.organizationId,
@@ -210,12 +233,8 @@ async function postPremiumDelta(
     parts: {
       affected: input.affected,
       exempt: input.exempt,
-      pctAffected: policy.commissionAffectPct
-        ? Number(policy.commissionAffectPct)
-        : 0,
-      pctExempt: policy.commissionExemptPct
-        ? Number(policy.commissionExemptPct)
-        : 0,
+      pctAffected,
+      pctExempt,
     },
   });
 }

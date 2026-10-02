@@ -10,6 +10,7 @@ import { appendPremiumMovement } from "@/features/ledger/record";
 import { recordPolicySubmission } from "@/features/proposals/submission";
 import { saveIssuanceComparison } from "@/features/proposals/issuance-comparison";
 import { parseDeductible } from "@/lib/domain/deductible";
+import { roundHalfUp } from "@/lib/domain/money";
 import { setTenantGuc } from "@/server/tenant-rls";
 import {
   ensureDispatchQueued,
@@ -561,6 +562,13 @@ export async function saveProposalDraft(
         beneficiaryClientId: emptyToNull(data.beneficiaryClientId),
         commissionAffectPct: decimalOrNull(data.commissionAffectPct),
         commissionExemptPct: decimalOrNull(data.commissionExemptPct),
+        currency: emptyToNull(data.currency) ?? undefined,
+        startDate: parseDate(data.startDate),
+        endDate: parseDate(data.endDate),
+        recipientEmail: emptyToNull(data.recipientEmail),
+        contratanteEmail: emptyToNull(data.contratanteEmail),
+        contratantePhone: emptyToNull(data.contratantePhone),
+        contratanteCelular: emptyToNull(data.contratanteCelular),
       },
     });
     return { ok: true, id: values.proposalId };
@@ -582,7 +590,13 @@ export async function saveProposalDraft(
       commissionAffectPct: decimalOrNull(data.commissionAffectPct),
       commissionExemptPct: decimalOrNull(data.commissionExemptPct),
       status: "ELABORACION",
-      currency: "UF",
+      currency: emptyToNull(data.currency) ?? "UF",
+      startDate: parseDate(data.startDate),
+      endDate: parseDate(data.endDate),
+      recipientEmail: emptyToNull(data.recipientEmail),
+      contratanteEmail: emptyToNull(data.contratanteEmail),
+      contratantePhone: emptyToNull(data.contratantePhone),
+      contratanteCelular: emptyToNull(data.contratanteCelular),
       currentStateStartedAt: new Date(),
       createdById: ctx.userId,
       assignedUserId: ctx.userId,
@@ -1001,6 +1015,7 @@ export async function dispatchPolicyToContratanteAction(
       premiumNet: true,
       commissionAffectPct: true,
       commissionExemptPct: true,
+      productId: true,
       emissionErrorReason: true,
       emissionErrorDetail: true,
       policyNumberGenerated: true,
@@ -1089,6 +1104,45 @@ export async function dispatchPolicyToContratanteAction(
       ),
     0,
   );
+  const premiumAffect = proposalItems.reduce(
+    (sum, item) =>
+      sum +
+      item.coverages.reduce(
+        (inner, coverage) =>
+          inner + (coverage.premiumAffect ? Number(coverage.premiumAffect) : 0),
+        0,
+      ),
+    0,
+  );
+  const premiumExempt = proposalItems.reduce(
+    (sum, item) =>
+      sum +
+      item.coverages.reduce(
+        (inner, coverage) =>
+          inner + (coverage.premiumExempt ? Number(coverage.premiumExempt) : 0),
+        0,
+      ),
+    0,
+  );
+  const pctAffected = proposal.commissionAffectPct
+    ? Number(proposal.commissionAffectPct)
+    : 0;
+  const pctExempt = proposal.commissionExemptPct
+    ? Number(proposal.commissionExemptPct)
+    : 0;
+  const portfolioMoney = {
+    productId: proposal.productId,
+    premiumAffect: new Prisma.Decimal(roundHalfUp(premiumAffect, 2).toFixed(2)),
+    premiumExempt: new Prisma.Decimal(roundHalfUp(premiumExempt, 2).toFixed(2)),
+    commissionAffectPct: proposal.commissionAffectPct,
+    commissionExemptPct: proposal.commissionExemptPct,
+    commissionAffect: new Prisma.Decimal(
+      roundHalfUp((premiumAffect * pctAffected) / 100, 4).toFixed(4),
+    ),
+    commissionExempt: new Prisma.Decimal(
+      roundHalfUp((premiumExempt * pctExempt) / 100, 4).toFixed(4),
+    ),
+  };
 
   let policyId: string;
   try {
@@ -1107,6 +1161,7 @@ export async function dispatchPolicyToContratanteAction(
               reopenedIssueAt: null,
               reopenedIssueReason: null,
               version: { increment: 1 },
+              ...portfolioMoney,
             },
           })
         : await tx.policy.create({
@@ -1118,6 +1173,7 @@ export async function dispatchPolicyToContratanteAction(
               companyId: proposal.companyId,
               lineId: proposal.lineId,
               branchId: proposal.branchId,
+              ...portfolioMoney,
               status: "VIGENTE",
               premiumNet:
                 totalNet > 0 ? new Prisma.Decimal(totalNet) : proposal.premiumNet,

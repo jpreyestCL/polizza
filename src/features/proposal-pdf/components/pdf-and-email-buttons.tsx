@@ -217,10 +217,16 @@ export function PdfAndEmailButtons({
         </DialogTrigger>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Envío de Propuesta a la compañía</DialogTitle>
+            <DialogTitle>
+              {endorsement
+                ? "Envío de solicitud de endoso a la compañía"
+                : "Envío de propuesta a la compañía"}
+            </DialogTitle>
             <DialogDescription>
-              Confirma destinatarios, asunto y documentos. La propuesta se
-              adjunta automáticamente como PDF.
+              Confirma destinatarios, asunto y documentos.{" "}
+              {endorsement
+                ? "La solicitud de endoso se adjunta automáticamente como PDF."
+                : "La propuesta se adjunta automáticamente como PDF."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -296,7 +302,8 @@ export function PdfAndEmailButtons({
 
             <div className="rounded-md border bg-muted/30 p-3">
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <Paperclip className="size-3.5" /> Propuesta Adjunta:
+                <Paperclip className="size-3.5" />{" "}
+                {endorsement ? "Solicitud de endoso adjunta:" : "Propuesta adjunta:"}
                 <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] text-red-700">
                   propuesta-{proposalNumber}.pdf
                 </span>

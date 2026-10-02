@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { ActivityLog } from "@prisma/client";
 import { Activity, History } from "lucide-react";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { formatRut } from "@/lib/rut";
 import type { ProposalDetail } from "../queries";
 import { ProposalStatusBadge } from "./proposal-badges";
 import { DocumentsPanel } from "@/features/documents/components/documents-panel";
@@ -96,7 +97,7 @@ export function ProposalDetailTabs({
                     </Link>
                     {proposal.client.rut && (
                       <span className="text-xs tabular-nums text-muted-foreground">
-                        {proposal.client.rut}
+                        {formatRut(proposal.client.rut)}
                       </span>
                     )}
                   </span>
@@ -229,8 +230,38 @@ export function ProposalDetailTabs({
               )}
             </dl>
           </div>
-          {isEndorsement ? (
+              {isEndorsement ? (
             <div className="space-y-3 rounded-xl border bg-card p-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="Delta prima afecta"
+                  value={
+                    proposal.endorsementPremiumAffected != null ? (
+                      <MoneyValue
+                        amount={proposal.endorsementPremiumAffected}
+                        currency={proposal.currency}
+                        ufValue={ufValue}
+                      />
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
+                <Field
+                  label="Delta prima exenta"
+                  value={
+                    proposal.endorsementPremiumExempt != null ? (
+                      <MoneyValue
+                        amount={proposal.endorsementPremiumExempt}
+                        currency={proposal.currency}
+                        ufValue={ufValue}
+                      />
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
+              </div>
               <div>
                 <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Detalle del endoso

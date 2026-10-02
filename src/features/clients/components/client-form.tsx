@@ -395,7 +395,7 @@ export function ClientForm({
                 <FormItem>
                   <FormLabel>Región</FormLabel>
                   <Select
-                    value={field.value || undefined}
+                    value={field.value ?? ""}
                     onValueChange={(value) => {
                       field.onChange(value);
                       form.setValue("commune", "");
@@ -425,7 +425,7 @@ export function ClientForm({
                 <FormItem>
                   <FormLabel>Comuna</FormLabel>
                   <Select
-                    value={field.value || undefined}
+                    value={field.value ?? ""}
                     onValueChange={field.onChange}
                     disabled={communes.length === 0}
                   >
@@ -478,7 +478,7 @@ export function ClientForm({
                 <FormItem>
                   <FormLabel>Ejecutivo asignado</FormLabel>
                   <Select
-                    value={field.value || undefined}
+                    value={field.value ?? ""}
                     onValueChange={field.onChange}
                   >
                     <FormControl>
@@ -518,7 +518,7 @@ export function ClientForm({
                 <FormItem>
                   <FormLabel>Ejecutivo de cobranza</FormLabel>
                   <Select
-                    value={field.value || undefined}
+                    value={field.value ?? ""}
                     onValueChange={field.onChange}
                   >
                     <FormControl>
@@ -545,7 +545,7 @@ export function ClientForm({
                 <FormItem>
                   <FormLabel>Ejecutivo de siniestros</FormLabel>
                   <Select
-                    value={field.value || undefined}
+                    value={field.value ?? ""}
                     onValueChange={field.onChange}
                   >
                     <FormControl>
@@ -572,7 +572,7 @@ export function ClientForm({
                 <FormItem>
                   <FormLabel>Holding</FormLabel>
                   <Select
-                    value={field.value || undefined}
+                    value={field.value ?? ""}
                     onValueChange={field.onChange}
                     disabled={holdings.length === 0}
                   >

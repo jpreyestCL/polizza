@@ -81,7 +81,7 @@ export default async function PolizaDetailPage({
     : null;
   const lineName = policy.lineId
     ? (lines.find((l) => l.id === policy.lineId)?.name ?? null)
-    : null;
+    : (policy.proposal?.branchType?.name ?? null);
   const assignedUserName = policy.assignedUserId
     ? (members.find((m) => m.userId === policy.assignedUserId)?.name ?? null)
     : null;
@@ -230,6 +230,7 @@ export default async function PolizaDetailPage({
         policyEndDate={
           policy.endDate ? policy.endDate.toISOString().slice(0, 10) : ""
         }
+        timezone={ctx.organizationTimezone}
       />
     </div>
   );

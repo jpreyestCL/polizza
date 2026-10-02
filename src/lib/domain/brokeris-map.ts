@@ -57,6 +57,7 @@ export type BrokerisEndorsement = {
   mvpEnabled: boolean;
   /** En la migración, un tipo apagado en el MVP entra con método manual. */
   calcMethod: string;
+  needsReview: boolean;
   note: string | null;
 };
 
@@ -101,6 +102,7 @@ type EndorsementSeed = {
   code: string;
   initiatedBy: BrokerisInitiator;
   partyChangeKind?: "INSURED" | "BENEFICIARY" | "CONTRACTOR";
+  needsReview?: boolean;
   note?: string;
 };
 
@@ -120,6 +122,7 @@ const ENDORSEMENTS: Record<number, EndorsementSeed> = {
   9: {
     code: "CHANGE_PARTY",
     initiatedBy: "CLIENT",
+    needsReview: true,
     note: "Elegir asegurado o beneficiario.",
   },
   33: { code: "CHANGE_PARTY", initiatedBy: "CLIENT", partyChangeKind: "CONTRACTOR" },
@@ -133,6 +136,7 @@ const ENDORSEMENTS: Record<number, EndorsementSeed> = {
   32: {
     code: "TOTAL_LOSS_TERMINATION",
     initiatedBy: "INSURER",
+    needsReview: true,
     note: "Identificar el siniestro; si no, queda para revisar.",
   },
   16: { code: "ANNULMENT", initiatedBy: "CLIENT" },
@@ -171,6 +175,7 @@ export function mapBrokerisEndorsement(code: number): BrokerisEndorsement | null
     partyChangeKind: seed.partyChangeKind ?? null,
     mvpEnabled,
     calcMethod: mvpEnabled ? ENDORSEMENT_CALC[seed.code] : "MANUAL",
+    needsReview: seed.needsReview === true,
     note: seed.note ?? null,
   };
 }
@@ -378,13 +383,28 @@ const CLAIM_SUBSTATUS: Record<number, string> = {
   8: "CLOSED",
 };
 
-export function mapBrokerisClaimSubstatus(code: number): {
+const DEFAULT_SUBSTATUS: Record<string, string> = {
+  REPORTED: "REPORT_PENDING_SEND",
+  AWAITING_ASSIGNMENT: "AWAITING_INSURER_ASSIGNMENT",
+  IN_ADJUSTMENT: "AWAITING_ADJUSTMENT_REPORT",
+  PAYMENT_PROCESS: "AWAITING_INSURER_PAYMENT",
+  CLOSED: "CLOSED",
+  VOID: "CLOSED",
+};
+
+export function mapBrokerisClaimSubstatus(
+  code: number,
+  claimStatus?: string | null,
+): {
   status: string;
   note: string | null;
 } {
   const status = CLAIM_SUBSTATUS[code];
   if (status) return { status, note: null };
-  return { status: "REPORTED", note: `Subestado sin mapa: ${code}` };
+  return {
+    status: (claimStatus && DEFAULT_SUBSTATUS[claimStatus]) || "REPORTED",
+    note: `Subestado sin mapa: ${code}`,
+  };
 }
 
 const CLAIM_CLOSURE: Record<number, { label: string; outcome: string }> = {

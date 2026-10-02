@@ -191,6 +191,7 @@ export function ItemCoveragesDialog({
       return;
     }
     toast.success("Coberturas guardadas");
+    setOpen(false);
     router.refresh();
   }
 
@@ -204,7 +205,11 @@ export function ItemCoveragesDialog({
       toast.error(r.error);
       return;
     }
-    toast.success(`${r.data?.count ?? 0} coberturas copiadas`);
+    toast.success(
+      r.data?.count
+        ? `${r.data.count} coberturas copiadas`
+        : "Las coberturas del producto ya están en el ítem",
+    );
     router.refresh();
   }
 

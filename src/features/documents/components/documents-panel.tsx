@@ -166,6 +166,7 @@ function AddDocumentDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [docType, setDocType] = useState("");
   const [customName, setCustomName] = useState("");
+  const [chosenFileName, setChosenFileName] = useState("");
   const [uploading, setUploading] = useState(false);
 
   const linkForm = useForm<DocumentFormValues>({
@@ -194,6 +195,7 @@ function AddDocumentDialog({
     toast.success("Documento subido");
     setDocType("");
     setCustomName("");
+    setChosenFileName("");
     if (fileInputRef.current) fileInputRef.current.value = "";
     onOpenChange(false);
     router.refresh();
@@ -235,7 +237,22 @@ function AddDocumentDialog({
             <form onSubmit={handleUpload} className="space-y-4">
               <div>
                 <Label className="text-xs">Archivo</Label>
-                <Input ref={fileInputRef} type="file" accept={ACCEPT} />
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={ACCEPT}
+                  className="sr-only"
+                  onChange={(event) =>
+                    setChosenFileName(event.target.files?.[0]?.name ?? "")
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {chosenFileName || "Elegir archivo"}
+                </Button>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   Formatos: PPT, PDF, Excel, Word, imágenes, ZIP/RAR, MSG/EML.
                   Máx 25 MB.
@@ -251,7 +268,7 @@ function AddDocumentDialog({
               </div>
               <div>
                 <Label className="text-xs">Tipo</Label>
-                <Select value={docType || undefined} onValueChange={setDocType}>
+                <Select value={docType} onValueChange={setDocType}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona tipo" />
                   </SelectTrigger>
@@ -328,7 +345,7 @@ function AddDocumentDialog({
                     <FormItem>
                       <FormLabel>Tipo</FormLabel>
                       <Select
-                        value={field.value || undefined}
+                        value={field.value ?? ""}
                         onValueChange={field.onChange}
                       >
                         <FormControl>

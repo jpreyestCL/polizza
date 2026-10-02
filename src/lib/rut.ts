@@ -43,6 +43,22 @@ export function formatRut(rut: string): string {
   return `${withDots}-${dv}`;
 }
 
+/**
+ * Términos para buscar un RUT guardado sin puntos y con guion.
+ * Acepta 12.345.678-5, 12345678-5 y 123456785. Un nombre no genera términos.
+ */
+export function rutSearchTerms(query: string): string[] {
+  const trimmed = query.trim();
+  if (!/^[\d.\-\sKk]+$/.test(trimmed)) return [];
+  const compact = trimmed.replace(/[.\s]/g, "").toUpperCase();
+  const digits = compact.replace(/-/g, "");
+  if (digits.length < 3 || !/^\d+[0-9K]?$/.test(digits)) return [];
+  const terms = new Set<string>();
+  if (compact.length >= 2) terms.add(compact);
+  if (digits.length >= 2) terms.add(`${digits.slice(0, -1)}-${digits.slice(-1)}`);
+  return [...terms];
+}
+
 /** Normaliza un RUT a su forma canónica para almacenar (sin puntos, con guion). */
 export function normalizeRut(rut: string): string {
   const clean = cleanRut(rut);

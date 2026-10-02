@@ -5,6 +5,7 @@ import {
   formatRut,
   cleanRut,
   normalizeRut,
+  rutSearchTerms,
 } from "@/lib/rut";
 
 describe("RUT chileno", () => {
@@ -30,5 +31,11 @@ describe("RUT chileno", () => {
     expect(cleanRut("12.345.678-5")).toBe("123456785");
     expect(formatRut("123456785")).toBe("12.345.678-5");
     expect(normalizeRut("12.345.678-5")).toBe("12345678-5");
+  });
+
+  it("arma términos de búsqueda contra el RUT guardado con guion", () => {
+    expect(rutSearchTerms("12.345.678-5")).toContain("12345678-5");
+    expect(rutSearchTerms("123456785")).toContain("12345678-5");
+    expect(rutSearchTerms("Camila")).toEqual([]);
   });
 });

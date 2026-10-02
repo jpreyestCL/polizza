@@ -4,6 +4,7 @@ import type { ClaimStatus, PolicyStatus } from "@prisma/client";
 import type { SessionContext } from "@/server/context";
 import { basePrisma, type Db } from "@/server/db";
 import { canSeeAllClients } from "@/lib/roles";
+import { rutSearchTerms } from "@/lib/rut";
 import {
   buildPaginated,
   cursorArgs,
@@ -232,8 +233,20 @@ export async function getClaimDetail(db: Db, id: string) {
       })
     : null;
 
+  const policyItem = claim.policyItem
+    ? {
+        id: claim.policyItem.id,
+        description: claim.policyItem.description,
+        currency: claim.policyItem.currency,
+        insuredAmount:
+          claim.policyItem.insuredAmount != null
+            ? Number(claim.policyItem.insuredAmount)
+            : null,
+      }
+    : null;
   return {
     ...claim,
+    policyItem,
     estimatedAmount: claim.estimatedAmount
       ? Number(claim.estimatedAmount)
       : null,
@@ -241,9 +254,7 @@ export async function getClaimDetail(db: Db, id: string) {
     policy,
     insuredClient: insured,
     beneficiaryClient: beneficiary,
-    policyItemAmount: claim.policyItem?.insuredAmount
-      ? Number(claim.policyItem.insuredAmount)
-      : null,
+    policyItemAmount: policyItem?.insuredAmount ?? null,
   };
 }
 
@@ -298,6 +309,7 @@ export async function searchPoliciesForClaim(
 ): Promise<PolicySearchResult[]> {
   const q = options.query.trim();
   if (!q) return [];
+  const rutTerms = rutSearchTerms(q);
 
   const statusFilter = options.includeNonActive
     ? undefined
@@ -315,7 +327,9 @@ export async function searchPoliciesForClaim(
         {
           client: {
             OR: [
-              { rut: { contains: q, mode: "insensitive" } },
+              ...rutTerms.map((term) => ({
+                rut: { contains: term, mode: "insensitive" as const },
+              })),
               { name: { contains: q, mode: "insensitive" } },
               { firstName: { contains: q, mode: "insensitive" } },
               { lastNamePaterno: { contains: q, mode: "insensitive" } },

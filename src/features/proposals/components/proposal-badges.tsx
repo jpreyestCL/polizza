@@ -20,7 +20,16 @@ const STATUS_VARIANT: Record<ProposalStatusValue, BadgeVariant> = {
   DESCARTADA: "muted",
 };
 
-export function ProposalStatusBadge({ status }: { status: string }) {
+export function ProposalStatusBadge({
+  status,
+  dispatched = false,
+}: {
+  status: string;
+  dispatched?: boolean;
+}) {
+  if (dispatched && status === "POR_DESPACHAR") {
+    return <Badge variant="success">Despachada</Badge>;
+  }
   const variant = STATUS_VARIANT[status as ProposalStatusValue] ?? "muted";
   const label = STATUS_LABELS[status as ProposalStatusValue] ?? status;
   return <Badge variant={variant}>{label}</Badge>;

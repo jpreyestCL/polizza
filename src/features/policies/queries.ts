@@ -301,6 +301,8 @@ export async function getPolicyDetail(db: Db, id: string) {
       premiumMovements: { orderBy: { seqNo: "asc" } },
       proposal: {
         select: {
+          productId: true,
+          branchType: { select: { name: true } },
           items: {
             select: {
               coverages: {
@@ -313,11 +315,38 @@ export async function getPolicyDetail(db: Db, id: string) {
     },
   });
   if (!policy) return null;
+  const asNumber = (value: { toString(): string } | null | undefined) =>
+    value == null ? null : Number(value);
   const premiumNet = policy.premiumNet ? Number(policy.premiumNet) : null;
   return {
     ...policy,
     premiumNet,
+    premiumAffect: asNumber(policy.premiumAffect),
+    premiumExempt: asNumber(policy.premiumExempt),
+    commissionPercent: asNumber(policy.commissionPercent),
+    commissionAmount: asNumber(policy.commissionAmount),
+    commissionCalculated: asNumber(policy.commissionCalculated),
+    commissionAffect: asNumber(policy.commissionAffect),
+    commissionExempt: asNumber(policy.commissionExempt),
+    commissionAffectPct: asNumber(policy.commissionAffectPct),
+    commissionExemptPct: asNumber(policy.commissionExemptPct),
+    commissionFinalCompany: asNumber(policy.commissionFinalCompany),
+    exchangeRate: asNumber(policy.exchangeRate),
+    ufValue: asNumber(policy.ufValue),
+    salesCommissionPct: asNumber(policy.salesCommissionPct),
+    terminationBalance: asNumber(policy.terminationBalance),
     premiumGross: computeGross(premiumNet, policy.proposal, policy),
+    proposal: policy.proposal
+      ? {
+          ...policy.proposal,
+          items: policy.proposal.items.map((item) => ({
+            coverages: item.coverages.map((coverage) => ({
+              premiumAffect: asNumber(coverage.premiumAffect),
+              premiumExempt: asNumber(coverage.premiumExempt),
+            })),
+          })),
+        }
+      : null,
     items: policy.items.map((item) => ({
       ...item,
       insuredAmount: item.insuredAmount ? Number(item.insuredAmount) : null,
@@ -327,6 +356,9 @@ export async function getPolicyDetail(db: Db, id: string) {
       insuredAmount: coverage.insuredAmount
         ? Number(coverage.insuredAmount)
         : null,
+      deductibleAmount: asNumber(coverage.deductibleAmount),
+      deductiblePct: asNumber(coverage.deductiblePct),
+      deductibleMinimum: asNumber(coverage.deductibleMinimum),
     })),
     premiumMovements: policy.premiumMovements.map((movement) => ({
       ...movement,
@@ -335,6 +367,8 @@ export async function getPolicyDetail(db: Db, id: string) {
       taxAmount: Number(movement.taxAmount),
       premiumNet: Number(movement.premiumNet),
       premiumGross: Number(movement.premiumGross),
+      commissionAffected: Number(movement.commissionAffected),
+      commissionExempt: Number(movement.commissionExempt),
       commissionTotal: Number(movement.commissionTotal),
     })),
   };

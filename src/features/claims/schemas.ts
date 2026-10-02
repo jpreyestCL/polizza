@@ -163,6 +163,10 @@ export const claimStatusChangeSchema = z.object({
   status: z.enum(CLAIM_STATUSES),
   note: z.string().trim().max(1000).default(""),
   closureOutcome: z.string().trim().default(""),
+  filedAtCompanyAt: z.string().trim().default(""),
+  companyClaimNumber: z.string().trim().max(80).default(""),
+  liquidatorName: z.string().trim().max(160).default(""),
+  settledAmount: z.string().trim().default(""),
 });
 export type ClaimStatusChangeValues = z.infer<typeof claimStatusChangeSchema>;
 

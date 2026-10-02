@@ -63,6 +63,7 @@ export function PolicyReceptionPanel({
   const [errReceptionDate, setErrReceptionDate] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Se muestra mientras se espera la emisión (ENVIADA_COMPANIA) o cuando la
   // póliza fue devuelta con error y se está a la espera de la corrección
@@ -82,13 +83,17 @@ export function PolicyReceptionPanel({
       effectiveDate: kind === "ENDOSO" ? effectiveDate : "",
     });
     if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Datos inválidos");
+      const message = parsed.error.issues[0]?.message ?? "Datos inválidos";
+      setError(message);
+      toast.error(message);
       return;
     }
+    setError(null);
     setSubmitting(true);
     const r = await registerPolicyEmissionAction(proposalId, parsed.data);
     setSubmitting(false);
     if (!r.ok) {
+      setError(r.error);
       toast.error(r.error);
       return;
     }
@@ -108,13 +113,17 @@ export function PolicyReceptionPanel({
       receptionDate: errReceptionDate,
     });
     if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Datos inválidos");
+      const message = parsed.error.issues[0]?.message ?? "Datos inválidos";
+      setError(message);
+      toast.error(message);
       return;
     }
+    setError(null);
     setSubmitting(true);
     const r = await registerEmissionErrorAction(proposalId, parsed.data);
     setSubmitting(false);
     if (!r.ok) {
+      setError(r.error);
       toast.error(r.error);
       return;
     }
@@ -172,11 +181,16 @@ export function PolicyReceptionPanel({
               A la espera de que la compañía emita la póliza. La emisión correcta
               y la emisión con problemas dejan la propuesta en{" "}
               <strong>Por despachar</strong>. El problema queda marcado y se
-              corrige con un endoso; no devuelve la propuesta. El PDF de la
-              póliza se adjunta en la pestaña Documentos.
+              corrige con un endoso; no devuelve la propuesta. Sube el PDF
+              emitido en Documentos con tipo “Póliza” antes de continuar.
             </>
           )}
         </p>
+        {error ? (
+          <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
 
         <div className="inline-flex rounded-md border p-0.5 text-sm">
           <button

@@ -7,7 +7,7 @@ import { hasPermission } from "@/lib/factory-roles";
 import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import { cleanRut, isValidRut } from "@/lib/rut";
 import { cleanPhone, suggestNaturalPerson } from "@/lib/domain/brokeris-clean";
-import { evaluateBrokerisCuadre, type CuadreInput } from "@/lib/domain/brokeris-cuadre";
+import { evaluateBrokerisCuadre, parseUfDiffs, type CuadreInput } from "@/lib/domain/brokeris-cuadre";
 import {
   isBrokerisPasteProfile,
   translateBrokerisPaste,
@@ -254,10 +254,7 @@ function checked(form: FormData, key: string): boolean {
 }
 
 function diffs(form: FormData, key: string): number[] {
-  return text(form, key)
-    .split(/[\s,;]+/)
-    .map((part) => Number(part.replace(",", ".")))
-    .filter((value) => Number.isFinite(value));
+  return parseUfDiffs(text(form, key));
 }
 
 export async function previewBrokerisAction(form: FormData): Promise<void> {
@@ -323,6 +320,7 @@ export async function previewCuadreAction(form: FormData): Promise<void> {
     pendingInstallmentAmount: amount(form, "pendingInstallmentAmount"),
     approvedInstallmentCount: amount(form, "approvedInstallmentCount"),
     approvedInstallmentAmount: amount(form, "approvedInstallmentAmount"),
+    installmentDecisionRecorded: checked(form, "installmentDecisionRecorded"),
     commissionPaymentsByYear:
       year > 0
         ? [
@@ -339,6 +337,7 @@ export async function previewCuadreAction(form: FormData): Promise<void> {
     productionExplained: checked(form, "productionExplained"),
     documentsTotal: amount(form, "documentsTotal"),
     documentsLinked: amount(form, "documentsLinked"),
+    documentsCounted: checked(form, "documentsCounted"),
     maxProposal: amount(form, "maxProposal"),
     maxClaimFolder: amount(form, "maxClaimFolder"),
     maxPlan: amount(form, "maxPlan"),

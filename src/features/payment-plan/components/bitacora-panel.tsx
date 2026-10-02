@@ -7,6 +7,7 @@ import { History, Plus } from "lucide-react";
 import { addProposalLogAction } from "../actions";
 import { proposalLogSchema, type ProposalLogValues } from "../schemas";
 import type { OrgMember } from "@/features/clients/queries";
+import { formatDate, formatTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -69,18 +70,17 @@ export function BitacoraPanel({
   timezone?: string;
 }) {
   const fmtDate = (d: Date) =>
-    new Intl.DateTimeFormat("es-CL", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      timeZone: timezone || undefined,
-    }).format(d);
-  const fmtTime = (d: Date) =>
-    new Intl.DateTimeFormat("es-CL", {
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone: timezone || undefined,
-    }).format(d);
+    timezone
+      ? new Intl.DateTimeFormat("es-CL", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          timeZone: timezone,
+        })
+          .format(d)
+          .replace(/[\u00a0\u202f\u2009]/g, " ")
+      : formatDate(d);
+  const fmtTime = (d: Date) => formatTime(d, timezone);
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-lg border bg-card">

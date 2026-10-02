@@ -11,6 +11,7 @@ import {
 } from "../actions";
 import type { PolicySearchResult } from "../queries";
 import { formatDate } from "@/lib/utils";
+import { formatRut } from "@/lib/rut";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -181,7 +182,7 @@ export function NewClaimWizard() {
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {p.client.name} · {p.client.rut}
+                          {p.client.name} · {formatRut(p.client.rut)}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           Vigencia: {formatDate(p.startDate)} —{" "}
@@ -280,7 +281,7 @@ export function NewClaimWizard() {
             </p>
             <p>
               <span className="text-muted-foreground">Cliente:</span>{" "}
-              {policy.client.name} ({policy.client.rut})
+              {policy.client.name} ({formatRut(policy.client.rut)})
             </p>
             <p>
               <span className="text-muted-foreground">Ítem:</span>{" "}

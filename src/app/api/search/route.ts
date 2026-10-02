@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { canSeeAllClients } from "@/lib/roles";
-import { cleanRut } from "@/lib/rut";
+import { formatRut, rutSearchTerms } from "@/lib/rut";
 
 /** Búsqueda global: clientes por nombre/RUT/correo y pólizas por número. */
 export async function GET(request: NextRequest) {
@@ -14,11 +14,12 @@ export async function GET(request: NextRequest) {
   const { ctx, db } = await requireOrgDb();
   const seeAll = canSeeAllClients(ctx.role);
 
+  const rutTerms = rutSearchTerms(query);
   const clientWhere: Prisma.ClientWhereInput = {
     OR: [
       { name: { contains: query, mode: "insensitive" } },
       { legalName: { contains: query, mode: "insensitive" } },
-      { rut: { contains: cleanRut(query) } },
+      ...rutTerms.map((term) => ({ rut: { contains: term } })),
       { email: { contains: query, mode: "insensitive" } },
     ],
   };
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
         kind: "client" as const,
         id: c.id,
         name: c.name,
-        rut: c.rut,
+        rut: formatRut(c.rut),
         type: c.type,
       })),
     ],

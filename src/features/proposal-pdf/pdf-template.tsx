@@ -231,7 +231,7 @@ export type PdfProposal = {
 };
 
 function fmtDate(d: Date | null): string {
-  return d ? d.toLocaleDateString("es-CL") : "";
+  return d ? d.toLocaleDateString("es-CL", { timeZone: "UTC" }) : "";
 }
 
 /**

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { splitInstallments } from "@/lib/domain/money";
+import { addUtcMonths } from "@/lib/domain/term";
 import {
   paymentPlanSchema,
   proposalLogSchema,
@@ -110,8 +111,7 @@ export async function upsertPaymentPlanAction(
       });
       const rows: Prisma.InstallmentCreateManyInput[] = amounts.map(
         (amount, i) => {
-          const d = new Date(firstDate);
-          d.setMonth(d.getMonth() + i);
+          const d = addUtcMonths(firstDate, i);
           return {
             organizationId: ctx.organizationId,
             paymentPlanId: planId,

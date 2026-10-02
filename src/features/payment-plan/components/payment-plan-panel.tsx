@@ -41,10 +41,19 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
+type PlanInstallment = {
+  number: number;
+  amount: number;
+  dueDate: Date;
+  status: string;
+  currency: string;
+};
+
 type Plan = {
   sinPlanDePago: boolean;
   option: string | null;
   installmentsCount: number;
+  installments?: PlanInstallment[];
   observations: string | null;
   documented: boolean;
   firstPaymentDate: Date | null;
@@ -173,6 +182,7 @@ export function PaymentPlanPanel({
         />
       </div>
       {plan ? (
+        <>
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-4 text-sm md:grid-cols-4">
           <Stat
             label="Cuotas"
@@ -186,7 +196,9 @@ export function PaymentPlanPanel({
             label="Primer pago"
             value={
               plan.firstPaymentDate
-                ? plan.firstPaymentDate.toLocaleDateString("es-CL")
+                ? plan.firstPaymentDate.toLocaleDateString("es-CL", {
+                    timeZone: "UTC",
+                  })
                 : "—"
             }
           />
@@ -208,6 +220,27 @@ export function PaymentPlanPanel({
           />
           <Stat label="RUT pagador" value={plan.payerRut ?? "—"} />
         </div>
+        {plan.installments && plan.installments.length > 0 ? (
+          <div className="border-t px-4 py-3">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Cuotas
+            </p>
+            <ul className="grid gap-1 text-sm sm:grid-cols-2">
+              {plan.installments.map((row) => (
+                <li key={row.number} className="flex justify-between gap-3 tabular-nums">
+                  <span>
+                    {row.number}. {row.dueDate.toLocaleDateString("es-CL", { timeZone: "UTC" })}
+                  </span>
+                  <span>
+                    {row.amount.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
+                    {row.currency}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        </>
       ) : (
         <div className="p-6 text-center text-sm text-muted-foreground">
           Aún no se ha configurado el plan de pago.
@@ -450,8 +483,11 @@ function PaymentPlanDialog({
               </Select>
             </div>
             <div>
-              <Label className="text-xs">N° cuotas</Label>
+              <Label className="text-xs" htmlFor="plan-installments">
+                N° cuotas
+              </Label>
               <Input
+                id="plan-installments"
                 type="number"
                 value={values.installmentsCount}
                 onChange={(e) =>
@@ -461,8 +497,11 @@ function PaymentPlanDialog({
               />
             </div>
             <div>
-              <Label className="text-xs">Valor cuota ({currency})</Label>
+              <Label className="text-xs" htmlFor="plan-installment-amount">
+                Valor cuota ({currency})
+              </Label>
               <Input
+                id="plan-installment-amount"
                 type="number"
                 step="0.01"
                 value={values.valorCuota}
@@ -473,8 +512,11 @@ function PaymentPlanDialog({
               />
             </div>
             <div>
-              <Label className="text-xs">Primer pago</Label>
+              <Label className="text-xs" htmlFor="plan-first-payment">
+                Primer pago
+              </Label>
               <Input
+                id="plan-first-payment"
                 type="date"
                 value={values.firstPaymentDate}
                 onChange={(e) =>

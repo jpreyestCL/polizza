@@ -4,6 +4,7 @@ import { assignRenewalLineage } from "@/lib/domain/brokeris-chain";
 import {
   BROKERIS_LOAD_ORDER,
   evaluateBrokerisCuadre,
+  parseUfDiffs,
   referenceCuadreInput,
 } from "@/lib/domain/brokeris-cuadre";
 import {
@@ -122,10 +123,11 @@ describe("mapa Brokeris", () => {
     expect(mapBrokerisClaimClosure(40)?.outcome).toBe("TEMPORARY");
     expect(mapBrokerisClaimClosure(10)?.outcome).toBe("OTHER");
     expect(mapBrokerisClaimSubstatus(1).status).toBe("REPORT_PENDING_SEND");
-    expect(mapBrokerisClaimSubstatus(999)).toMatchObject({
-      status: "REPORTED",
+    expect(mapBrokerisClaimSubstatus(999, "CLOSED")).toMatchObject({
+      status: "CLOSED",
       note: "Subestado sin mapa: 999",
     });
+    expect(mapBrokerisClaimSubstatus(999)).toMatchObject({ status: "REPORTED" });
     expect(mapBrokerisDocumentType("Póliza")).toMatchObject({
       code: "POLICY",
       needsReview: false,
@@ -157,8 +159,34 @@ describe("cadena y cuadre", () => {
     ]);
     const missing = assignRenewalLineage([
       { id: "b", renewedFromId: "ausente", sortKey: "2026-01-01" },
+      { id: "c", renewedFromId: "ausente", sortKey: "01-01-2027" },
     ]);
-    expect(missing[0]).toMatchObject({ lineageId: "b", termNumber: 1, needsReview: true });
+    expect(missing.map((row) => [row.id, row.lineageId, row.termNumber])).toEqual([
+      ["b", "ausente", 1],
+      ["c", "ausente", 2],
+    ]);
+    expect(missing.every((row) => row.needsReview)).toBe(true);
+    const blankDate = assignRenewalLineage([
+      { id: "a", renewedFromId: null, sortKey: "2024-01-01" },
+      { id: "b", renewedFromId: "a", sortKey: "" },
+    ]);
+    expect(blankDate.map((row) => [row.id, row.lineageId, row.termNumber])).toEqual([
+      ["a", "a", 1],
+      ["b", "a", 2],
+    ]);
+    expect(blankDate[0]?.needsReview).toBe(false);
+    expect(blankDate[1]?.note).toContain("Vigencia vacía");
+    const chileanDates = assignRenewalLineage([
+      { id: "c", renewedFromId: "b", sortKey: "01-01-2025" },
+      { id: "b", renewedFromId: "a", sortKey: "31-12-2024" },
+      { id: "a", renewedFromId: null, sortKey: "01/01/2024" },
+    ]);
+    expect(chileanDates.map((row) => [row.id, row.termNumber, row.lineageId])).toEqual([
+      ["c", 3, "a"],
+      ["b", 2, "a"],
+      ["a", 1, "a"],
+    ]);
+    expect(chileanDates.every((row) => !row.needsReview)).toBe(true);
     const cycle = assignRenewalLineage([
       { id: "a", renewedFromId: "b", sortKey: "2024-01-01" },
       { id: "b", renewedFromId: "a", sortKey: "2025-01-01" },
@@ -181,6 +209,20 @@ describe("cadena y cuadre", () => {
     expect(ok.rows).toHaveLength(13);
     expect(ok.rows.every((row) => row.status === "OK")).toBe(true);
     expect(ok.gateA).toBe(true);
+    expect(parseUfDiffs("0,01; 1,5")).toEqual([0.01, 1.5]);
+    const untouched = evaluateBrokerisCuadre({
+      ...referenceCuadreInput(),
+      policiesInForce: 0,
+      policyPremiumDiffsUf: [],
+      commissionDiffsUf: [],
+      commissionPaymentsByYear: [],
+      installmentDecisionRecorded: false,
+      documentsCounted: false,
+    });
+    expect(untouched.gateA).toBe(false);
+    expect(untouched.rows.find((row) => row.code === "Q3")?.status).toBe("FUERA");
+    expect(untouched.rows.find((row) => row.code === "Q9")?.status).toBe("FUERA");
+    expect(untouched.rows.find((row) => row.code === "Q12")?.status).toBe("FUERA");
     expect(BROKERIS_LOAD_ORDER).toHaveLength(12);
 
     const q2 = evaluateBrokerisCuadre({
@@ -263,10 +305,26 @@ describe("cadena y cuadre", () => {
     });
     expect(policies[1]?.action).toBe("TRADUCIDO");
 
-    const endorsements = translateBrokerisPaste("ENDOSOS", "e1\t11\ne0\t0");
+    const endorsements = translateBrokerisPaste("ENDOSOS", "e1\t11\ne0\t0\ne9\t9\ne32\t32");
     expect(endorsements[0]).toMatchObject({ action: "TRADUCIDO" });
     expect(endorsements[0]?.message).toContain("CANCELLATION");
     expect(endorsements[1]?.message).toContain("ISSUE");
     expect(endorsements[1]?.action).toBe("REVISAR");
+    expect(endorsements[2]?.action).toBe("REVISAR");
+    expect(endorsements[3]?.action).toBe("REVISAR");
+
+    const annulled = translateBrokerisPaste("POLIZAS", "p6\t6\t0\t\t01-01-2024\tPOL-6\np6b\t6\t0\t\t01-01-2024");
+    expect(annulled[0]?.payload).toMatchObject({ status: "ANNULLED" });
+    expect(annulled[0]?.action).toBe("TRADUCIDO");
+    expect(annulled[1]?.payload).toMatchObject({ status: null });
+    expect(annulled[1]?.action).toBe("REVISAR");
+
+    const claims = translateBrokerisPaste("SINIESTROS", "s1\t5\t9");
+    expect(claims[0]?.payload).toMatchObject({ status: "CLOSED", substatus: "CLOSED" });
+    expect(claims[0]?.action).toBe("REVISAR");
+
+    const nonRenewal = translateBrokerisPaste("NO_RENOVACION", "n1\t2");
+    expect(nonRenewal[0]?.action).toBe("REVISAR");
+    expect(nonRenewal[0]?.message).toContain("Falta el motivo");
   });
 });

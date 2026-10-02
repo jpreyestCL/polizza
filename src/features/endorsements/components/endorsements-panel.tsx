@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDate, formatDateTime } from "@/lib/utils";
 
 function typeLabel(type: string | null): string {
   if (!type) return "Endoso";
@@ -59,12 +60,14 @@ export function EndorsementsPanel({
   endorsementProposals,
   policyStatus,
   policyEndDate,
+  timezone,
 }: {
   policyId: string;
   endorsements: EndorsementRow[];
   endorsementProposals: EndorsementProposalRow[];
   policyStatus: string;
   policyEndDate: string;
+  timezone?: string;
 }) {
   const [open, setOpen] = useState(false);
   const blocked =
@@ -118,7 +121,7 @@ export function EndorsementsPanel({
                       <div className="text-xs text-muted-foreground">
                         {typeLabel(p.endorsementType)}
                         {p.startDate
-                          ? ` · desde ${p.startDate.toLocaleDateString("es-CL")}`
+                          ? ` · desde ${formatDate(p.startDate)}`
                           : ""}
                       </div>
                     </div>
@@ -133,7 +136,7 @@ export function EndorsementsPanel({
           {endorsements.length > 0 ? (
             <ul className="divide-y">
               {endorsements.map((e) => (
-                <EndorsementItem key={e.id} endorsement={e} />
+                <EndorsementItem key={e.id} endorsement={e} timezone={timezone} />
               ))}
             </ul>
           ) : null}
@@ -143,7 +146,13 @@ export function EndorsementsPanel({
   );
 }
 
-function EndorsementItem({ endorsement }: { endorsement: EndorsementRow }) {
+function EndorsementItem({
+  endorsement,
+  timezone,
+}: {
+  endorsement: EndorsementRow;
+  timezone?: string;
+}) {
   const router = useRouter();
   const movesStatus = Boolean(
     endorsementStatusEffect(endorsement.type as EndorsementTypeValue),
@@ -180,9 +189,9 @@ function EndorsementItem({ endorsement }: { endorsement: EndorsementRow }) {
             </span>
           ) : null}
           <span className="text-xs text-muted-foreground">
-            Desde {endorsement.effectiveDate.toLocaleDateString("es-CL")}
+            Desde {formatDate(endorsement.effectiveDate)}
             {endorsement.endDate
-              ? ` hasta ${endorsement.endDate.toLocaleDateString("es-CL")}`
+              ? ` hasta ${formatDate(endorsement.endDate)}`
               : ""}
           </span>
         </div>
@@ -200,7 +209,7 @@ function EndorsementItem({ endorsement }: { endorsement: EndorsementRow }) {
           </div>
         )}
         <div className="mt-1 text-[10px] text-muted-foreground">
-          Registrado: {endorsement.createdAt.toLocaleString("es-CL")}
+          Registrado: {formatDateTime(endorsement.createdAt, timezone)}
           {endorsement.proposal ? (
             <>
               {" · "}

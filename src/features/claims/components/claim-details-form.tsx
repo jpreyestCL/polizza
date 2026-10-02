@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, Save } from "lucide-react";
 import { updateClaimDetailsAction } from "../actions";
+import { formatRut } from "@/lib/rut";
 import {
   CLAIM_ENTRY_CHANNELS,
   CLAIM_ENTRY_CHANNEL_LABELS,
@@ -568,7 +569,9 @@ function PartyCard({
     <div className="space-y-1 rounded-lg border bg-muted/30 p-3">
       <p className="text-xs uppercase text-muted-foreground">{label}</p>
       <p className="text-sm font-medium">{name}</p>
-      {rut && <p className="text-xs text-muted-foreground">RUT: {rut}</p>}
+      {rut && (
+        <p className="text-xs text-muted-foreground">RUT: {formatRut(rut)}</p>
+      )}
       {phone && <p className="text-xs text-muted-foreground">Tel: {phone}</p>}
       {email && <p className="text-xs text-muted-foreground">{email}</p>}
     </div>

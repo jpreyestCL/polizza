@@ -134,7 +134,7 @@ export type PdfEndorsement = {
 };
 
 function fmtDate(d: Date | null): string {
-  return d ? d.toLocaleDateString("es-CL") : "—";
+  return d ? d.toLocaleDateString("es-CL", { timeZone: "UTC" }) : "—";
 }
 
 function fmtVigencia(prefix: string, d: Date | null, time: string | null): string {

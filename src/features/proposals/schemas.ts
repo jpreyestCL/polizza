@@ -231,6 +231,13 @@ export const proposalDraftSchema = z
     beneficiaryClientId: optionalString,
     commissionAffectPct: optionalString,
     commissionExemptPct: optionalString,
+    currency: optionalString,
+    startDate: optionalString,
+    endDate: optionalString,
+    recipientEmail: optionalString,
+    contratanteEmail: optionalString,
+    contratantePhone: optionalString,
+    contratanteCelular: optionalString,
   })
   .refine(
     (v) => v.branchTypeId !== "" || (v.lineId !== "" && v.branchId !== ""),

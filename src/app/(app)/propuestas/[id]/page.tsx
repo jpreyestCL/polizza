@@ -10,6 +10,7 @@ import {
 } from "@/features/proposals/queries";
 import { isProposalLocked } from "@/features/proposals/schemas";
 import { formatProposalNumber } from "@/lib/proposal-number";
+import { formatRut } from "@/lib/rut";
 import {
   getCompanies,
   getReturnReasons,
@@ -105,6 +106,7 @@ export default async function PropuestaDetailPage({
         name: true,
         firstName: true,
         lastNamePaterno: true,
+        lastNameMaterno: true,
         legalName: true,
         phone: true,
         celular: true,
@@ -148,7 +150,10 @@ export default async function PropuestaDetailPage({
               {isEndorsement ? "Propuesta de endoso " : ""}
               {formatProposalNumber(proposal.proposalNumber)}
             </h1>
-            <ProposalStatusBadge status={proposal.status} />
+            <ProposalStatusBadge
+              status={proposal.status}
+              dispatched={proposal.dispatchedAt != null}
+            />
           </div>
           <p className="text-sm text-muted-foreground">
             {proposal.client.name}
@@ -375,13 +380,19 @@ export default async function PropuestaDetailPage({
         contratante={
           contratante
             ? {
-                rut: contratante.rut,
+                rut: contratante.rut ? formatRut(contratante.rut) : null,
                 name:
-                  [contratante.firstName, contratante.lastNamePaterno]
+                  [
+                    contratante.firstName,
+                    contratante.lastNamePaterno,
+                    contratante.lastNameMaterno,
+                  ]
                     .filter(Boolean)
                     .join(" ") || contratante.name,
                 firstName: contratante.firstName,
-                lastName: contratante.lastNamePaterno,
+                lastName: [contratante.lastNamePaterno, contratante.lastNameMaterno]
+                  .filter(Boolean)
+                  .join(" "),
                 legalName: contratante.legalName,
                 phone: contratante.phone,
                 celular: contratante.celular,
@@ -419,6 +430,7 @@ export default async function PropuestaDetailPage({
                 payerPhone: paymentPlan.payerPhone,
                 payerCelular: paymentPlan.payerCelular,
                 payerEmail: paymentPlan.payerEmail,
+                installments: paymentPlan.installments,
               }
             : null
         }

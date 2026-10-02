@@ -70,12 +70,14 @@ export type CuadreInput = {
   pendingInstallmentAmount: number;
   approvedInstallmentCount: number;
   approvedInstallmentAmount: number;
+  installmentDecisionRecorded: boolean;
   commissionPaymentsByYear: CommissionYear[];
   grossPremium2025Clp: number;
   commissions2025Clp: number;
   productionExplained: boolean;
   documentsTotal: number;
   documentsLinked: number;
+  documentsCounted: boolean;
   maxProposal: number;
   maxClaimFolder: number;
   maxPlan: number;
@@ -118,6 +120,16 @@ function line(input: Omit<CuadreRow, "gate"> & { gate?: boolean }): CuadreRow {
   return { gate: input.gate ?? true, ...input };
 }
 
+/** Acepta decimales con coma. No parte 0,01 en dos números. */
+export function parseUfDiffs(raw: string): number[] {
+  return raw
+    .split(/[\s;]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map((part) => Number(part.replace(",", ".")))
+    .filter((value) => Number.isFinite(value));
+}
+
 export function referenceCuadreInput(): CuadreInput {
   const ref = BROKERIS_REFERENCE;
   return {
@@ -143,6 +155,7 @@ export function referenceCuadreInput(): CuadreInput {
     pendingInstallmentAmount: 0,
     approvedInstallmentCount: 0,
     approvedInstallmentAmount: 0,
+    installmentDecisionRecorded: true,
     commissionPaymentsByYear: [
       { year: 2025, brokerisClp: 1_000_000, polizzaClp: 1_000_000, times100Explained: false },
     ],
@@ -151,6 +164,7 @@ export function referenceCuadreInput(): CuadreInput {
     productionExplained: false,
     documentsTotal: 1,
     documentsLinked: 1,
+    documentsCounted: true,
     maxProposal: ref.maxProposal,
     maxClaimFolder: ref.maxClaimFolder,
     maxPlan: ref.maxPlan,
@@ -286,6 +300,7 @@ export function evaluateBrokerisCuadre(input: CuadreInput): CuadreReport {
   );
 
   const installmentsOk =
+    input.installmentDecisionRecorded &&
     input.pendingInstallmentCount === input.approvedInstallmentCount &&
     within(input.pendingInstallmentAmount, input.approvedInstallmentAmount, UF);
   rows.push(
@@ -293,7 +308,9 @@ export function evaluateBrokerisCuadre(input: CuadreInput): CuadreReport {
       code: "Q9",
       label: "Cuotas pendientes tras la limpieza",
       reference: `${input.approvedInstallmentCount} cuotas, ${input.approvedInstallmentAmount}`,
-      actual: `${input.pendingInstallmentCount} cuotas, ${input.pendingInstallmentAmount}`,
+      actual: input.installmentDecisionRecorded
+        ? `${input.pendingInstallmentCount} cuotas, ${input.pendingInstallmentAmount}`
+        : "Sin decisión de limpieza",
       tolerance: "Exacto contra la decisión A/B/C/D",
       status: installmentsOk ? "OK" : "FUERA",
     }),
@@ -341,9 +358,12 @@ export function evaluateBrokerisCuadre(input: CuadreInput): CuadreReport {
       code: "Q12",
       label: "Documentos",
       reference: "Todos enlazados",
-      actual: `${input.documentsLinked} de ${input.documentsTotal}`,
+      actual: input.documentsCounted
+        ? `${input.documentsLinked} de ${input.documentsTotal}`
+        : "Sin conteo",
       tolerance: "100 % enlazados; el huérfano se lista",
-      status: input.documentsTotal >= 0 && orphans === 0 ? "OK" : "FUERA",
+      status:
+        input.documentsCounted && input.documentsTotal >= 0 && orphans === 0 ? "OK" : "FUERA",
     }),
   );
 

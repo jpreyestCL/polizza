@@ -222,7 +222,17 @@ export async function copyProductCoveragesAction(
   const { ctx, db } = await requireOrgDb();
   const item = await db.proposalItem.findFirst({
     where: { id: itemId },
-    select: { id: true, proposalId: true, proposal: { select: { productId: true } } },
+    select: {
+      id: true,
+      proposalId: true,
+      proposal: {
+        select: {
+          productId: true,
+          commissionAffectPct: true,
+          commissionExemptPct: true,
+        },
+      },
+    },
   });
   if (!item) return { ok: false, error: "Ítem no existe." };
   if (!item.proposal.productId) {
@@ -238,6 +248,22 @@ export async function copyProductCoveragesAction(
       error: "El producto no tiene coberturas predefinidas.",
     };
   }
+  const existing = await db.proposalItemCoverage.findMany({
+    where: { itemId },
+    select: { name: true },
+  });
+  const existingNames = new Set(
+    existing.map((row) => row.name.trim().toLowerCase()),
+  );
+  const missing = coverages.filter(
+    (coverage) => !existingNames.has(coverage.name.trim().toLowerCase()),
+  );
+  if (missing.length === 0) {
+    return {
+      ok: true,
+      data: { count: 0 },
+    };
+  }
 
   const last = await db.proposalItemCoverage.findFirst({
     where: { itemId },
@@ -247,7 +273,7 @@ export async function copyProductCoveragesAction(
   let nextOrder = (last?.order ?? 0) + 10;
 
   await db.proposalItemCoverage.createMany({
-    data: coverages.map((c) => ({
+    data: missing.map((c) => ({
       organizationId: ctx.organizationId,
       itemId,
       order: (nextOrder += 10),
@@ -259,9 +285,11 @@ export async function copyProductCoveragesAction(
       insuredCurrency: "UF",
       affectedByIva: c.affectedByIva,
       sumsToTotal: c.sumsToTotal,
+      commissionAffectPct: item.proposal.commissionAffectPct,
+      commissionExemptPct: item.proposal.commissionExemptPct,
     })),
   });
 
   revalidatePath(`/propuestas/${item.proposalId}`);
-  return { ok: true, data: { count: coverages.length } };
+  return { ok: true, data: { count: missing.length } };
 }

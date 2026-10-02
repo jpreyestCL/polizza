@@ -39,24 +39,120 @@ const DEFAULT_RETURN_REASONS = [
   "Compañía solicita inspección",
 ];
 
+const LIFE_COMPANIES = new Set(["Penta Vida", "Chilena Consolidada"]);
+
+const STARTER_PRODUCTS: {
+  branch: string;
+  name: string;
+  affect: number;
+  exempt: number;
+  renewable: boolean;
+  life: boolean;
+}[] = [
+  { branch: "Vehículos Motorizados", name: "Daños propios", affect: 12, exempt: 0, renewable: true, life: false },
+  { branch: "SOAP", name: "SOAP", affect: 5, exempt: 0, renewable: false, life: false },
+  { branch: "Incendio", name: "Hogar", affect: 15, exempt: 0, renewable: true, life: false },
+  { branch: "Responsabilidad Civil", name: "RC general", affect: 15, exempt: 0, renewable: true, life: false },
+  { branch: "Vida y Salud", name: "Vida temporal", affect: 0, exempt: 20, renewable: true, life: true },
+];
+
 /**
- * Siembra el catálogo inicial de una corredora nueva. Idempotente: no hace nada
- * si la organización ya tiene compañías cargadas.
+ * Siembra el catálogo inicial de una corredora nueva. Las compañías se crean
+ * una vez. Los productos de partida se completan aunque la corredora ya exista.
  */
 export async function seedOrganizationCatalog(
   db: Db,
   organizationId: string,
 ): Promise<void> {
   const existing = await db.insuranceCompany.count();
-  if (existing > 0) return;
+  if (existing === 0) {
+    await db.insuranceCompany.createMany({
+      data: DEFAULT_COMPANIES.map((name) => ({ organizationId, name })),
+    });
+    await db.insuranceLine.createMany({
+      data: DEFAULT_LINES.map((line) => ({ organizationId, ...line })),
+    });
+    await db.proposalReturnReason.createMany({
+      data: DEFAULT_RETURN_REASONS.map((name) => ({ organizationId, name })),
+    });
+  }
+  await ensureStarterProducts(db, organizationId);
+  await ensureStarterCoverages(db, organizationId);
+}
 
-  await db.insuranceCompany.createMany({
-    data: DEFAULT_COMPANIES.map((name) => ({ organizationId, name })),
+async function ensureStarterProducts(db: Db, organizationId: string): Promise<void> {
+  const productCount = await db.insuranceProduct.count();
+  if (productCount > 0) return;
+  const [companies, branches] = await Promise.all([
+    db.insuranceCompany.findMany({ select: { id: true, name: true } }),
+    db.branchType.findMany({ select: { id: true, name: true } }),
+  ]);
+  const branchId = new Map(branches.map((branch) => [branch.name, branch.id]));
+  for (const company of companies) {
+    const life = LIFE_COMPANIES.has(company.name);
+    for (const template of STARTER_PRODUCTS) {
+      if (template.life !== life) continue;
+      const branchTypeId = branchId.get(template.branch);
+      if (!branchTypeId) continue;
+      const found = await db.insuranceProduct.findFirst({
+        where: {
+          insuranceCompanyId: company.id,
+          branchTypeId,
+          name: template.name,
+        },
+        select: { id: true },
+      });
+      if (found) continue;
+      await db.insuranceProduct.create({
+        data: {
+          organizationId,
+          insuranceCompanyId: company.id,
+          branchTypeId,
+          name: template.name,
+          commissionAffectPct: template.affect,
+          commissionExemptPct: template.exempt,
+          isRenewable: template.renewable,
+          active: true,
+        },
+      });
+    }
+  }
+}
+
+const STARTER_COVERAGES: Record<string, { name: string; affectedByIva: boolean }[]> = {
+  "Daños propios": [
+    { name: "Daño propio", affectedByIva: true },
+    { name: "Responsabilidad civil", affectedByIva: true },
+  ],
+  SOAP: [{ name: "SOAP", affectedByIva: true }],
+  Hogar: [
+    { name: "Incendio edificio", affectedByIva: true },
+    { name: "Contenido", affectedByIva: true },
+  ],
+  "RC general": [{ name: "Responsabilidad civil", affectedByIva: true }],
+  "Vida temporal": [{ name: "Fallecimiento", affectedByIva: false }],
+};
+
+async function ensureStarterCoverages(db: Db, organizationId: string): Promise<void> {
+  const products = await db.insuranceProduct.findMany({
+    where: { name: { in: Object.keys(STARTER_COVERAGES) } },
+    select: { id: true, name: true, _count: { select: { coverages: true } } },
   });
-  await db.insuranceLine.createMany({
-    data: DEFAULT_LINES.map((line) => ({ organizationId, ...line })),
-  });
-  await db.proposalReturnReason.createMany({
-    data: DEFAULT_RETURN_REASONS.map((name) => ({ organizationId, name })),
-  });
+  for (const product of products) {
+    if (product._count.coverages > 0) continue;
+    const rows = STARTER_COVERAGES[product.name] ?? [];
+    for (const [order, row] of rows.entries()) {
+      await db.tenantProductCoverage.create({
+        data: {
+          organizationId,
+          productId: product.id,
+          order,
+          name: row.name,
+          type: "COBERTURA",
+          affectedByIva: row.affectedByIva,
+          sumsToTotal: true,
+        },
+      });
+    }
+  }
 }

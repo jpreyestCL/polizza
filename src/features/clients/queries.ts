@@ -2,6 +2,7 @@ import "server-only";
 import { type Db } from "@/server/db";
 import type { SessionContext } from "@/server/context";
 import { canSeeAllClients } from "@/lib/roles";
+import { rutSearchTerms } from "@/lib/rut";
 import {
   buildPaginated,
   cursorArgs,
@@ -30,14 +31,16 @@ export async function listClients(
   const q = filters.q?.trim();
   // El RUT se almacena normalizado (sin puntos, con guion). Limpiamos el
   // término para que "7.051.978-K" o "7.051.978" matcheen contra "7051978-K".
-  const rutQ = q ? q.replace(/[.\s]/g, "") : undefined;
+  const rutTerms = q ? rutSearchTerms(q) : [];
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
     ...(q
       ? {
           OR: [
             { name: { contains: q, mode: "insensitive" as const } },
-            { rut: { contains: rutQ, mode: "insensitive" as const } },
+            ...rutTerms.map((term) => ({
+              rut: { contains: term, mode: "insensitive" as const },
+            })),
             // También por N° de póliza: lleva al titular de esa póliza.
             {
               policies: {
@@ -163,6 +166,7 @@ export async function searchClients(
   limit = 20,
 ) {
   const q = query.trim();
+  const rutTerms = rutSearchTerms(q);
   const baseWhere = canSeeAllClients(ctx.role)
     ? {}
     : { assignedUserId: ctx.userId };
@@ -173,7 +177,9 @@ export async function searchClients(
         ? {
             OR: [
               { name: { contains: q, mode: "insensitive" as const } },
-              { rut: { contains: q, mode: "insensitive" as const } },
+              ...rutTerms.map((term) => ({
+                rut: { contains: term, mode: "insensitive" as const },
+              })),
             ],
           }
         : {}),
@@ -196,6 +202,7 @@ export async function findClientForPayer(
 ) {
   const q = query.trim();
   if (!q) return null;
+  const rutTerms = rutSearchTerms(q);
   const baseWhere = canSeeAllClients(ctx.role)
     ? {}
     : { assignedUserId: ctx.userId };
@@ -203,7 +210,9 @@ export async function findClientForPayer(
     where: {
       ...baseWhere,
       OR: [
-        { rut: { contains: q, mode: "insensitive" as const } },
+        ...rutTerms.map((term) => ({
+          rut: { contains: term, mode: "insensitive" as const },
+        })),
         { name: { contains: q, mode: "insensitive" as const } },
       ],
     },

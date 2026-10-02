@@ -74,8 +74,21 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
     const renewalFlag = row[2] === "1" || row[2]?.toLowerCase() === "si";
     const mother = row[3] || null;
     const sortKey = row[4] || "";
-    const status = statusCode == null ? null : mapBrokerisProposalStatus(statusCode);
-    return { rowNo: index + 1, id, statusCode, status, renewalFlag, mother, sortKey };
+    const policyNumber = row[5] || "";
+    const status =
+      statusCode == null
+        ? null
+        : mapBrokerisProposalStatus(statusCode, { hasPolicyNumber: policyNumber.length > 0 });
+    return {
+      rowNo: index + 1,
+      id,
+      statusCode,
+      status,
+      renewalFlag,
+      mother,
+      sortKey,
+      policyNumber,
+    };
   });
   const chain = assignRenewalLineage(
     drafts.map((row) => ({
@@ -87,11 +100,14 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
   const byId = new Map(chain.map((row) => [row.id, row]));
   return drafts.map((row) => {
     const link = byId.get(row.id);
+    const ambiguousAnnulment = row.statusCode === 6 && !row.policyNumber;
     const notes: string[] = [];
-    if (!row.status?.status) notes.push("Estado sin mapa.");
+    if (ambiguousAnnulment) {
+      notes.push("Estado 6 sin número de póliza: no se distingue anulación de descarte.");
+    } else if (!row.status?.status) notes.push("Estado sin mapa.");
     if (row.renewalFlag && !row.mother) notes.push("Renovación sin póliza madre.");
     if (link?.note) notes.push(link.note);
-    const mapped = row.status?.status ?? "sin mapa";
+    const mapped = ambiguousAnnulment ? "sin clasificar" : (row.status?.status ?? "sin mapa");
     const observation = row.status?.insurerObservation ? ", con observación" : "";
     const chainText = link ? `, cadena ${link.lineageId} período ${link.termNumber}` : "";
     return {
@@ -99,7 +115,7 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
       action: notes.length === 0 ? "TRADUCIDO" : "REVISAR",
       payload: {
         id: row.id,
-        status: row.status?.status ?? null,
+        status: ambiguousAnnulment ? null : (row.status?.status ?? null),
         insurerObservation: row.status?.insurerObservation ?? false,
         lineageId: link?.lineageId ?? null,
         termNumber: link?.termNumber ?? null,
@@ -121,6 +137,7 @@ function translateEndorsements(parsed: string[][]): BrokerisTranslatedRow[] {
     const notes: string[] = [];
     if (kind === "ISSUE") notes.push("Es la emisión, no un endoso.");
     if (typeId != null && kind == null) notes.push("Tipo sin mapa.");
+    if (mapped?.needsReview && mapped.note) notes.push(mapped.note);
     const label = kind === "ISSUE" ? "ISSUE" : (mapped?.code ?? "sin mapa");
     const who = mapped ? `, inicia ${mapped.initiatedBy}, método ${mapped.calcMethod}` : "";
     return {
@@ -138,7 +155,7 @@ function translateEndorsements(parsed: string[][]): BrokerisTranslatedRow[] {
         note: mapped?.note ?? null,
       },
       message: `${id}: tipo ${typeId ?? "—"} → ${label}${who}${notes.length ? `. ${notes.join(" ")}` : ""}${
-        mapped?.note ? `. ${mapped.note}` : ""
+        mapped?.note && !mapped.needsReview ? `. ${mapped.note}` : ""
       }`,
     };
   });
@@ -151,7 +168,7 @@ function translateClaims(parsed: string[][]): BrokerisTranslatedRow[] {
     const substatusId = numberAt(row, 2);
     const closureId = numberAt(row, 3);
     const status = statusId == null ? null : mapBrokerisClaimStatus(statusId);
-    const substatus = substatusId == null ? null : mapBrokerisClaimSubstatus(substatusId);
+    const substatus = substatusId == null ? null : mapBrokerisClaimSubstatus(substatusId, status);
     const closure = closureId == null ? null : mapBrokerisClaimClosure(closureId);
     const notes: string[] = [];
     if (!status) notes.push("Estado sin mapa.");
@@ -198,7 +215,9 @@ function translateNonRenewals(parsed: string[][]): BrokerisTranslatedRow[] {
     const reason = reasonId == null ? null : mapBrokerisNonRenewalReason(reasonId);
     const notes: string[] = [];
     if (!type) notes.push("Tipo sin mapa.");
-    if (type === "NOT_RENEWED" && reasonId != null && !reason) notes.push("Motivo sin mapa.");
+    if (type === "NOT_RENEWED" && !reason) {
+      notes.push(reasonId == null ? "Falta el motivo." : "Motivo sin mapa.");
+    }
     return {
       rowNo: index + 1,
       action: notes.length === 0 ? "TRADUCIDO" : "REVISAR",

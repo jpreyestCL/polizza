@@ -56,7 +56,10 @@ export function RichTextEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3] },
+        link: false,
+      }),
       Link.configure({ openOnClick: false, autolink: true }),
       Image,
       Table.configure({ resizable: false }),

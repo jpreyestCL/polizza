@@ -62,6 +62,8 @@ export async function createProposalItemAction(
       beneficiaryClientId: true,
       productId: true,
       status: true,
+      commissionAffectPct: true,
+      commissionExemptPct: true,
     },
   });
   if (!proposal) {
@@ -129,6 +131,8 @@ export async function createProposalItemAction(
           affectedByIva: c.affectedByIva,
           premiumNet: c.premium,
           sumsToTotal: c.sumsToTotal,
+          commissionAffectPct: proposal.commissionAffectPct,
+          commissionExemptPct: proposal.commissionExemptPct,
           autoLoaded: true,
         })),
       });

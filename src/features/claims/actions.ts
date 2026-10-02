@@ -593,22 +593,34 @@ export async function changeClaimStatusAction(
   }
   const transitionError = claimTransitionError(claim.status, data.status);
   if (transitionError) return { ok: false, error: transitionError };
-  if (data.status === "AWAITING_ASSIGNMENT" && !claim.filedAtCompanyAt) {
+  const filedAtCompanyAt =
+    claim.filedAtCompanyAt ?? parseDate(data.filedAtCompanyAt);
+  const companyClaimNumber =
+    claim.companyClaimNumber || emptyToNull(data.companyClaimNumber);
+  const liquidatorName = claim.liquidatorName || emptyToNull(data.liquidatorName);
+  const settledRaw = data.settledAmount.trim().replace(",", ".");
+  const settledAmount =
+    claim.settledAmount != null && Number(claim.settledAmount) > 0
+      ? claim.settledAmount
+      : settledRaw
+        ? settledRaw
+        : null;
+  if (data.status === "AWAITING_ASSIGNMENT" && !filedAtCompanyAt) {
     return {
       ok: false,
-      error: "Registra la fecha en que el denuncio se envió a la compañía.",
+      error: "Indica la fecha en que el denuncio se envió a la compañía.",
     };
   }
   if (
     data.status === "IN_ADJUSTMENT" &&
-    (!claim.companyClaimNumber || !claim.liquidatorName)
+    (!companyClaimNumber || !liquidatorName)
   ) {
     return {
       ok: false,
       error: "La asignación necesita el número de siniestro de la compañía y el liquidador.",
     };
   }
-  if (data.status === "PAYMENT_PROCESS" && !(Number(claim.settledAmount) > 0)) {
+  if (data.status === "PAYMENT_PROCESS" && !(Number(settledAmount) > 0)) {
     return {
       ok: false,
       error: "El proceso de pago exige una indemnización mayor a cero.",
@@ -631,10 +643,21 @@ export async function changeClaimStatusAction(
         status: data.status,
         substatusCode: defaultSubstatus(data.status as ClaimStatusValue),
         currentStateStartedAt: new Date(),
-        ...(data.status === "AWAITING_ASSIGNMENT" && claim.filedAtCompanyAt && legalInput
+        ...(filedAtCompanyAt && !claim.filedAtCompanyAt
+          ? { filedAtCompanyAt }
+          : {}),
+        ...(companyClaimNumber && !claim.companyClaimNumber
+          ? { companyClaimNumber }
+          : {}),
+        ...(liquidatorName && !claim.liquidatorName ? { liquidatorName } : {}),
+        ...(settledAmount != null &&
+        !(claim.settledAmount != null && Number(claim.settledAmount) > 0)
+          ? { settledAmount }
+          : {}),
+        ...(data.status === "AWAITING_ASSIGNMENT" && filedAtCompanyAt && legalInput
           ? {
               adjustmentLegalDeadline: adjustmentLegalDeadline(
-                claim.filedAtCompanyAt,
+                filedAtCompanyAt,
                 legalInput,
               ),
             }

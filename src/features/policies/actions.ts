@@ -464,6 +464,7 @@ export async function renewPolicyAction(id: string): Promise<ActionResult> {
         where: { id: policy.proposalId },
         select: {
           branchTypeId: true,
+          productId: true,
           insuredClientId: true,
           beneficiaryClientId: true,
           commissionAffectPct: true,
@@ -502,7 +503,7 @@ export async function renewPolicyAction(id: string): Promise<ActionResult> {
           lineId: policy.lineId,
           branchId: policy.branchId,
           branchTypeId: source?.branchTypeId ?? null,
-          productId: policy.productId,
+          productId: policy.productId ?? source?.productId ?? null,
           status: "ELABORACION",
           premiumNet: policy.premiumNet,
           currency: policy.currency,
