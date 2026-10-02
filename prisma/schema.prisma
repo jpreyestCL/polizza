@@ -740,6 +740,8 @@ model Proposal {
   coaseguroParticipations ProposalCoaseguroParticipation[]
   policies                Policy[]
   endorsement             Endorsement?
+  submissions             PolicySubmission[]
+  aiComparisons           AiComparison[]
 
   @@unique([organizationId, proposalNumber])
   @@index([organizationId])
@@ -800,6 +802,10 @@ model ProposalItemCoverage {
   commissionExemptPct Decimal? @db.Decimal(6, 3)
   commissionAmount    Decimal? @db.Decimal(14, 2)
   sumsToTotal         Boolean  @default(true)
+  deductibleText      String?
+  deductibleAmount    Decimal? @db.Decimal(18, 4)
+  deductiblePct       Decimal? @db.Decimal(8, 4)
+  deductibleMinimum   Decimal? @db.Decimal(18, 4)
   manualPremium       Boolean  @default(false) // "cálculo manual de primas"
   autoLoaded          Boolean  @default(false) // cargada automáticamente desde TenantProductCoverage
   createdAt           DateTime @default(now())
@@ -1099,6 +1105,7 @@ model Policy {
   endorsements              Endorsement[]
   premiumMovements          PremiumMovement[]
   commissionReceivables     CommissionReceivable[]
+  aiComparisons             AiComparison[]
   companyCommissionPayments CompanyCommissionPayment[]
   sellerCommissionItem      SellerCommissionSettlementItem?
 
@@ -1132,6 +1139,9 @@ model PolicyCoverage {
   policyId       String
   name           String
   deductible     String?
+  deductibleAmount  Decimal? @db.Decimal(18, 4)
+  deductiblePct     Decimal? @db.Decimal(8, 4)
+  deductibleMinimum Decimal? @db.Decimal(18, 4)
   insuredAmount  Decimal? @db.Decimal(16, 2)
   currency       String   @default("UF")
   createdAt      DateTime @default(now())
@@ -1678,11 +1688,120 @@ model CommissionReceivable {
   status         CommissionReceivableStatus  @default(PENDING)
   createdAt      DateTime                    @default(now())
 
-  policy   Policy           @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  movement PremiumMovement  @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  policy      Policy                 @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  movement    PremiumMovement        @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  allocations CommissionAllocation[]
 
   @@index([organizationId])
   @@index([policyId])
+}
+
+// Snapshot inmutable de cada envío a la compañía. La propuesta sigue siendo
+// el expediente editable; este registro no se reescribe.
+model PolicySubmission {
+  id             String   @id @default(cuid())
+  organizationId String
+  proposalId     String
+  seqNo          Int
+  sentAt         DateTime
+  snapshot       Json
+  createdById    String?
+  createdAt      DateTime @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@unique([proposalId, seqNo])
+  @@index([organizationId])
+  @@index([proposalId])
+}
+
+// Comparación de lo pedido con lo emitido. Nunca bloquea la emisión.
+model AiComparison {
+  id              String   @id @default(cuid())
+  organizationId  String
+  proposalId      String?
+  policyId        String?
+  verdict         String
+  blocksIssuance  Boolean  @default(false)
+  summary         String?
+  createdAt       DateTime @default(now())
+
+  proposal      Proposal?       @relation(fields: [proposalId], references: [id], onDelete: SetNull)
+  policy        Policy?         @relation(fields: [policyId], references: [id], onDelete: SetNull)
+  discrepancies AiDiscrepancy[]
+
+  @@index([organizationId])
+  @@index([proposalId])
+  @@index([policyId])
+}
+
+model AiDiscrepancy {
+  id             String  @id @default(cuid())
+  organizationId String
+  comparisonId   String
+  field          String
+  expectedValue  String?
+  actualValue    String?
+
+  comparison AiComparison @relation(fields: [comparisonId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([comparisonId])
+}
+
+// Liquidación de la compañía y calce N:M contra la comisión esperada.
+model CommissionStatement {
+  id             String   @id @default(cuid())
+  organizationId String
+  insurerName    String?
+  periodFrom     DateTime? @db.Date
+  periodTo       DateTime? @db.Date
+  currency       String   @default("CLP")
+  status         String   @default("DRAFT")
+  createdAt      DateTime @default(now())
+
+  lines CommissionStatementLine[]
+
+  @@index([organizationId])
+}
+
+model CommissionStatementLine {
+  id             String   @id @default(cuid())
+  organizationId String
+  statementId    String
+  policyNumber   String?
+  amount         Decimal  @db.Decimal(18, 4)
+  currency       String   @default("CLP")
+
+  statement   CommissionStatement    @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  allocations CommissionAllocation[]
+
+  @@index([organizationId])
+  @@index([statementId])
+}
+
+model CommissionAllocation {
+  id             String   @id @default(cuid())
+  organizationId String
+  lineId         String
+  receivableId   String
+  amount         Decimal  @db.Decimal(18, 4)
+  createdAt      DateTime @default(now())
+
+  line       CommissionStatementLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  receivable CommissionReceivable    @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([lineId])
+  @@index([receivableId])
+}
+
+// Parámetros de la corredora. La presunción PAC/PAT nace apagada.
+model OrganizationSettings {
+  organizationId       String  @id
+  presumedPaidEnabled  Boolean @default(false)
+  mfaRequired          Boolean @default(false)
+  ssoEnabled           Boolean @default(false)
 }
 
 model Installment {

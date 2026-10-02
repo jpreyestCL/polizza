@@ -6,6 +6,7 @@ import { requireOrgDb } from "@/server/context";
 import { sanitizeRichText } from "@/lib/sanitize";
 import { logActivity } from "@/server/activity";
 import { appendPremiumMovement } from "@/features/ledger/record";
+import { parseDeductible } from "@/lib/domain/deductible";
 import { canDeletePolicy } from "@/lib/roles";
 import {
   policyFormSchema,
@@ -35,6 +36,18 @@ function amount(value: string): string | null {
 function emptyToNull(value: string): string | null {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function deductibleFields(text: string | null | undefined) {
+  const parsed = parseDeductible(text);
+  const dec = (value: number | null) =>
+    value == null ? null : new Prisma.Decimal(value.toFixed(4));
+  return {
+    deductible: parsed.text,
+    deductibleAmount: dec(parsed.amount),
+    deductiblePct: dec(parsed.pct),
+    deductibleMinimum: dec(parsed.minimum),
+  };
 }
 
 function addYear(date: Date | null): Date | null {
@@ -129,7 +142,7 @@ export async function createPolicyAction(
             organizationId: ctx.organizationId,
             policyId: created.id,
             name: coverage.name,
-            deductible: emptyToNull(coverage.deductible),
+            ...deductibleFields(emptyToNull(coverage.deductible)),
             insuredAmount: amount(coverage.insuredAmount),
             currency: data.currency,
           })),
@@ -294,7 +307,7 @@ export async function updatePolicyAction(
             organizationId: ctx.organizationId,
             policyId: id,
             name: coverage.name,
-            deductible: emptyToNull(coverage.deductible),
+            ...deductibleFields(emptyToNull(coverage.deductible)),
             insuredAmount: amount(coverage.insuredAmount),
             currency: data.currency,
           })),
@@ -448,7 +461,16 @@ export async function renewPolicyAction(id: string): Promise<ActionResult> {
             organizationId: ctx.organizationId,
             policyId: renewed.id,
             name: coverage.name,
-            deductible: coverage.deductible,
+            ...(coverage.deductibleAmount != null ||
+            coverage.deductiblePct != null ||
+            coverage.deductibleMinimum != null
+              ? {
+                  deductible: coverage.deductible,
+                  deductibleAmount: coverage.deductibleAmount,
+                  deductiblePct: coverage.deductiblePct,
+                  deductibleMinimum: coverage.deductibleMinimum,
+                }
+              : deductibleFields(coverage.deductible)),
             insuredAmount: coverage.insuredAmount,
             currency: coverage.currency,
           })),

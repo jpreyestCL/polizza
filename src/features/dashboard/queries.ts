@@ -12,6 +12,7 @@ import {
 } from "@/features/policies/queries";
 import { listTasks, type TaskListItem } from "@/features/tasks/queries";
 import { getHolidaySet } from "@/features/catalog/queries";
+import { canSeeAllClients } from "@/lib/roles";
 import type { SlaLevel } from "@/features/proposals/sla";
 
 const ACTIVE_PROPOSAL_STATUSES = [
@@ -72,9 +73,9 @@ export async function getDashboardData(
           status: { in: ["PENDIENTE", "PARCIAL", "RECHAZADA"] },
           dueDate: { lt: todayUtc },
           policyId: { not: null },
-          ...(ctx.role === "ejecutivo"
-            ? { policy: { assignedUserId: ctx.userId } }
-            : {}),
+          ...(canSeeAllClients(ctx.role)
+            ? {}
+            : { policy: { assignedUserId: ctx.userId } }),
         },
       }),
       db.activityLog.findMany({

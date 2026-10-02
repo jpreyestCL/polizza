@@ -38,7 +38,7 @@ export default async function InformesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Informes"
-        description="Producción del mes desde el libro de primas, cartera vigente, retención, mora y siniestros. Cada cifra sale de la misma definición que usa la operación."
+        description="Los doce informes del mes. Cada cifra sale del libro, de la cartera o de la cuota, y la nota dice qué dato usa."
       />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -63,6 +63,22 @@ export default async function InformesPage() {
           <p className="text-2xl font-semibold">{data.claimsOpen}</p>
           <p className="text-xs text-muted-foreground">Siniestros abiertos</p>
         </article>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold">Catálogo R-01 a R-12</h2>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {data.catalog.map((report) => (
+            <article key={report.id} className="rounded-xl border bg-card p-4">
+              <p className="text-xs font-medium text-muted-foreground">
+                {report.id} · {report.title}
+              </p>
+              <p className="mt-1 text-sm">{report.question}</p>
+              <p className="mt-2 text-sm font-medium">{report.value}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{report.note}</p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="space-y-3 rounded-xl border bg-card p-5">

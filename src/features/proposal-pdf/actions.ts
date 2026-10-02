@@ -8,6 +8,8 @@ import { sendEmail, emailLayout } from "@/server/email";
 import { saveUploadedFile } from "@/server/storage";
 import type { Db } from "@/server/db";
 import { buildProposalPdfData } from "./build-pdf-data";
+import { recordPolicySubmission } from "@/features/proposals/submission";
+import { setTenantGuc } from "@/server/tenant-rls";
 
 /**
  * Obs 14: guarda automáticamente el PDF de la propuesta enviado a la compañía
@@ -215,29 +217,39 @@ export async function sendProposalByEmailAction(
     options.toEmail?.trim() || proposal.recipientEmail?.trim() || null;
 
   if (options.markOnly || !recipient) {
-    await db.proposal.update({
-      where: { id: proposalId },
-      data: { sentAt: new Date(), status: "ENVIADA_COMPANIA" },
-    });
-    await db.proposalStatusHistory.create({
-      data: {
+    const sentAt = new Date();
+    await db.$transaction(async (tx) => {
+      await setTenantGuc(tx, ctx.organizationId);
+      await tx.proposal.update({
+        where: { id: proposalId },
+        data: { sentAt, status: "ENVIADA_COMPANIA" },
+      });
+      await tx.proposalStatusHistory.create({
+        data: {
+          organizationId: ctx.organizationId,
+          proposalId,
+          status: "ENVIADA_COMPANIA",
+          note: options.markOnly
+            ? "Marcada como enviada (sin envío real)"
+            : "Marcada como enviada (sin destinatario)",
+          changedById: ctx.userId,
+        },
+      });
+      await tx.proposalLog.create({
+        data: {
+          organizationId: ctx.organizationId,
+          proposalId,
+          action: "EMAIL_MARKED",
+          summary: "Marcada como enviada a la compañía",
+          userId: ctx.userId,
+        },
+      });
+      await recordPolicySubmission(tx, {
         organizationId: ctx.organizationId,
         proposalId,
-        status: "ENVIADA_COMPANIA",
-        note: options.markOnly
-          ? "Marcada como enviada (sin envío real)"
-          : "Marcada como enviada (sin destinatario)",
-        changedById: ctx.userId,
-      },
-    });
-    await db.proposalLog.create({
-      data: {
-        organizationId: ctx.organizationId,
-        proposalId,
-        action: "EMAIL_MARKED",
-        summary: "Marcada como enviada a la compañía",
-        userId: ctx.userId,
-      },
+        sentAt,
+        createdById: ctx.userId,
+      });
     });
     // Obs 14: aun marcando como enviada (sin envío real), guarda el PDF de la
     // propuesta en sus documentos.
@@ -427,30 +439,40 @@ export async function sendProposalByEmailAction(
     };
   }
 
-  await db.proposal.update({
-    where: { id: proposalId },
-    data: { sentAt: new Date(), status: "ENVIADA_COMPANIA" },
-  });
-  await db.proposalStatusHistory.create({
-    data: {
+  const sentAt = new Date();
+  await db.$transaction(async (tx) => {
+    await setTenantGuc(tx, ctx.organizationId);
+    await tx.proposal.update({
+      where: { id: proposalId },
+      data: { sentAt, status: "ENVIADA_COMPANIA" },
+    });
+    await tx.proposalStatusHistory.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        status: "ENVIADA_COMPANIA",
+        note: `Enviada a ${recipient}${ccList.length > 0 ? ` (CC: ${ccList.join(", ")})` : ""}`,
+        changedById: ctx.userId,
+      },
+    });
+    await tx.proposalLog.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        action: "EMAIL_SENT",
+        summary:
+          `Email enviado a ${recipient}` +
+          (ccList.length > 0 ? ` (CC: ${ccList.join(", ")})` : "") +
+          (docs.length > 0 ? ` con ${docs.length} documento(s)` : ""),
+        userId: ctx.userId,
+      },
+    });
+    await recordPolicySubmission(tx, {
       organizationId: ctx.organizationId,
       proposalId,
-      status: "ENVIADA_COMPANIA",
-      note: `Enviada a ${recipient}${ccList.length > 0 ? ` (CC: ${ccList.join(", ")})` : ""}`,
-      changedById: ctx.userId,
-    },
-  });
-  await db.proposalLog.create({
-    data: {
-      organizationId: ctx.organizationId,
-      proposalId,
-      action: "EMAIL_SENT",
-      summary:
-        `Email enviado a ${recipient}` +
-        (ccList.length > 0 ? ` (CC: ${ccList.join(", ")})` : "") +
-        (docs.length > 0 ? ` con ${docs.length} documento(s)` : ""),
-      userId: ctx.userId,
-    },
+      sentAt,
+      createdById: ctx.userId,
+    });
   });
   // Obs 14: guarda el PDF enviado en los documentos de la propuesta.
   await storeSentPdfAsDocument(

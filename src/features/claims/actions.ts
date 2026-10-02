@@ -7,6 +7,11 @@ import { sanitizeRichText } from "@/lib/sanitize";
 import { logActivity } from "@/server/activity";
 import { canDeleteClaim } from "@/lib/roles";
 import {
+  claimStepDueDate,
+  claimWorkflow,
+  claimWorkflowFamily,
+} from "@/lib/domain/claim-workflows";
+import {
   searchPoliciesForClaim,
   getPolicyItemsForClaim,
   type PolicySearchResult,
@@ -150,6 +155,35 @@ export async function createClaimAction(
             userId: ctx.userId,
           },
         });
+        const branchId = emptyToNull(data.branchTypeId);
+        if (branchId) {
+          const branch = await tx.branchType.findFirst({
+            where: { id: branchId },
+            select: { key: true, category: true },
+          });
+          const family = claimWorkflowFamily(branch?.key, branch?.category);
+          if (family) {
+            const openedAt = created.reportedAt ?? new Date();
+            await tx.task.createMany({
+              data: claimWorkflow(family).map((step) => ({
+                organizationId: ctx.organizationId,
+                title: step.action,
+                description: step.alternative
+                  ? `Alternativa: ${step.alternative}. Alerta a los ${step.alertDays ?? "—"} días.`
+                  : step.alertDays == null
+                    ? null
+                    : `Alerta a los ${step.alertDays} días.`,
+                entityType: "CLAIM" as const,
+                entityId: created.id,
+                assignedUserId: ctx.userId,
+                dueDate: claimStepDueDate(openedAt, step.dueDays),
+                priority: "MEDIA" as const,
+                status: "PENDIENTE" as const,
+                createdById: ctx.userId,
+              })),
+            });
+          }
+        }
         return created;
       });
 

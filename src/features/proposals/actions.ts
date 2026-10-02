@@ -7,6 +7,10 @@ import { basePrisma, type Db } from "@/server/db";
 import type { SessionContext } from "@/server/context";
 import { applyEndorsementToPolicy } from "@/features/endorsements/apply";
 import { appendPremiumMovement } from "@/features/ledger/record";
+import { recordPolicySubmission } from "@/features/proposals/submission";
+import { saveIssuanceComparison } from "@/features/proposals/issuance-comparison";
+import { parseDeductible } from "@/lib/domain/deductible";
+import { setTenantGuc } from "@/server/tenant-rls";
 import {
   ensureIssueCorrectionTask,
   moveIssueCorrectionTaskToPolicy,
@@ -380,6 +384,7 @@ export async function changeProposalStatusAction(
   const nowSentAt = setSentAt ? new Date() : null;
 
   await db.$transaction(async (tx) => {
+    await setTenantGuc(tx, ctx.organizationId);
     await tx.proposal.update({
       where: { id },
       data: {
@@ -408,6 +413,12 @@ export async function changeProposalStatusAction(
           payload: { sentAt: nowSentAt.toISOString() },
           userId: ctx.userId,
         },
+      });
+      await recordPolicySubmission(tx, {
+        organizationId: ctx.organizationId,
+        proposalId: id,
+        sentAt: nowSentAt,
+        createdById: ctx.userId,
       });
     }
   });
@@ -1043,6 +1054,7 @@ export async function dispatchPolicyToContratanteAction(
   let policyId: string;
   try {
     policyId = await db.$transaction(async (tx) => {
+      await setTenantGuc(tx, ctx.organizationId);
       const policy = await tx.policy.create({
         data: {
           organizationId: ctx.organizationId,
@@ -1090,13 +1102,30 @@ export async function dispatchPolicyToContratanteAction(
       }
 
       const coveragesData = proposalItems.flatMap((it) =>
-        it.coverages.map((c) => ({
-          organizationId: ctx.organizationId,
-          policyId: policy.id,
-          name: c.name,
-          insuredAmount: c.insuredAmount,
-          currency: proposal.currency,
-        })),
+        it.coverages.map((c) => {
+          const parsed = parseDeductible(c.deductibleText);
+          const dec = (value: number | null) =>
+            value == null ? null : new Prisma.Decimal(value.toFixed(4));
+          const hasStructured =
+            c.deductibleAmount != null ||
+            c.deductiblePct != null ||
+            c.deductibleMinimum != null;
+          return {
+            organizationId: ctx.organizationId,
+            policyId: policy.id,
+            name: c.name,
+            insuredAmount: c.insuredAmount,
+            currency: proposal.currency,
+            deductible: hasStructured ? c.deductibleText : parsed.text,
+            deductibleAmount: hasStructured
+              ? c.deductibleAmount
+              : dec(parsed.amount),
+            deductiblePct: hasStructured ? c.deductiblePct : dec(parsed.pct),
+            deductibleMinimum: hasStructured
+              ? c.deductibleMinimum
+              : dec(parsed.minimum),
+          };
+        }),
       );
       if (coveragesData.length > 0) {
         await tx.policyCoverage.createMany({ data: coveragesData });
@@ -1199,6 +1228,34 @@ export async function dispatchPolicyToContratanteAction(
             : `Póliza ${policyNumber} marcada como despachada y registrada en la cartera`,
           userId: ctx.userId,
         },
+      });
+      const issuedNet =
+        policy.premiumNet == null ? null : Number(policy.premiumNet);
+      await saveIssuanceComparison(tx, {
+        organizationId: ctx.organizationId,
+        proposalId,
+        policyId: policy.id,
+        pairs: [
+          {
+            field: "policyNumber",
+            expected: proposal.policyNumberGenerated,
+            actual: policy.policyNumber,
+          },
+          {
+            field: "premiumNet",
+            expected: totalNet > 0 ? totalNet : issuedNet,
+            actual: issuedNet,
+          },
+          ...(proposal.emissionErrorReason
+            ? [
+                {
+                  field: "emision",
+                  expected: "",
+                  actual: proposal.emissionErrorReason,
+                },
+              ]
+            : []),
+        ],
       });
       return policy.id;
     });

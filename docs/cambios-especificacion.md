@@ -98,20 +98,114 @@ pólizas y cobranza.
 moneda (stock = suma vigente), retención del mes, mora por antigüedad y
 siniestros por estado. La mora se exporta en CSV.
 
-## Lo que sigue distinto de la especificación
+## Envío inmutable
 
-Estas piezas no quedaron reescritas en este cambio. El comportamiento actual
-se anota para no presentarlo como si ya cumpliera la spec.
+**Antes.** Pasar la propuesta a enviada guardaba `sentAt` y una línea de
+bitácora. No quedaba una foto del expediente, y un cambio posterior no se
+podía distinguir de lo que se mandó.
 
-| Tema | Cómo funciona hoy | Por qué no se reescribió aquí |
+**Ahora.** Cada envío (cambio de estado, marca sin correo o correo real)
+crea un `PolicySubmission` con número de secuencia y un JSON de la
+propuesta y sus ítems. Ese registro no se actualiza. La propuesta sigue
+siendo el expediente editable y la póliza de cartera se crea al despachar.
+
+## Comparación de emisión
+
+**Antes.** No había comparación entre lo pedido y lo emitido. La persona
+marcaba el problema a mano y la póliza igual se creaba.
+
+**Ahora.** Al despachar se guarda un `AiComparison` con sus
+`AiDiscrepancy`. Si el número, la prima o la marca de problema no coinciden,
+el veredicto es con problemas. `blocksIssuance` queda en falso: la póliza se
+crea igual. No hay llamada a un modelo de lenguaje: la comparación usa los
+campos que ya están en la propuesta y en la póliza.
+
+## Deducible
+
+**Antes.** El deducible de la cobertura de la póliza era un texto.
+
+**Ahora.** Al guardar la cobertura se lee el texto. "UF 3" llena el monto,
+"10 % mín. UF 5" llena porcentaje y mínimo, y un texto libre se conserva
+sin inventar cifras. Esas columnas viajan al despacho y a la renovación.
+
+## Comisiones N:M
+
+**Antes.** La revisión comparaba un pago contra la comisión esperada de la
+póliza, dentro de la tolerancia.
+
+**Ahora.** Existen la liquidación (`CommissionStatement`), sus líneas y el
+calce (`CommissionAllocation`). El calce parte una línea entre varios
+esperados y junta varias líneas en un esperado, de la misma póliza y
+moneda. El residuo dentro de la tolerancia no queda como diferencia. No hay
+aún un cargador de archivo de la compañía: el calce está listo para esas
+líneas.
+
+## Presunción PAC/PAT
+
+**Antes.** Presunta pagada solo se marcaba a mano. No había un parámetro de
+la corredora.
+
+**Ahora.** `OrganizationSettings.presumedPaidEnabled` nace en falso. En
+cobranza, "Revisar cuotas PAC y PAT" no cambia ninguna cuota mientras el
+parámetro está apagado. Si se enciende, una cuota pendiente de un plan PAC
+o PAT, vencida hace más de 10 días, pasa a presunta.
+
+## Roles
+
+**Antes.** Ejecutivo, gerente y administrador. El ejecutivo veía solo su
+cartera. No existía la matriz de permisos.
+
+**Ahora.** `permissions.yaml` publica los seis roles de fábrica
+(administrador, ejecutivo de cuentas, cobranza, siniestros, finanzas y solo
+lectura) con alcance de toda la corredora. El ejecutivo histórico ve la
+corredora completa, igual que el resto. El gerente que ya existe conserva
+los permisos de administrador para no dejar la corredora piloto sin gestión.
+Borrar clientes, propuestas, pólizas y siniestros sigue en gerente y
+administrador.
+
+## Informes R-01 a R-12
+
+**Antes.** Informes mostraba producción, cartera, retención, mora y
+siniestros, sin el catálogo de las doce preguntas.
+
+**Ahora.** La página lista R-01 a R-12 con la pregunta y la cifra que sale
+de los datos actuales. R-05 cuenta cuotas marcadas pagadas, porque no hay
+un pago aparte de la cuota. R-11 no calcula tasa de éxito: la cotización de
+auto no tiene ganado ni perdido. R-12 usa la prima devengada a hoy y no
+mezcla monedas.
+
+## Siniestros
+
+**Antes.** El siniestro tenía estados y bitácora, sin plazos por acción.
+
+**Ahora.** Hay tres plantillas (vehículos, bienes y personas) con plazo y
+alerta. Al crear un denuncio con ramo, nacen las tareas de esa plantilla.
+Vehículos y SOAP usan la de vehículos; vida y accidentes, la de personas;
+el resto de generales, la de bienes.
+
+## Migración Brokeris
+
+**Antes.** No había tabla de equivalencias en el código.
+
+**Ahora.** Los códigos de estado de propuesta, tipo de endoso, medio de
+pago, moneda, siniestro, despacho, tipo de cliente y perfil administrador
+se traducen con el mapa de la especificación. No hay todavía un cargador
+del respaldo: el mapa es el que va a usar esa carga.
+
+## Aislamiento en la base
+
+**Antes.** Solo el cliente Prisma filtraba por `organizationId`.
+
+**Ahora.** La migración habilita RLS en las tablas con `organizationId`,
+sin FORCE. Si la sesión no trae corredora, la política deja pasar, así la
+app sigue leyendo con el rol actual. Dentro de una transacción de envío o
+despacho se fija la corredora solo para esa transacción, no en la conexión
+del pool.
+
+## Lo que queda apagado a propósito
+
+| Tema | Cómo queda | Por qué no se enciende solo |
 |---|---|---|
-| Una sola entidad Póliza y envíos aparte | Sigue habiendo Propuesta (elaboración, envío, recepción, despacho) y Póliza de cartera | Reemplazar Propuesta rompe el flujo que ya usa la corredora piloto. El despacho crea la póliza y el libro; la propuesta queda como el expediente de emisión |
-| Extracción de PDF con IA y comparación que no bloquea | No hay extracción ni comparación automática. La marca de problemas la carga la persona en la recepción | Hace falta el contrato del modelo y los documentos de la compañía. La marca de emisión con problemas ya no bloquea el alta |
-| Conciliación de archivos de la compañía y match N:M de comisiones | La revisión de comisiones compara el pago registrado contra la comisión esperada, con tolerancia del máximo entre 0,5 % y 0,01 de la moneda | El match de muchas líneas de un archivo contra muchos receivables no tiene cargador de archivo en este cambio |
-| Motor PAC/PAT de presunción | Apagado. Presunta pagada es un estado manual | La especificación lo deja inactivo por defecto |
-| Seis roles de fábrica, SSO y MFA | Roles ejecutivo, gerente y admin, con email y contraseña | La matriz `permissions.yaml` y el proveedor de identidad no están en el repositorio |
-| RLS de Postgres | El aislamiento es el cliente Prisma que inyecta `organizationId`, ahora también en el libro y en la comisión esperada | Las políticas RLS dependen del rol de base con el que corre la app; aplicarlas sin ese rol deja la app sin leer |
-| Migración Brokeris | No hay importador del dump | Hace falta el mapeo de tablas del origen |
-| Doce informes sobre el libro | Hay producción, cartera, retención, mora y siniestros | El resto de definiciones (corte, columnas y filtros) no está en el código y no se inventaron cifras |
-| Deducible estructurado | El deducible de la cobertura es texto | Pasarlo a campos (monto, porcentaje, mínimo) cambia la ficha y el PDF sin el catálogo de formas de la spec |
-| SLA de siniestros | El siniestro tiene estados y bitácora, sin plantilla de plazos | Las plantillas por ramo no están cargadas |
+| Llamada a un modelo para leer el PDF | La comparación usa los campos ya digitados | Encender un proveedor externo sin contrato y sin documentos de la compañía mandaría datos de clientes afuera |
+| SSO Google/Microsoft y MFA obligatorio | `mfaRequired` y `ssoEnabled` nacen en falso y el login no los consulta | No hay proveedor de identidad configurado. Exigir MFA o SSO cortaría el ingreso de la corredora piloto |
+| RLS forzado | La política existe y no está forzada | Forzarla con el rol dueño de las tablas, sin la variable de sesión en cada conexión, deja la aplicación sin leer |
