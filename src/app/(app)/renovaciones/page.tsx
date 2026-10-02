@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Pager } from "@/components/pager";
 import { parsePageParams } from "@/lib/pagination";
 import { bulkRenewMonthAction } from "@/features/policies/actions";
+import { ensureRenewalFollowups } from "@/features/policies/renewal-followups";
 import { hasPermission } from "@/lib/factory-roles";
 
 type SearchParams = Promise<
@@ -24,6 +25,7 @@ export default async function RenovacionesPage({
   const sp = await searchParams;
   const page = parsePageParams(sp);
   const { ctx, db } = await requireOrgDb();
+  await ensureRenewalFollowups(db, ctx.organizationId);
   const q = typeof sp?.q === "string" ? sp.q : undefined;
   const aviso = typeof sp?.aviso === "string" ? sp.aviso : null;
   const [renewalsPage, companies, reports] = await Promise.all([
@@ -69,8 +71,15 @@ export default async function RenovacionesPage({
       {hasPermission(ctx.role, "renewals.bulk") ? (
         <form action={bulkRenewMonthAction} className="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-4">
           <label className="flex min-w-64 flex-1 flex-col gap-1 text-sm">
-            Renovar las vigentes que terminan este mes (máximo 20)
+            Renovar las vigentes que terminan este mes
             <input name="reason" required minLength={10} className="rounded-md border bg-background px-2 py-1.5" placeholder="Motivo de la renovación masiva" />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Estado inicial
+            <select name="initial" className="rounded-md border bg-background px-2 py-1.5">
+              <option value="DRAFT">Elaboración</option>
+              <option value="ISSUED">Ya emitida por la compañía</option>
+            </select>
           </label>
           <button type="submit" className="rounded-md border px-3 py-2 text-sm">Renovar el mes</button>
         </form>

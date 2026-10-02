@@ -1870,6 +1870,8 @@ model QuoteRequest {
   status         QuoteRequestStatus @default(BORRADOR)
   currency       String             @default("UF")
   lossReason     String?
+  origin         String?
+  sourcePolicyId String?
   proposalId     String?            @unique
   assignedUserId String?
   createdById    String?
@@ -1882,6 +1884,7 @@ model QuoteRequest {
 
   @@index([organizationId])
   @@index([clientId])
+  @@index([sourcePolicyId])
 }
 
 model QuoteOffer {

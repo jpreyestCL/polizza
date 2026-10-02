@@ -54,12 +54,31 @@ export async function applyEndorsementToPolicy(
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const policy = (await tx.policy.findFirst({
     where: { id: input.policyId },
-    select: { id: true, status: true },
-  })) as { id: string; status: string } | null;
+    select: {
+      id: true,
+      status: true,
+      endDate: true,
+      terminationBalance: true,
+      _count: { select: { items: true } },
+    },
+  })) as {
+    id: string;
+    status: string;
+    endDate: Date | null;
+    terminationBalance: { toString(): string } | null;
+    _count: { items: number };
+  } | null;
   if (!policy) return { ok: false, error: "La póliza no existe." };
 
   const transitionError = endorsementTransitionError(input.type, policy.status);
   if (transitionError) return { ok: false, error: transitionError };
+  if (terminationKindOf(input.type) && policy.terminationBalance != null) {
+    return {
+      ok: false,
+      error:
+        "Ya hay un saldo de término. Otro endoso de cancelación o anulación no lo reemplaza.",
+    };
+  }
 
   const spec = specEndorsementOf(input.type);
   const created = (await tx.endorsement.create({
@@ -92,7 +111,18 @@ export async function applyEndorsementToPolicy(
     select: { id: true },
   })) as { id: string };
 
-  const nextStatus = endorsementStatusEffect(input.type);
+  const totalLoss = input.type === "CORTE_PERDIDA_TOTAL";
+  const nextStatus = totalLoss
+    ? policy._count.items <= 1
+      ? "CANCELADA"
+      : null
+    : endorsementStatusEffect(input.type);
+  if (input.type === "PRORROGA" && input.endDate) {
+    await tx.policy.update({
+      where: { id: input.policyId },
+      data: { endDate: input.endDate },
+    });
+  }
   if (nextStatus) {
     await tx.policy.update({
       where: { id: input.policyId },
@@ -123,7 +153,7 @@ export async function applyEndorsementToPolicy(
       });
     }
   }
-  if (!terminationKindOf(input.type)) {
+  if (!terminationKindOf(input.type) && !totalLoss) {
     await postPremiumDelta(tx, {
       organizationId: input.organizationId,
       policyId: input.policyId,

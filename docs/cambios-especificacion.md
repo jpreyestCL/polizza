@@ -199,6 +199,12 @@ siniestros que ya existían se tradujeron: pagado quedó cerrado con
 resultado pagado, rechazado quedó cerrado con resultado rechazado, y uno
 marcado anulado pasó a `VOID`.
 
+## Endosos y renovaciones
+
+**Antes.** El endoso guardaba el método de cálculo y la prima se digitaba. La pérdida total cancelaba la póliza y un segundo endoso de término reemplazaba el saldo. Renovar creaba al tiro una póliza vigente y marcaba el origen como renovado. La recotización no existía como marca distinta de la sucesora. SOAP entraba a la cola igual que el resto.
+
+**Ahora.** Si el monto viene vacío, la prórroga, la cancelación, la anulación y la pérdida total calculan la prima: devolución sobre los días del movimiento, prórroga con base 365, anulación del 100 % y pérdida total en cero. El monto digitado manda cuando viene de la compañía. La pérdida total cancela la madre solo si era el único ítem y no cierra el plan. Un segundo endoso de término no reemplaza el saldo que ya existe. La prórroga mueve el fin de vigencia. La autorización del acreedor se busca en los documentos de la póliza. La renovación abre una propuesta en elaboración, copia ítems vigentes y prima anterior como referencia, y el origen sigue vigente hasta que esa sucesora se emite. Recotizar deja la póliza pendiente con la marca «cotizando». Una sucesora cancelada después de su inicio cuenta como renovada; si se rechaza, se descarta, se anula o se cancela desde el inicio, el origen vuelve a la cola. La cola avisa el riesgo y crea el seguimiento a 45, 30 y 15 días. SOAP no entra. La renovación masiva puede nacer en elaboración o ya emitida.
+
 ## Migración Brokeris
 
 **Antes.** No había tabla de equivalencias en el código.

@@ -25,6 +25,7 @@ export type SpecEndorsementType =
 
 export type CalcMethod =
   | "REFUND_PRORATA"
+  | "PRORATA_DAYS"
   | "DAYS_FACTOR"
   | "FULL_REFUND"
   | "NONE"
@@ -45,10 +46,10 @@ const DISABLED = new Set<SpecEndorsementType>([
 ]);
 
 const CALC: Record<SpecEndorsementType, CalcMethod> = {
-  ADD_ITEM: "MANUAL",
+  ADD_ITEM: "PRORATA_DAYS",
   REMOVE_ITEM: "REFUND_PRORATA",
   REPLACE_ITEMS: "MANUAL",
-  MODIFY_SUM_INSURED_PREMIUM: "MANUAL",
+  MODIFY_SUM_INSURED_PREMIUM: "PRORATA_DAYS",
   MODIFY_DATA: "NONE",
   CHANGE_PARTY: "NONE",
   EXTENSION: "DAYS_FACTOR",

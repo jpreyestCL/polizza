@@ -3,9 +3,11 @@ import {
   addRetentionCount,
   deriveRenewalStatus,
   emptyRetentionCounts,
+  renewalRisk,
   retentionRate,
 } from "@/lib/domain/renewal-status";
 import { successorState } from "@/lib/domain/successor";
+import { addCalendarYear } from "@/lib/domain/term";
 import { agingBucket } from "@/lib/domain/aging";
 
 const now = new Date("2026-10-02T12:00:00.000Z");
@@ -75,6 +77,49 @@ describe("successorState", () => {
     expect(
       successorState({ childStatuses: ["ANULADA"], proposalStatuses: [] }),
     ).toBe("LOST");
+  });
+
+  it("la cancelada desde el inicio se pierde y la posterior al inicio queda renovada", () => {
+    expect(
+      successorState({ childStatuses: ["CANCELADA"], proposalStatuses: [] }),
+    ).toBe("LOST");
+    expect(
+      successorState({
+        childStatuses: ["CANCELADA"],
+        proposalStatuses: [],
+        cancelledAfterStart: true,
+      }),
+    ).toBe("ISSUED");
+    expect(
+      successorState({ childStatuses: [], proposalStatuses: ["RECHAZADA"] }),
+    ).toBe("LOST");
+    expect(
+      successorState({ childStatuses: [], proposalStatuses: ["ELABORACION"] }),
+    ).toBe("IN_PROGRESS");
+  });
+});
+
+describe("alerta de renovación", () => {
+  it("marca riesgo según cuántos días faltan y si la sucesora ya se envió", () => {
+    expect(renewalRisk({ status: "PENDING", daysToEnd: 30, successorSent: false })).toBe(
+      "AT_RISK",
+    );
+    expect(renewalRisk({ status: "PENDING", daysToEnd: 40, successorSent: false })).toBeNull();
+    expect(
+      renewalRisk({ status: "IN_PROGRESS", daysToEnd: 15, successorSent: false }),
+    ).toBe("AT_RISK");
+    expect(renewalRisk({ status: "IN_PROGRESS", daysToEnd: 3, successorSent: true })).toBe(
+      "AT_RISK",
+    );
+    expect(renewalRisk({ status: "EXPIRED_IN_PROGRESS", daysToEnd: -2, successorSent: true })).toBe(
+      "OVERDUE",
+    );
+  });
+
+  it("el 29 de febrero termina el 28 del año siguiente", () => {
+    expect(addCalendarYear(new Date("2024-02-29T00:00:00.000Z")).toISOString().slice(0, 10)).toBe(
+      "2025-02-28",
+    );
   });
 });
 

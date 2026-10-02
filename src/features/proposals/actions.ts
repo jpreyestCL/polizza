@@ -1008,6 +1008,8 @@ export async function dispatchPolicyToContratanteAction(
       kind: true,
       endorsedPolicyId: true,
       endorsementType: true,
+      previousPolicyId: true,
+      isRenewal: true,
       client: { select: { name: true, email: true } },
     },
   });
@@ -1125,6 +1127,7 @@ export async function dispatchPolicyToContratanteAction(
               currency: proposal.currency,
               startDate: proposal.startDate,
               endDate: proposal.endDate,
+              previousPolicyId: proposal.previousPolicyId,
               assignedUserId: proposal.assignedUserId ?? ctx.userId,
               createdById: ctx.userId,
             },
@@ -1183,6 +1186,12 @@ export async function dispatchPolicyToContratanteAction(
         await tx.policyCoverage.createMany({ data: coveragesData });
       }
 
+      if (proposal.isRenewal && proposal.previousPolicyId && !existingPolicy) {
+        await tx.policy.update({
+          where: { id: proposal.previousPolicyId },
+          data: { nextPolicyId: policy.id },
+        });
+      }
       await tx.policyStatusHistory.create({
         data: {
           organizationId: ctx.organizationId,
@@ -1524,6 +1533,13 @@ async function dispatchEndorsementProposal(
       };
     }
   }
+
+  await markDispatchSent(db, {
+    organizationId: ctx.organizationId,
+    proposalId: proposal.id,
+    policyId: policy.id,
+    recipientEmail: data.send ? recipient || null : null,
+  });
 
   await db.$transaction(async (tx) => {
     await tx.proposal.update({

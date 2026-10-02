@@ -6,6 +6,7 @@ import type { CatalogItem } from "@/features/catalog/queries";
 import { RENEWAL_STATUS_LABELS } from "@/lib/domain/renewal-status";
 import { PolicyRenewalBadge } from "./policy-badges";
 import { RenewPolicyButton } from "./renew-policy-button";
+import { quoteRenewalAction } from "../actions";
 
 export function RenewalsList({
   policies,
@@ -37,6 +38,9 @@ export function RenewalsList({
               />
               <span className="text-xs text-muted-foreground">
                 {RENEWAL_STATUS_LABELS[policy.renewalStatus]}
+                {policy.quoting ? " · cotizando" : ""}
+                {policy.renewalRisk === "AT_RISK" ? " · en riesgo" : ""}
+                {policy.renewalRisk === "OVERDUE" ? " · vencida" : ""}
               </span>
             </div>
             <p className="text-sm">{policy.client.name}</p>
@@ -50,10 +54,18 @@ export function RenewalsList({
               <span>Vence el {formatDate(policy.endDate)}</span>
             </p>
           </div>
-          <RenewPolicyButton
-            policyId={policy.id}
-            policyNumber={policy.policyNumber}
-          />
+          <div className="flex flex-wrap gap-2">
+            <form action={quoteRenewalAction}>
+              <input type="hidden" name="policyId" value={policy.id} />
+              <button type="submit" className="rounded-md border px-3 py-2 text-sm">
+                Recotizar
+              </button>
+            </form>
+            <RenewPolicyButton
+              policyId={policy.id}
+              policyNumber={policy.policyNumber}
+            />
+          </div>
         </li>
       ))}
     </ul>

@@ -33,6 +33,8 @@ export type PolicyListItem = {
   daysToExpiry: number | null;
   renewalLevel: RenewalLevel;
   renewalStatus: RenewalStatus;
+  quoting: boolean;
+  renewalRisk: "AT_RISK" | "OVERDUE" | null;
 };
 
 type PolicyListRow = {
@@ -98,7 +100,9 @@ async function toPolicyListItems(
       client: row.client,
       daysToExpiry: renewal.daysToExpiry,
       renewalLevel: renewal.level,
-      renewalStatus: statuses.get(row.id) ?? "NOT_DUE",
+      renewalStatus: statuses.get(row.id)?.status ?? "NOT_DUE",
+      quoting: statuses.get(row.id)?.quoting ?? false,
+      renewalRisk: statuses.get(row.id)?.risk ?? null,
     };
   });
 }
@@ -172,12 +176,22 @@ export async function listRenewals(
   q?: string,
 ): Promise<Paginated<PolicyListItem>> {
   const term = q?.trim();
+  const soap = await db.insuranceLine.findMany({
+    where: {
+      OR: [
+        { code: { equals: "soap", mode: "insensitive" } },
+        { name: { contains: "soap", mode: "insensitive" } },
+      ],
+    },
+    select: { id: true },
+  });
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
     status: { in: ["VIGENTE", "VENCIDA"] as PolicyStatus[] },
     notRenewable: false,
     nonRenewalAt: null,
     endDate: { not: null },
+    ...(soap.length > 0 ? { NOT: { lineId: { in: soap.map((line) => line.id) } } } : {}),
     ...(term
       ? {
           OR: [

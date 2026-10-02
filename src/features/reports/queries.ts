@@ -249,7 +249,7 @@ export async function getReportsSnapshot(
   );
   const retention = emptyRetentionCounts();
   for (const policy of monthPolicies) {
-    addRetentionCount(retention, statuses.get(policy.id) ?? "NOT_DUE");
+    addRetentionCount(retention, statuses.get(policy.id)?.status ?? "NOT_DUE");
   }
 
   const aging = emptyAging();

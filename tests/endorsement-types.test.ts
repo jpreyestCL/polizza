@@ -24,11 +24,11 @@ describe("tipos de endoso", () => {
     expect(endorsementStatusEffect("SOLICITUD_ANULACION")).toBe("ANULADA");
   });
 
-  it("cancelaciones, corte por pérdida total y solicitud dejan la póliza CANCELADA", () => {
+  it("las cancelaciones dejan la póliza CANCELADA y la pérdida total no la cancela sola", () => {
     expect(endorsementStatusEffect("CANCELACION_COMPANIA")).toBe("CANCELADA");
     expect(endorsementStatusEffect("CANCELACION_NO_PAGO")).toBe("CANCELADA");
-    expect(endorsementStatusEffect("CORTE_PERDIDA_TOTAL")).toBe("CANCELADA");
     expect(endorsementStatusEffect("SOLICITUD_CANCELACION")).toBe("CANCELADA");
+    expect(endorsementStatusEffect("CORTE_PERDIDA_TOTAL")).toBeNull();
   });
 
   it("los endosos de ítems, glosa, monto y prórroga solo quedan en bitácora", () => {

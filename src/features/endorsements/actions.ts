@@ -19,6 +19,7 @@ import {
   ENDORSEMENT_TYPE_LABELS,
   endorsementStatusEffect,
   parsePremiumDelta,
+  endorsementUsesCalculatedCredit,
   type EndorsementValues,
   type EndorsementProposalValues,
 } from "./schemas";
@@ -28,6 +29,7 @@ import {
   inalterabilityDecision,
   specEndorsementOf,
 } from "@/lib/domain/endorsement-catalog";
+import { endorsementPremium } from "@/lib/domain/endorsement-calc";
 
 type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -83,7 +85,11 @@ export async function createEndorsementAction(
       branchId: true,
       productId: true,
       currency: true,
+      startDate: true,
       endDate: true,
+      premiumNet: true,
+      premiumAffect: true,
+      premiumExempt: true,
       commissionPercent: true,
       assignedUserId: true,
       salespersonId: true,
@@ -103,15 +109,63 @@ export async function createEndorsementAction(
       })
     : null;
   const spec = specEndorsementOf(data.type);
-  const premiumDelta =
-    (parsePremiumDelta(data.premiumAffectedDelta) ?? 0) +
-    (parsePremiumDelta(data.premiumExemptDelta) ?? 0);
+  let affectedDelta = parsePremiumDelta(data.premiumAffectedDelta);
+  let exemptDelta = parsePremiumDelta(data.premiumExemptDelta);
+  if (affectedDelta == null && exemptDelta == null) {
+    const affect =
+      policy.premiumAffect != null ? Number(policy.premiumAffect) : null;
+    const exempt =
+      policy.premiumExempt != null ? Number(policy.premiumExempt) : null;
+    const net = policy.premiumNet != null ? Number(policy.premiumNet) : 0;
+    const estimate = endorsementPremium({
+      method: spec.calcMethod,
+      premium:
+        affect != null || exempt != null
+          ? { affected: affect ?? 0, exempt: exempt ?? 0 }
+          : { affected: net, exempt: 0 },
+      periodStart: policy.startDate,
+      periodEnd: policy.endDate,
+      effective,
+      extensionEnd: endDate,
+    });
+    const fills =
+      data.type === "PRORROGA" ||
+      data.type === "CORTE_PERDIDA_TOTAL" ||
+      endorsementUsesCalculatedCredit(data.type);
+    if (estimate && fills) {
+      affectedDelta = estimate.affected;
+      exemptDelta = estimate.exempt;
+    }
+  }
+  const premiumDelta = (affectedDelta ?? 0) + (exemptDelta ?? 0);
+  const creditorAuthorization = await db.document.findFirst({
+    where: {
+      AND: [
+        {
+          OR: [
+            { entityType: "POLICY", entityId: policy.id },
+            ...(policy.proposalId
+              ? [{ entityType: "PROPOSAL" as const, entityId: policy.proposalId }]
+              : []),
+          ],
+        },
+        {
+          OR: [
+            { documentType: { equals: "CREDITOR_AUTHORIZATION", mode: "insensitive" as const } },
+            { documentType: { contains: "acreedor", mode: "insensitive" as const } },
+            { fileName: { contains: "acreedor", mode: "insensitive" as const } },
+          ],
+        },
+      ],
+    },
+    select: { id: true },
+  });
   const clauseDecision = inalterabilityDecision({
     hasClause: Boolean(clause?.conClausulaInalterabilidad),
     specType: spec.code,
     lowersSumInsured: data.type === "MODIFICA_MONTO_PRIMA" && premiumDelta < 0,
     removesLossPayee: false,
-    hasCreditorAuthorization: false,
+    hasCreditorAuthorization: Boolean(creditorAuthorization),
     canOverride: hasPermission(ctx.role, "endorsements.override_inalterability"),
     overrideReason: data.notes,
     recordingWhatInsurerIssued:
@@ -149,8 +203,8 @@ export async function createEndorsementAction(
         detail: toNullable(data.detail),
         notes: toNullable(data.notes),
         proposalId: null,
-        premiumAffectedDelta: parsePremiumDelta(data.premiumAffectedDelta),
-        premiumExemptDelta: parsePremiumDelta(data.premiumExemptDelta),
+        premiumAffectedDelta: affectedDelta,
+        premiumExemptDelta: exemptDelta,
         inalterabilityNote,
         initiatedBy: data.type === "CANCELACION_NO_PAGO" ? "NON_PAYMENT" : "BROKER",
       }),
@@ -217,8 +271,10 @@ export async function createEndorsementAction(
           endorsedPolicyId: policy.id,
           endorsementType: data.type,
           endorsementDetail: data.detail,
-          endorsementPremiumAffected: deltaDecimal(data.premiumAffectedDelta),
-          endorsementPremiumExempt: deltaDecimal(data.premiumExemptDelta),
+          endorsementPremiumAffected:
+            affectedDelta == null ? null : new Prisma.Decimal(affectedDelta.toFixed(4)),
+          endorsementPremiumExempt:
+            exemptDelta == null ? null : new Prisma.Decimal(exemptDelta.toFixed(4)),
           observations: [toNullable(data.notes), inalterabilityNote]
             .filter(Boolean)
             .join("\n") || null,

@@ -40,6 +40,11 @@ export const RENEWAL_STATUS_LABELS: Record<RenewalStatus, string> = {
 
 export const RENEWAL_WINDOW_DAYS = 60;
 
+/** Días antes del fin en que se abre el seguimiento. */
+export const RENEWAL_TASK_OFFSETS = [45, 30, 15] as const;
+
+export type RenewalRisk = "AT_RISK" | "OVERDUE";
+
 export const ACTIONABLE_RENEWAL_STATUSES: RenewalStatus[] = [
   "PENDING",
   "IN_PROGRESS",
@@ -129,6 +134,26 @@ export function addRetentionCount(
   if (status === "EXPIRED_UNMANAGED") counts.expiredUnmanaged += 1;
   if (status === "NOT_RENEWED") counts.notRenewed += 1;
   if (status === "LOST") counts.lost += 1;
+}
+
+/**
+ * Alerta de la cola. Borrador a 15 días, enviada a 3, pendiente a 30.
+ * Vencida en gestión o sin gestión es la alerta roja.
+ */
+export function renewalRisk(input: {
+  status: RenewalStatus;
+  daysToEnd: number | null;
+  successorSent: boolean;
+}): RenewalRisk | null {
+  if (input.status === "EXPIRED_IN_PROGRESS" || input.status === "EXPIRED_UNMANAGED") {
+    return "OVERDUE";
+  }
+  const days = input.daysToEnd;
+  if (days == null || days < 0) return null;
+  if (input.status === "PENDING" && days <= 30) return "AT_RISK";
+  if (input.status === "IN_PROGRESS" && input.successorSent && days <= 3) return "AT_RISK";
+  if (input.status === "IN_PROGRESS" && !input.successorSent && days <= 15) return "AT_RISK";
+  return null;
 }
 
 /** Renovadas / (universo − no renovables). Null si no hay denominador. */

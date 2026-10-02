@@ -38,9 +38,9 @@ export function RenewPolicyButton({
       toast.error(result.error);
       return;
     }
-    toast.success("Póliza renovada");
+    toast.success("Renovación abierta en elaboración");
     setOpen(false);
-    router.push(`/polizas/${result.id}/editar`);
+    router.push(`/propuestas/${result.id}`);
     router.refresh();
   }
 
@@ -56,10 +56,11 @@ export function RenewPolicyButton({
         <DialogHeader>
           <DialogTitle>Renovar póliza</DialogTitle>
           <DialogDescription>
-            Se creará una nueva póliza copiando los datos de{" "}
+            Se abre una propuesta de renovación de{" "}
             <strong className="text-foreground">{policyNumber}</strong>, con la
-            vigencia adelantada un año. La póliza actual quedará como Renovada.
-            Podrás ajustar el número y las fechas a continuación.
+            vigencia que empieza cuando termina esta. La póliza actual sigue
+            vigente hasta que la sucesora se emita. Hay que confirmar la prima
+            antes de enviarla.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -70,7 +71,7 @@ export function RenewPolicyButton({
           </DialogClose>
           <Button onClick={handleRenew} disabled={loading}>
             {loading && <Loader2 className="animate-spin" />}
-            Renovar póliza
+            Abrir renovación
           </Button>
         </DialogFooter>
       </DialogContent>

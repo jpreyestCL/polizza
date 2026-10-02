@@ -8,19 +8,42 @@ const OPEN_PROPOSAL_STATUSES = new Set([
   "POR_DESPACHAR",
 ]);
 
+const ISSUED_CHILD = new Set(["VIGENTE", "VENCIDA", "RENOVADA"]);
+const LOST_PROPOSAL = new Set(["RECHAZADA", "DESCARTADA"]);
+
 /**
- * La sucesora emitida es una póliza hija que no quedó anulada.
- * Una propuesta de renovación abierta deja la póliza en gestión.
- * Una hija anulada, sin otra sucesora, es una renovación perdida.
+ * La sucesora emitida, o cancelada después de haber empezado a regir,
+ * deja el origen renovado. Una propuesta abierta es gestión. Rechazo,
+ * descarte, anulación o cancelación desde el inicio dejan la renovación
+ * perdida y el origen vuelve a la cola.
  */
 export function successorState(input: {
   childStatuses: string[];
   proposalStatuses: string[];
+  cancelledAfterStart?: boolean;
 }): SuccessorState {
-  if (input.childStatuses.some((status) => status !== "ANULADA")) return "ISSUED";
+  if (
+    input.cancelledAfterStart ||
+    input.childStatuses.some((status) => ISSUED_CHILD.has(status))
+  ) {
+    return "ISSUED";
+  }
   if (input.proposalStatuses.some((status) => OPEN_PROPOSAL_STATUSES.has(status))) {
     return "IN_PROGRESS";
   }
-  if (input.childStatuses.length > 0) return "LOST";
+  if (
+    input.childStatuses.some((status) => status === "ANULADA" || status === "CANCELADA") ||
+    input.proposalStatuses.some((status) => LOST_PROPOSAL.has(status))
+  ) {
+    return "LOST";
+  }
   return "NONE";
+}
+
+const SENT_PROPOSAL = new Set(["ENVIADA_COMPANIA", "POR_DESPACHAR"]);
+
+/** True si la sucesora abierta ya salió hacia la compañía. */
+export function successorWasSent(proposalStatuses: string[]): boolean {
+  const open = proposalStatuses.filter((status) => OPEN_PROPOSAL_STATUSES.has(status));
+  return open.length > 0 && open.every((status) => SENT_PROPOSAL.has(status));
 }
