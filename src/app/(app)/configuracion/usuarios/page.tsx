@@ -93,7 +93,9 @@ export default async function UsuariosPage({
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {member.email} · desde {formatDate(member.createdAt)}
-                    {current && current !== member.role
+                    {current &&
+                    current !== member.role &&
+                    roleLabel(member.role) !== roleLabel(current)
                       ? ` · rol anterior "${roleLabel(member.role)}", hoy rige como ${roleLabel(current)}`
                       : ""}
                   </p>

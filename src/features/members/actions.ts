@@ -107,8 +107,12 @@ export async function inviteMemberAction(form: FormData): Promise<void> {
       body: { email, role, organizationId: ctx.organizationId },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "error";
-    redirect(`${PAGE}?aviso=invitacion-error&detalle=${encodeURIComponent(message)}`);
+    console.error("[members] createInvitation failed", error);
+    const status = (error as { body?: { message?: unknown } })?.body?.message;
+    const detail = typeof status === "string" ? status : "";
+    redirect(
+      `${PAGE}?aviso=invitacion-error${detail ? `&detalle=${encodeURIComponent(detail)}` : ""}`,
+    );
   }
   await logAudit({
     organizationId: ctx.organizationId,
