@@ -142,6 +142,7 @@ const MANUAL_INSTALLMENT_STATUSES = INSTALLMENT_STATUSES.filter(
 export async function setInstallmentStatusAction(
   id: string,
   status: InstallmentStatusValue,
+  amountPaid?: number | null,
 ): Promise<ActionResult> {
   if (status === "ANULADA") {
     return { ok: false, error: "Ese estado no se asigna a mano." };
@@ -155,6 +156,7 @@ export async function setInstallmentStatusAction(
     select: {
       id: true,
       number: true,
+      amount: true,
       policyId: true,
       voidedByTermination: true,
     },
@@ -168,12 +170,29 @@ export async function setInstallmentStatusAction(
       error: "La cuota se anuló al cancelar o anular la póliza.",
     };
   }
+  if (status === "PARCIAL") {
+    const quota = Number(installment.amount);
+    if (amountPaid == null || !Number.isFinite(amountPaid) || amountPaid <= 0) {
+      return {
+        ok: false,
+        error: "Indica cuánto se cobró de esta cuota parcial.",
+      };
+    }
+    if (amountPaid >= quota) {
+      return {
+        ok: false,
+        error: "Si se cobró el total, márcala como pagada.",
+      };
+    }
+  }
   const collected = status === "PAGADA" || status === "PRESUNTA";
   await db.installment.update({
     where: { id },
     data: {
       status,
       paidAt: collected ? new Date() : null,
+      amountPaid:
+        status === "PARCIAL" && amountPaid != null ? amountPaid : null,
     },
   });
   if (installment.policyId) {

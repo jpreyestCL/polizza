@@ -1,5 +1,6 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
+import { issuePartsFromStored } from "@/lib/domain/issue-parts";
 import {
   expectedCommission,
   premiumTotals,
@@ -243,16 +244,13 @@ export async function ensureIssueMovement(
     select: { id: true },
   });
   if (existing) return;
-  const affect =
-    policy.premiumAffect != null ? Number(policy.premiumAffect) : null;
-  const exempt =
-    policy.premiumExempt != null ? Number(policy.premiumExempt) : null;
-  const net = policy.premiumNet != null ? Number(policy.premiumNet) : 0;
-  const parts =
-    affect != null || exempt != null
-      ? { affected: affect ?? 0, exempt: exempt ?? 0 }
-      : { affected: net, exempt: 0 };
-  if (parts.affected === 0 && parts.exempt === 0) return;
+  const parts = issuePartsFromStored({
+    affected:
+      policy.premiumAffect != null ? Number(policy.premiumAffect) : null,
+    exempt: policy.premiumExempt != null ? Number(policy.premiumExempt) : null,
+    net: policy.premiumNet != null ? Number(policy.premiumNet) : 0,
+  });
+  if (!parts) return;
   await appendPremiumMovement(tx, {
     organizationId: policy.organizationId,
     policyId: policy.id,

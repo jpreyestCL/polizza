@@ -1,5 +1,6 @@
 import "server-only";
 import { Prisma, type EndorsementType } from "@prisma/client";
+import { classifyInstallmentsForTermination } from "@/lib/domain/installment-close";
 import { terminationResult, type TerminationKind } from "@/lib/domain/termination";
 import {
   appendPremiumMovement,
@@ -71,20 +72,29 @@ export async function closePlanOnTermination(
     id: string;
     status: string;
     amount: Prisma.Decimal;
+    amountPaid: Prisma.Decimal | null;
     paymentPlanId: string | null;
   }[] = await tx.installment.findMany({
     where: plan
       ? { OR: [{ policyId: input.policyId }, { paymentPlanId: plan.id }] }
       : { policyId: input.policyId },
-    select: { id: true, status: true, amount: true, paymentPlanId: true },
+    select: {
+      id: true,
+      status: true,
+      amount: true,
+      amountPaid: true,
+      paymentPlanId: true,
+    },
   });
 
-  const paid = installments
-    .filter((row) => row.status === "PAGADA" || row.status === "PRESUNTA")
-    .reduce((sum, row) => sum + Number(row.amount), 0);
-  const pendingIds = installments
-    .filter((row) => row.status === "PENDIENTE" || row.status === "RECHAZADA")
-    .map((row) => row.id);
+  const closePlan = classifyInstallmentsForTermination(
+    installments.map((row) => ({
+      id: row.id,
+      status: row.status,
+      amount: Number(row.amount),
+      amountPaid: row.amountPaid != null ? Number(row.amountPaid) : null,
+    })),
+  );
 
   const affect =
     policy.premiumAffect != null ? Number(policy.premiumAffect) : null;
@@ -102,7 +112,8 @@ export async function closePlanOnTermination(
     termStart: policy.startDate,
     termEnd: policy.endDate,
     effectiveDate: input.effectiveDate,
-    paid,
+    paid: closePlan.paid,
+    writtenOff: closePlan.writtenOff,
   });
 
   await tx.policy.update({
@@ -135,10 +146,15 @@ export async function closePlanOnTermination(
     },
   });
 
-  if (pendingIds.length > 0) {
-    await tx.installment.updateMany({
-      where: { id: { in: pendingIds } },
-      data: { status: "ANULADA", voidedByTermination: true },
+  for (const id of closePlan.cancelIds) {
+    const current = installments.find((row) => row.id === id);
+    await tx.installment.update({
+      where: { id },
+      data: {
+        status: "ANULADA",
+        voidedByTermination: true,
+        statusBeforeTermination: current?.status ?? "PENDIENTE",
+      },
     });
   }
 
@@ -182,20 +198,37 @@ export async function reopenPlanAfterTermination(
       terminationReason: null,
     },
   });
-  await tx.installment.updateMany({
-    where: plan
-      ? {
-          voidedByTermination: true,
-          status: "ANULADA",
-          OR: [{ policyId: input.policyId }, { paymentPlanId: plan.id }],
-        }
-      : {
-          policyId: input.policyId,
-          voidedByTermination: true,
-          status: "ANULADA",
-        },
-    data: { status: "PENDIENTE", voidedByTermination: false },
-  });
+  const voided: { id: string; statusBeforeTermination: string | null }[] =
+    await tx.installment.findMany({
+      where: plan
+        ? {
+            voidedByTermination: true,
+            status: "ANULADA",
+            OR: [{ policyId: input.policyId }, { paymentPlanId: plan.id }],
+          }
+        : {
+            policyId: input.policyId,
+            voidedByTermination: true,
+            status: "ANULADA",
+          },
+      select: { id: true, statusBeforeTermination: true },
+    });
+  for (const row of voided) {
+    const previous =
+      row.statusBeforeTermination === "PARCIAL" ||
+      row.statusBeforeTermination === "RECHAZADA" ||
+      row.statusBeforeTermination === "PENDIENTE"
+        ? row.statusBeforeTermination
+        : "PENDIENTE";
+    await tx.installment.update({
+      where: { id: row.id },
+      data: {
+        status: previous,
+        voidedByTermination: false,
+        statusBeforeTermination: null,
+      },
+    });
+  }
   if (plan) {
     await tx.paymentPlan.update({
       where: { id: plan.id },

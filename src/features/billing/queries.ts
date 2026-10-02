@@ -15,6 +15,7 @@ export type InstallmentItem = {
   id: string;
   number: number;
   amount: number;
+  amountPaid: number | null;
   currency: string;
   dueDate: Date;
   status: InstallmentStatus;
@@ -41,6 +42,7 @@ export async function listPolicyInstallments(
       id: true,
       number: true,
       amount: true,
+      amountPaid: true,
       currency: true,
       dueDate: true,
       status: true,
@@ -51,6 +53,7 @@ export async function listPolicyInstallments(
   return rows.map((row) => ({
     ...row,
     amount: Number(row.amount),
+    amountPaid: row.amountPaid != null ? Number(row.amountPaid) : null,
     overdue: isInstallmentOverdue(row.status, row.dueDate),
   }));
 }
@@ -96,6 +99,7 @@ export async function listAllInstallments(
         id: true,
         number: true,
         amount: true,
+        amountPaid: true,
         currency: true,
         dueDate: true,
         status: true,
@@ -123,6 +127,7 @@ export async function listAllInstallments(
       id: row.id,
       number: row.number,
       amount: Number(row.amount),
+      amountPaid: row.amountPaid != null ? Number(row.amountPaid) : null,
       currency: row.currency,
       dueDate: row.dueDate,
       status: row.status,

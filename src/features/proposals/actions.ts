@@ -7,6 +7,10 @@ import { basePrisma, type Db } from "@/server/db";
 import type { SessionContext } from "@/server/context";
 import { applyEndorsementToPolicy } from "@/features/endorsements/apply";
 import { appendPremiumMovement } from "@/features/ledger/record";
+import {
+  ensureIssueCorrectionTask,
+  moveIssueCorrectionTaskToPolicy,
+} from "@/features/policies/issue-correction-task";
 import { ENDORSEMENT_TYPE_LABELS } from "@/features/endorsements/schemas";
 import { logActivity } from "@/server/activity";
 import { canDeleteProposal } from "@/lib/roles";
@@ -830,7 +834,12 @@ export async function registerEmissionErrorAction(
 
   const proposal = await db.proposal.findFirst({
     where: { id: proposalId },
-    select: { id: true, proposalNumber: true, kind: true },
+    select: {
+      id: true,
+      proposalNumber: true,
+      kind: true,
+      assignedUserId: true,
+    },
   });
   if (!proposal) {
     return { ok: false, error: "La propuesta no existe o no tienes acceso." };
@@ -877,6 +886,16 @@ export async function registerEmissionErrorAction(
         userId: ctx.userId,
       },
     });
+  });
+
+  await ensureIssueCorrectionTask(db, {
+    organizationId: ctx.organizationId,
+    userId: ctx.userId,
+    entityType: "PROPOSAL",
+    entityId: proposalId,
+    reason: data.reason,
+    detail: data.detail,
+    assignedUserId: proposal.assignedUserId,
   });
 
   await logActivity(db, {
@@ -1134,6 +1153,19 @@ export async function dispatchPolicyToContratanteAction(
             : 0,
         },
       });
+
+      if (proposal.emissionErrorReason) {
+        await moveIssueCorrectionTaskToPolicy(tx, proposalId, policy.id);
+        await ensureIssueCorrectionTask(tx, {
+          organizationId: ctx.organizationId,
+          userId: ctx.userId,
+          entityType: "POLICY",
+          entityId: policy.id,
+          reason: proposal.emissionErrorReason,
+          detail: proposal.emissionErrorDetail,
+          assignedUserId: proposal.assignedUserId,
+        });
+      }
 
       // Plan de pago + cuotas de la propuesta → quedan vinculados a la póliza.
       const plan = await tx.paymentPlan.findUnique({

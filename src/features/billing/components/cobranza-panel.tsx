@@ -67,6 +67,10 @@ export function CobranzaPanel({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [partialTarget, setPartialTarget] = useState<InstallmentItem | null>(
+    null,
+  );
+  const [partialAmount, setPartialAmount] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const form = useForm<GeneratePlanValues>({
     resolver: zodResolver(generatePlanSchema),
@@ -112,12 +116,25 @@ export function CobranzaPanel({
   }
 
   const currency = installments[0]?.currency ?? defaultCurrency;
-  const paid = installments
-    .filter((i) => i.status === "PAGADA")
-    .reduce((sum, i) => sum + i.amount, 0);
-  const pending = installments
-    .filter((i) => i.status === "PENDIENTE")
-    .reduce((sum, i) => sum + i.amount, 0);
+  let paid = 0;
+  let pending = 0;
+  for (const installment of installments) {
+    if (
+      installment.status === "PAGADA" ||
+      installment.status === "PRESUNTA"
+    ) {
+      paid += installment.amount;
+    } else if (installment.status === "PARCIAL") {
+      const collected = installment.amountPaid ?? 0;
+      paid += collected;
+      pending += Math.max(0, installment.amount - collected);
+    } else if (
+      installment.status === "PENDIENTE" ||
+      installment.status === "RECHAZADA"
+    ) {
+      pending += installment.amount;
+    }
+  }
 
   const closedLabel =
     termination?.reason === "ANNULMENT"
@@ -189,6 +206,9 @@ export function CobranzaPanel({
                   Vence el {formatDate(installment.dueDate)}
                   {installment.paidAt &&
                     ` · pagada el ${formatDate(installment.paidAt)}`}
+                  {installment.status === "PARCIAL" &&
+                    installment.amountPaid != null &&
+                    ` · cobrado ${formatMoney(installment.amountPaid, installment.currency as CurrencyCode)}`}
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -206,7 +226,16 @@ export function CobranzaPanel({
                 installment.status === "ANULADA" ? null : (
                   <Select
                     value={installment.status}
-                    onValueChange={(value) =>
+                    onValueChange={(value) => {
+                      if (value === "PARCIAL") {
+                        setPartialTarget(installment);
+                        setPartialAmount(
+                          installment.amountPaid != null
+                            ? String(installment.amountPaid)
+                            : "",
+                        );
+                        return;
+                      }
                       runAction(
                         installment.id,
                         (id) =>
@@ -215,8 +244,8 @@ export function CobranzaPanel({
                             value as InstallmentStatusValue,
                           ),
                         `Cuota ${INSTALLMENT_STATUS_LABELS[value as InstallmentStatusValue].toLowerCase()}`,
-                      )
-                    }
+                      );
+                    }}
                   >
                     <SelectTrigger className="h-8 w-[9.5rem]" aria-label="Estado de la cuota">
                       <SelectValue />
@@ -253,6 +282,60 @@ export function CobranzaPanel({
           ))}
         </ul>
       )}
+
+      <Dialog
+        open={partialTarget != null}
+        onOpenChange={(next) => {
+          if (!next) setPartialTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cuota parcial</DialogTitle>
+            <DialogDescription>
+              Indica cuánto se cobró. Al cancelar o anular la póliza, esa parte
+              cuenta como pagada y el resto de la cuota se anula.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <label className="text-xs" htmlFor="partial-amount">
+              Monto cobrado
+            </label>
+            <Input
+              id="partial-amount"
+              inputMode="decimal"
+              value={partialAmount}
+              onChange={(event) => setPartialAmount(event.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              onClick={async () => {
+                if (!partialTarget) return;
+                const amount = Number(partialAmount.replace(",", "."));
+                const id = partialTarget.id;
+                setBusyId(id);
+                const result = await setInstallmentStatusAction(
+                  id,
+                  "PARCIAL",
+                  amount,
+                );
+                setBusyId(null);
+                if (!result.ok) {
+                  toast.error(result.error);
+                  return;
+                }
+                toast.success("Cuota parcial");
+                setPartialTarget(null);
+                router.refresh();
+              }}
+            >
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

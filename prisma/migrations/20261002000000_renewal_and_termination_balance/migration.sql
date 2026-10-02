@@ -16,7 +16,9 @@ ADD COLUMN "terminationBalanceIsEstimate" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN "terminationReason" TEXT;
 
 -- AlterTable
-ALTER TABLE "Installment" ADD COLUMN "voidedByTermination" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Installment" ADD COLUMN "voidedByTermination" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "amountPaid" DECIMAL(14,2),
+ADD COLUMN "statusBeforeTermination" "InstallmentStatus";
 
 -- AlterTable
 ALTER TABLE "Client" ADD COLUMN "marketingConsent" BOOLEAN NOT NULL DEFAULT false,

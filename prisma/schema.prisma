@@ -1696,8 +1696,12 @@ model Installment {
   dueDate        DateTime          @db.Date
   status         InstallmentStatus @default(PENDIENTE)
   paidAt         DateTime?         @db.Date
+  // Cobrado cuando el estado es parcial. El resto se anula al cancelar.
+  amountPaid     Decimal?          @db.Decimal(14, 2)
   // La cuota se anuló por la cascada de cancelación o anulación.
   voidedByTermination Boolean      @default(false)
+  // Estado previo a esa anulación, para reabrirlo al borrar el endoso.
+  statusBeforeTermination InstallmentStatus?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 

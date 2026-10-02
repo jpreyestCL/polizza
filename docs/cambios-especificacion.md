@@ -11,8 +11,10 @@ creaba la póliza de cartera. El botón decía “Devolver a la compañía”.
 **Ahora.** La propuesta queda `POR_DESPACHAR`, igual que una emisión correcta.
 El motivo y el detalle se guardan en la propuesta y, al despachar, en
 `Policy.issueProblemCode`, `issueProblemDetail` e `issueProblemOpenedAt`. La
-póliza entra a la cartera con un aviso. La corrección es un endoso. `DEVUELTA`
-sigue existiendo para una devolución de la compañía antes de emitir.
+póliza entra a la cartera con un aviso. Nace la tarea "Solicitar endoso de
+corrección", con plazo de 10 días hábiles, primero sobre la propuesta y luego
+sobre la póliza. `DEVUELTA` sigue existiendo para una devolución de la
+compañía antes de emitir.
 
 ## Libro de primas
 
@@ -56,9 +58,11 @@ en la mora.
 Presunta pagada no se asigna sola. Queda solo si alguien la marca en la
 cuota. Anulada sigue reservada al cierre por cancelación o anulación.
 
-Al cerrar el plan, pagada y presunta cuentan como cobradas. Se anulan las
-pendientes y las rechazadas. La parcial no se anula: no hay un monto cobrado
-aparte del estado, y anularla perdería ese registro.
+Al cerrar el plan, pagada y presunta cuentan como cobradas. La castigada se
+resta del saldo (no queda como deuda). Pendiente y rechazada se anulan. En
+una parcial se guarda el monto cobrado: esa parte cuenta como pagada y el
+resto de la cuota se anula. Al borrar el endoso de término, cada cuota vuelve
+al estado que tenía (parcial o rechazada), no siempre a pendiente.
 
 En cobranza, “por vencer” incluye pendiente, parcial y rechazada que aún no
 vencen. “Pagadas” incluye pagada y presunta.
