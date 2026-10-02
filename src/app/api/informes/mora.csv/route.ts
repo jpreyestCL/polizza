@@ -1,5 +1,8 @@
 import { requireOrgDb } from "@/server/context";
-import { getReportsSnapshot } from "@/features/reports/queries";
+import {
+  getReportsSnapshot,
+  reportFiltersFrom,
+} from "@/features/reports/queries";
 
 function csvCell(value: string): string {
   if (/[;"\n]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
@@ -11,9 +14,13 @@ function formatDay(date: Date): string {
   return `${day}-${month}-${year}`;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const { ctx, db } = await requireOrgDb();
-  const data = await getReportsSnapshot(ctx, db);
+  const data = await getReportsSnapshot(
+    ctx,
+    db,
+    reportFiltersFrom(new URL(request.url).searchParams),
+  );
   const lines = [
     "poliza;cliente;moneda;monto;vencimiento;dias;tramo",
     ...data.agingRows.map((row) =>

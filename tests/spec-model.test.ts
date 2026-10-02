@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseDeductible } from "@/lib/domain/deductible";
+import {
+  closedOnTime,
+  commissionAging,
+  quoteSuccess,
+  reportPeriod,
+} from "@/lib/domain/report-metrics";
 import { presumedPaidDecision } from "@/lib/domain/presumed-paid";
 import { matchCommissionLines } from "@/lib/domain/commission-match";
 import { compareIssuance } from "@/lib/domain/issuance-compare";
@@ -158,7 +164,7 @@ describe("modelo de la especificación", () => {
     expect(lossRatio(1, 0, 0)).toBeNull();
   });
 
-  it("el informe de cotizaciones no inventa una tasa de éxito", () => {
+  it("el informe de cotizaciones calcula el éxito con ganadas y perdidas", () => {
     const cards = buildReportCatalog({
       production: [],
       portfolioCount: 0,
@@ -178,11 +184,33 @@ describe("modelo de la especificación", () => {
       tasksOverdue: 0,
       quotationsByStatus: [{ status: "COMPLETADA", count: 3 }],
       lossByCurrency: [],
+      pendingCommissionAging: commissionAging(
+        [{ amount: 2, currency: "UF", createdAt: new Date("2026-08-01") }],
+        new Date("2026-10-02"),
+      ),
+      claimsClosedOnTime: closedOnTime([
+        { closedAt: new Date("2026-09-10T15:00:00Z"), closeDeadline: new Date("2026-09-10") },
+        { closedAt: new Date("2026-09-20"), closeDeadline: new Date("2026-09-15") },
+        { closedAt: new Date("2026-09-21"), closeDeadline: null },
+      ]),
+      quoteSuccess: quoteSuccess([
+        { status: "GANADA", count: 3 },
+        { status: "PERDIDA", count: 1 },
+      ]),
+      quoteRequestsByStatus: [
+        { status: "GANADA", count: 3 },
+        { status: "PERDIDA", count: 1 },
+      ],
+      periodLabel: "2026-09",
     });
     const quotes = cards.find((card) => card.id === "R-11");
     const payments = cards.find((card) => card.id === "R-05");
-    expect(quotes?.note).toMatch(/no se calcula/);
+    const pending = cards.find((card) => card.id === "R-07");
+    const claims = cards.find((card) => card.id === "R-08");
+    expect(quotes?.value).toMatch(/Éxito 75/);
     expect(quotes?.value).toContain("COMPLETADA");
+    expect(pending?.value).toContain("61-90 días: UF 2");
+    expect(claims?.value).toMatch(/50\s?%.*1 de 2/);
     expect(payments?.note).toMatch(/cuota/);
     expect(cards.map((card) => card.id)).toEqual([
       "R-01",
@@ -240,5 +268,18 @@ describe("modelo de la especificación", () => {
     expect(PERMISSIONS.some((permission) => permission.code === "policies.reopen")).toBe(
       true,
     );
+  });
+});
+
+describe("período de informes", () => {
+  it("toma el mes, un rango o el mes en curso", () => {
+    const now = new Date("2026-10-02T12:00:00Z");
+    expect(reportPeriod({}, now).label).toBe("2026-10");
+    const month = reportPeriod({ mes: "2026-02" }, now);
+    expect(month.start.toISOString().slice(0, 10)).toBe("2026-02-01");
+    expect(month.end.toISOString().slice(0, 10)).toBe("2026-03-01");
+    const range = reportPeriod({ desde: "2026-01-15", hasta: "2026-03-31" }, now);
+    expect(range.start.toISOString().slice(0, 10)).toBe("2026-01-15");
+    expect(range.end.toISOString().slice(0, 10)).toBe("2026-04-01");
   });
 });

@@ -17,6 +17,42 @@ import {
   buildReportCatalog,
   type ReportCard,
 } from "@/lib/domain/report-catalog";
+import {
+  closedOnTime,
+  commissionAging,
+  quoteSuccess,
+  reportPeriod,
+  type ClosedOnTime,
+  type CommissionAging,
+  type QuoteSuccess,
+} from "@/lib/domain/report-metrics";
+
+export type ReportFilters = {
+  mes?: string;
+  desde?: string;
+  hasta?: string;
+  companyId?: string;
+  userId?: string;
+};
+
+/** Filtros del informe desde la URL (?mes=&desde=&hasta=&compania=&ejecutivo=). */
+export function reportFiltersFrom(
+  params: URLSearchParams | Record<string, string | string[] | undefined>,
+): ReportFilters {
+  const read = (key: string): string | undefined => {
+    const value =
+      params instanceof URLSearchParams ? params.get(key) : params[key];
+    const single = Array.isArray(value) ? value[0] : value;
+    return single?.trim() || undefined;
+  };
+  return {
+    mes: read("mes"),
+    desde: read("desde"),
+    hasta: read("hasta"),
+    companyId: read("compania"),
+    userId: read("ejecutivo"),
+  };
+}
 
 export type AgingRow = {
   policyNumber: string;
@@ -48,15 +84,16 @@ export type ReportsSnapshot = {
   claimsByStatus: { status: string; count: number }[];
   claimsOpen: number;
   catalog: ReportCard[];
+  periodLabel: string;
+  pendingCommissionAging: CommissionAging;
+  claimsClosedOnTime: ClosedOnTime;
+  quoteSuccess: QuoteSuccess;
 };
 
-function monthBounds(now: Date): { start: Date; end: Date; today: Date } {
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-  const today = new Date(
+function todayOf(now: Date): Date {
+  return new Date(
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
   );
-  return { start, end, today };
 }
 
 function emptyAging(): Record<AgingBucket, { count: number; amount: number }> {
@@ -72,14 +109,26 @@ function emptyAging(): Record<AgingBucket, { count: number; amount: number }> {
 export async function getReportsSnapshot(
   ctx: SessionContext,
   db: Db,
+  filters: ReportFilters = {},
   now: Date = new Date(),
 ): Promise<ReportsSnapshot> {
-  const scope = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
-  const { start, end, today } = monthBounds(now);
+  const seesAll = canSeeAllClients(ctx.role);
+  const userId = seesAll ? filters.userId || null : ctx.userId;
+  const scope = {
+    ...(userId ? { assignedUserId: userId } : {}),
+    ...(filters.companyId ? { companyId: filters.companyId } : {}),
+  };
+  const period = reportPeriod(filters, now);
+  const { start, end } = period;
+  const today = todayOf(now);
   await backfillMissingIssueMovements(db);
 
-  const taskScope = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
-  const [portfolio, monthPolicies, overdue, claims, movements, paymentsInPeriod, expectedRows, pendingRows, allocationRows, issuedInPeriod, issuedWithProblems, tasksCreated, tasksCompleted, tasksOverdue, quotations, claimAmounts] =
+  const taskScope = userId ? { assignedUserId: userId } : {};
+  const claimScope = {
+    ...taskScope,
+    ...(filters.companyId ? { policy: { companyId: filters.companyId } } : {}),
+  };
+  const [portfolio, monthPolicies, overdue, claims, movements, paymentsInPeriod, expectedRows, pendingRows, allocationRows, issuedInPeriod, issuedWithProblems, tasksCreated, tasksCompleted, tasksOverdue, quotations, claimAmounts, closedClaims, quoteRequests] =
     await Promise.all([
     db.policy.findMany({
       where: { ...scope, status: "VIGENTE" },
@@ -122,6 +171,7 @@ export async function getReportsSnapshot(
     }),
     db.claim.groupBy({
       by: ["status"],
+      where: claimScope,
       _count: { _all: true },
     }),
     db.premiumMovement.findMany({
@@ -154,7 +204,7 @@ export async function getReportsSnapshot(
     }),
     db.commissionReceivable.findMany({
       where: { status: "PENDING", policy: scope },
-      select: { amount: true, currency: true },
+      select: { amount: true, currency: true, createdAt: true },
     }),
     db.commissionAllocation.findMany({
       where: {
@@ -196,7 +246,7 @@ export async function getReportsSnapshot(
       _count: { _all: true },
     }),
     db.claim.findMany({
-      where: taskScope,
+      where: claimScope,
       select: {
         status: true,
         closureOutcome: true,
@@ -204,6 +254,15 @@ export async function getReportsSnapshot(
         settledAmount: true,
         estimatedAmount: true,
       },
+    }),
+    db.claim.findMany({
+      where: { ...claimScope, closedAt: { gte: start, lt: end } },
+      select: { closedAt: true, closeDeadline: true },
+    }),
+    db.quoteRequest.groupBy({
+      by: ["status"],
+      where: { ...taskScope, createdAt: { gte: start, lt: end } },
+      _count: { _all: true },
     }),
   ]);
 
@@ -378,6 +437,21 @@ export async function getReportsSnapshot(
     };
   });
 
+  const pendingCommissionAging = commissionAging(
+    pendingRows.map((row) => ({
+      amount: Number(row.amount),
+      currency: row.currency,
+      createdAt: row.createdAt,
+    })),
+    today,
+  );
+  const claimsClosedOnTime = closedOnTime(closedClaims);
+  const quoteRequestsByStatus = quoteRequests.map((row) => ({
+    status: row.status,
+    count: row._count._all,
+  }));
+  const success = quoteSuccess(quoteRequestsByStatus);
+
   const catalog = buildReportCatalog({
     production: [...productionByCurrency.values()],
     portfolioCount: portfolio.length,
@@ -403,6 +477,11 @@ export async function getReportsSnapshot(
       count: row._count._all,
     })),
     lossByCurrency,
+    pendingCommissionAging,
+    claimsClosedOnTime,
+    quoteSuccess: success,
+    quoteRequestsByStatus,
+    periodLabel: period.label,
   });
 
   return {
@@ -416,5 +495,9 @@ export async function getReportsSnapshot(
     claimsByStatus,
     claimsOpen,
     catalog,
+    periodLabel: period.label,
+    pendingCommissionAging,
+    claimsClosedOnTime,
+    quoteSuccess: success,
   };
 }

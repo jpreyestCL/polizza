@@ -81,6 +81,21 @@ describe("comisión y no renovación", () => {
     ]);
   });
 
+  it("lee el CSV de la compañía por encabezado, con comillas y miles", () => {
+    const csv = [
+      'Fecha;Asegurado;N° Póliza;Prima;Comisión',
+      '01-09-2026;"Pérez; Ana";POL-100;"1.234,50";"123,45"',
+      '01-09-2026;Luis;POL-200;10;1.000,5',
+    ].join("\n");
+    expect(parseCommissionLines(csv)).toEqual([
+      { policyNumber: "POL-100", amount: 123.45 },
+      { policyNumber: "POL-200", amount: 1000.5 },
+    ]);
+    expect(
+      parseCommissionLines("monto,poliza\n\"12.345\",POL-9", "CLP"),
+    ).toEqual([{ policyNumber: "POL-9", amount: 12345 }]);
+  });
+
   it("nombra los 23 motivos y sigue leyendo uno viejo", () => {
     expect(nonRenewalReasonLabel("PRICE")).toBe("Precio");
     expect(nonRenewalReasonLabel("PRECIO")).toBe("Precio");

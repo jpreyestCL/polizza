@@ -1,5 +1,8 @@
 import { requireOrgDb } from "@/server/context";
-import { getReportsSnapshot } from "@/features/reports/queries";
+import {
+  getReportsSnapshot,
+  reportFiltersFrom,
+} from "@/features/reports/queries";
 import { hasPermission } from "@/lib/factory-roles";
 import { reportTable, toCsv } from "@/lib/domain/report-csv";
 
@@ -8,8 +11,9 @@ export async function GET(request: Request) {
   if (!hasPermission(ctx.role, "reports.export")) {
     return new Response("PERMISSION_DENIED", { status: 403 });
   }
-  const code = new URL(request.url).searchParams.get("codigo") ?? "";
-  const data = await getReportsSnapshot(ctx, db);
+  const params = new URL(request.url).searchParams;
+  const code = params.get("codigo") ?? "";
+  const data = await getReportsSnapshot(ctx, db, reportFiltersFrom(params));
   const card = data.catalog.find((report) => report.id === code);
   const table = reportTable(code, {
     portfolioCount: data.portfolioCount,
