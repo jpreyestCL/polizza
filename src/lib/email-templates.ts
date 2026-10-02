@@ -10,6 +10,22 @@ export type EmailTemplateDef = {
   recipient: string;
 };
 
+const BODIES: Record<string, string> = {
+  PROPOSAL_TO_INSURER:
+    "Estimados,\n\nFavor asignar folio para la propuesta {{proposalNumber}} de {{clientName}}.\n\nLa propuesta se adjunta en PDF.\n\nSaluda atentamente,\n{{orgName}}",
+  ENDORSEMENT_TO_INSURER:
+    "Estimados,\n\nFavor emitir el endoso de la propuesta {{proposalNumber}}{{policyClause}} de {{clientName}}.\n\nSe adjunta la solicitud en PDF.\n\nSaluda atentamente,\n{{orgName}}",
+};
+
+export function renderEmailTemplate(
+  code: string,
+  vars: Record<string, string>,
+): string | null {
+  const body = BODIES[code];
+  if (!body) return null;
+  return body.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? "");
+}
+
 export const EMAIL_TEMPLATES: EmailTemplateDef[] = [
   { code: "QUOTE_REQUEST", event: "Solicitud de cotización a una compañía", recipient: "Contacto de cotizaciones" },
   { code: "QUOTE_REMINDER", event: "La compañía no responde", recipient: "Contacto de cotizaciones" },

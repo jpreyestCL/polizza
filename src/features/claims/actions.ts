@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { Prisma, type ClaimLogKind } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { sanitizeRichText } from "@/lib/sanitize";
 import { logActivity } from "@/server/activity";
 import { canDeleteClaim } from "@/lib/roles";
+import { hasPermission } from "@/lib/factory-roles";
+import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import {
   claimStepDueDate,
   claimWorkflow,
@@ -420,10 +423,16 @@ export async function changeClaimStatusAction(
 
   const claim = await db.claim.findFirst({
     where: { id },
-    select: { id: true, status: true, claimNumber: true },
+    select: { id: true, status: true, claimNumber: true, voidedAt: true },
   });
   if (!claim) {
     return { ok: false, error: "El siniestro no existe o no tienes acceso." };
+  }
+  if (claim.voidedAt) {
+    return {
+      ok: false,
+      error: "INVALID_TRANSITION: el siniestro está anulado. Primero hay que reabrirlo.",
+    };
   }
   if (claim.status === data.status) {
     return { ok: false, error: "El siniestro ya está en ese estado." };
@@ -616,6 +625,94 @@ export async function deleteClaimAction(id: string): Promise<ActionResult> {
 }
 
 // Server actions auxiliares para el wizard de creación
+export async function voidClaimFormAction(form: FormData): Promise<void> {
+  const id = String(form.get("claimId") ?? "");
+  const reason = String(form.get("reason") ?? "");
+  const reasonError = sensitiveReasonError(reason);
+  if (reasonError) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent(reasonError)}`);
+  }
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "claims.void")) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("No tienes permiso para anular el siniestro.")}`);
+  }
+  const claim = await db.claim.findFirst({
+    where: { id },
+    select: { id: true, claimNumber: true, voidedAt: true },
+  });
+  if (!claim) redirect(`/siniestros/${id}?aviso=${encodeURIComponent("El siniestro no existe.")}`);
+  if (claim.voidedAt) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("El siniestro ya está anulado.")}`);
+  }
+  await db.claim.update({
+    where: { id },
+    data: { voidedAt: new Date(), voidReason: reason.trim() },
+  });
+  await db.claimLog.create({
+    data: {
+      organizationId: ctx.organizationId,
+      claimId: id,
+      kind: "NOTE",
+      message: `Anulado. ${reason.trim()}`,
+      userId: ctx.userId,
+    },
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "CLAIM",
+    entityId: id,
+    action: "voided",
+    summary: `Siniestro ${claim.claimNumber} anulado. ${reason.trim()}`,
+    userId: ctx.userId,
+  });
+  revalidatePath(`/siniestros/${id}`);
+  redirect(`/siniestros/${id}?aviso=${encodeURIComponent("Siniestro anulado.")}`);
+}
+
+export async function reopenClaimFormAction(form: FormData): Promise<void> {
+  const id = String(form.get("claimId") ?? "");
+  const reason = String(form.get("reason") ?? "");
+  const reasonError = sensitiveReasonError(reason);
+  if (reasonError) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent(reasonError)}`);
+  }
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "claims.reopen")) {
+    redirect(`/siniestros/${id}?aviso=${encodeURIComponent("No tienes permiso para reabrir el siniestro.")}`);
+  }
+  const claim = await db.claim.findFirst({
+    where: { id },
+    select: { id: true, claimNumber: true, status: true, voidedAt: true },
+  });
+  if (!claim) redirect(`/siniestros/${id}?aviso=${encodeURIComponent("El siniestro no existe.")}`);
+  if (!claim.voidedAt && claim.status !== "CERRADO") {
+    redirect(
+      `/siniestros/${id}?aviso=${encodeURIComponent("INVALID_TRANSITION: solo se reabre un siniestro cerrado o anulado.")}`,
+    );
+  }
+  await db.claim.update({
+    where: { id },
+    data: {
+      voidedAt: null,
+      voidReason: null,
+      reopenedAt: new Date(),
+      status: "EN_EVALUACION",
+      currentStateStartedAt: new Date(),
+    },
+  });
+  await db.claimLog.create({
+    data: {
+      organizationId: ctx.organizationId,
+      claimId: id,
+      kind: "NOTE",
+      message: `Reabierto. ${reason.trim()}`,
+      userId: ctx.userId,
+    },
+  });
+  revalidatePath(`/siniestros/${id}`);
+  redirect(`/siniestros/${id}?aviso=${encodeURIComponent("Siniestro reabierto.")}`);
+}
+
 export async function searchPoliciesForClaimAction(
   query: string,
   includeNonActive: boolean,

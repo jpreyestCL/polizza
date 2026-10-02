@@ -131,7 +131,7 @@ export async function markInstallmentPaidAction(
 }
 
 const MANUAL_INSTALLMENT_STATUSES = INSTALLMENT_STATUSES.filter(
-  (status) => status !== "ANULADA",
+  (status) => status !== "ANULADA" && status !== "CREDITED",
 );
 
 /**
@@ -143,8 +143,9 @@ export async function setInstallmentStatusAction(
   id: string,
   status: InstallmentStatusValue,
   amountPaid?: number | null,
+  companyRegisteredOn?: string | null,
 ): Promise<ActionResult> {
-  if (status === "ANULADA") {
+  if (status === "ANULADA" || status === "CREDITED") {
     return { ok: false, error: "Ese estado no se asigna a mano." };
   }
   if (!MANUAL_INSTALLMENT_STATUSES.includes(status)) {
@@ -210,6 +211,9 @@ export async function setInstallmentStatusAction(
         amount: paidAmount.toFixed(4),
         paidOn: today,
         markedOn: today,
+        companyRegisteredOn: companyRegisteredOn
+          ? new Date(companyRegisteredOn)
+          : null,
         source: "MANUAL",
         createdById: ctx.userId,
       },

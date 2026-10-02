@@ -27,15 +27,20 @@ import {
 } from "@/features/endorsements/queries";
 import { EndorsementsPanel } from "@/features/endorsements/components/endorsements-panel";
 import { NonRenewalPanel } from "@/features/policies/components/non-renewal-panel";
+import { reopenIssueFormAction } from "@/features/policies/reopen-issue";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight } from "lucide-react";
 
 export default async function PolizaDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
+  const aviso = typeof sp.aviso === "string" ? sp.aviso : null;
   const { ctx, db } = await requireOrgDb();
 
   await backfillPolicyIssueMovement(db, id);
@@ -148,6 +153,27 @@ export default async function PolizaDetailPage({
           )}
         </div>
       </div>
+
+      {aviso ? (
+        <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{aviso}</p>
+      ) : null}
+
+      {!policy.reopenedIssueAt && policy.status === "VIGENTE" ? (
+        <form action={reopenIssueFormAction} className="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-4">
+          <input type="hidden" name="policyId" value={id} />
+          <label className="flex min-w-64 flex-1 flex-col gap-1 text-sm">
+            Reabrir la emisión
+            <input name="reason" required minLength={10} className="rounded-md border bg-background px-2 py-1.5" placeholder="Motivo, al menos 10 caracteres" />
+          </label>
+          <button type="submit" className="rounded-md border px-3 py-2 text-sm">Reabrir emisión</button>
+        </form>
+      ) : null}
+      {policy.reopenedIssueAt ? (
+        <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          La emisión se reabrió. La propuesta volvió a enviada a la compañía.
+          {policy.reopenedIssueReason ? ` ${policy.reopenedIssueReason}` : ""}
+        </p>
+      ) : null}
 
       {policy.client.comentarioAlerta?.trim() && (
         <ClientAlertBanner message={policy.client.comentarioAlerta} />

@@ -16,7 +16,7 @@ const OPEN_INSTALLMENT_STATUSES = new Set<InstallmentStatus>([
 
 /**
  * Vencida no es un estado. Es una cuota abierta (pendiente, parcial o
- * rechazada) cuya fecha ya pasó. Presunta, pagada, castigada y anulada no.
+ * rechazada) cuya fecha ya pasó. Presunta, pagada, acreditada, castigada y anulada no.
  */
 export function isInstallmentOverdue(
   status: InstallmentStatus,

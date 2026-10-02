@@ -41,6 +41,9 @@ import {
   rejectProposalFormAction,
   reopenProposalFormAction,
 } from "@/features/proposals/actions";
+import { discardProposalFormAction } from "@/features/proposals/discard";
+import { canDiscardProposal } from "@/lib/domain/policy-lifecycle";
+import { hasPermission } from "@/lib/factory-roles";
 import { ClientAlertBanner } from "@/components/alert-banner";
 import { Button } from "@/components/ui/button";
 
@@ -230,6 +233,16 @@ export default async function PropuestaDetailPage({
             <input name="note" required minLength={10} className="rounded-md border bg-background px-2 py-1.5" placeholder="Motivo, al menos 10 caracteres" />
           </label>
           <button type="submit" className="rounded-md border px-3 py-2 text-sm">Marcar rechazada</button>
+        </form>
+      ) : null}
+      {canDiscardProposal(proposal.status) && hasPermission(ctx.role, "policies.discard") ? (
+        <form action={discardProposalFormAction} className="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-4">
+          <input type="hidden" name="proposalId" value={id} />
+          <label className="flex min-w-64 flex-1 flex-col gap-1 text-sm">
+            Descartar propuesta
+            <input name="reason" required minLength={10} className="rounded-md border bg-background px-2 py-1.5" placeholder="Motivo, al menos 10 caracteres" />
+          </label>
+          <button type="submit" className="rounded-md border px-3 py-2 text-sm">Descartar</button>
         </form>
       ) : null}
       {proposal.status === "ENVIADA_COMPANIA" || proposal.status === "RECHAZADA" ? (

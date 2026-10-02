@@ -17,6 +17,7 @@ const STATUS_VARIANT: Record<ProposalStatusValue, BadgeVariant> = {
   DEVUELTA: "warning",
   POR_DESPACHAR: "success",
   RECHAZADA: "destructive",
+  DESCARTADA: "muted",
 };
 
 export function ProposalStatusBadge({ status }: { status: string }) {

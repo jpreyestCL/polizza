@@ -10,6 +10,7 @@ import type { Db } from "@/server/db";
 import { buildProposalPdfData } from "./build-pdf-data";
 import { recordPolicySubmission } from "@/features/proposals/submission";
 import { setTenantGuc } from "@/server/tenant-rls";
+import { renderEmailTemplate } from "@/lib/email-templates";
 
 /**
  * Obs 14: guarda automáticamente el PDF de la propuesta enviado a la compañía
@@ -392,13 +393,18 @@ export async function sendProposalByEmailAction(
           .join("")}</ul>`
       : "";
 
-  const body =
-    note ||
-    (isEndorsement
-      ? `Estimados,\n\nFavor emitir el endoso solicitado${
-          endorsedPolicy ? ` sobre la póliza N° ${endorsedPolicy.policyNumber}` : ""
-        } de nuestro cliente ${proposal.client.name}. Se adjunta la solicitud de endoso N° ${proposal.proposalNumber} en PDF.\n\nFavor acusar recibo de la recepción de este correo.\n\nLes saluda atentamente,\n${org?.name ?? "Polizza"}`
-      : `Estimados,\n\nFavor asignar folio/ciclo para la emisión de la propuesta N° ${proposal.proposalNumber} para nuestro cliente ${proposal.client.name}. La propuesta se adjunta en PDF.\n\nFavor acusar recibo de la recepción de este correo.\n\nLes saluda atentamente,\n${org?.name ?? "Polizza"}`);
+  const templateBody = renderEmailTemplate(
+    isEndorsement ? "ENDORSEMENT_TO_INSURER" : "PROPOSAL_TO_INSURER",
+    {
+      proposalNumber: proposal.proposalNumber,
+      clientName: proposal.client.name,
+      orgName: org?.name ?? "Polizza",
+      policyClause: endorsedPolicy
+        ? ` sobre la póliza N° ${endorsedPolicy.policyNumber}`
+        : "",
+    },
+  );
+  const body = note || templateBody || "";
   const html = emailLayout(
     subject,
     body

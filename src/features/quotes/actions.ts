@@ -10,6 +10,7 @@ import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import { canMoveQuote, quoteNeedsOffer } from "@/lib/domain/quote-flow";
 import { generateProposalNumber } from "@/features/proposals/number-generator";
 import { logActivity } from "@/server/activity";
+import { featureEnabled } from "@/server/tenant-features";
 
 function text(form: FormData, key: string): string {
   const value = form.get(key);
@@ -20,6 +21,9 @@ export async function createQuoteRequestAction(form: FormData): Promise<void> {
   const { ctx, db } = await requireOrgDb();
   if (!hasPermission(ctx.role, "quotes.write")) {
     redirect("/cotizaciones-comparativo?error=permiso");
+  }
+  if (!(await featureEnabled(db, ctx.organizationId, "QUOTE_COMPARATOR"))) {
+    redirect("/cotizaciones-comparativo?error=FEATURE_DISABLED");
   }
   const clientId = text(form, "clientId");
   const title = text(form, "title");

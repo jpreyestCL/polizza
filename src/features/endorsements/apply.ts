@@ -13,6 +13,7 @@ import {
   endorsementStatusEffect,
   endorsementTransitionError,
 } from "./schemas";
+import { specEndorsementOf } from "@/lib/domain/endorsement-catalog";
 
 export type ApplyEndorsementInput = {
   organizationId: string;
@@ -29,6 +30,8 @@ export type ApplyEndorsementInput = {
   /** Delta de prima. Se ignora en cancelación y anulación. */
   premiumAffectedDelta?: number | null;
   premiumExemptDelta?: number | null;
+  inalterabilityNote?: string | null;
+  initiatedBy?: string | null;
 };
 
 /** Día puro (columna Date, en UTC) como dd-mm-aaaa. */
@@ -58,6 +61,7 @@ export async function applyEndorsementToPolicy(
   const transitionError = endorsementTransitionError(input.type, policy.status);
   if (transitionError) return { ok: false, error: transitionError };
 
+  const spec = specEndorsementOf(input.type);
   const created = (await tx.endorsement.create({
     data: {
       organizationId: input.organizationId,
@@ -69,6 +73,12 @@ export async function applyEndorsementToPolicy(
       detail: input.detail,
       notes: input.notes,
       proposalId: input.proposalId,
+      specType: spec.code,
+      calcMethod: spec.calcMethod,
+      initiatedBy:
+        input.initiatedBy ??
+        (input.type === "CANCELACION_NO_PAGO" ? "NON_PAYMENT" : "BROKER"),
+      inalterabilityNote: input.inalterabilityNote ?? null,
       premiumAffectedDelta:
         input.premiumAffectedDelta != null
           ? new Prisma.Decimal(input.premiumAffectedDelta.toFixed(4))

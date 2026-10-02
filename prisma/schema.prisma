@@ -636,6 +636,7 @@ enum ProposalStatus {
   DEVUELTA
   POR_DESPACHAR
   RECHAZADA
+  DESCARTADA
 }
 
 model Proposal {
@@ -699,6 +700,8 @@ model Proposal {
   garantiaSuscripcion        Boolean          @default(false)
   conReserva                 Boolean          @default(false)
   conClausulaInalterabilidad Boolean          @default(false)
+  discardedAt                DateTime?
+  discardedReason            String?
   facultativo                Boolean          @default(false)
   // Comisión a nivel propuesta (overridea producto):
   commissionAffectPct        Decimal?         @db.Decimal(6, 3)
@@ -929,6 +932,10 @@ model Endorsement {
   // porque ese crédito lo calcula el cierre del plan.
   premiumAffectedDelta Decimal?      @db.Decimal(18, 4)
   premiumExemptDelta   Decimal?      @db.Decimal(18, 4)
+  specType             String?
+  calcMethod           String?
+  initiatedBy          String?
+  inalterabilityNote   String?
   createdById       String?
   createdAt         DateTime        @default(now())
 
@@ -1096,6 +1103,9 @@ model Policy {
   issueProblemCode     String?
   issueProblemDetail   String?
   issueProblemOpenedAt DateTime?
+  version                Int          @default(0)
+  reopenedIssueAt        DateTime?
+  reopenedIssueReason    String?
   createdById            String?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
@@ -1494,6 +1504,9 @@ model Claim {
   settledAmount         Decimal?    @db.Decimal(14, 2)
   assignedUserId        String?
   createdById           String?
+  voidedAt              DateTime?
+  voidReason            String?
+  reopenedAt            DateTime?
   currentStateStartedAt DateTime    @default(now())
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt
@@ -1636,6 +1649,7 @@ enum InstallmentStatus {
   RECHAZADA
   CASTIGADA
   ANULADA
+  CREDITED
 }
 
 enum PremiumMovementType {
@@ -1898,6 +1912,100 @@ model InstallmentPayment {
   @@index([installmentId])
 }
 
+enum AiExtractionStatus {
+  QUEUED
+  EXTRACTED
+  NEEDS_REVIEW
+  ACCEPTED
+  REJECTED
+}
+
+// Lectura local de un texto. No sale de la corredora.
+model AiExtraction {
+  id             String             @id @default(cuid())
+  organizationId String
+  sourceKind     String
+  sourceText     String
+  status         AiExtractionStatus @default(QUEUED)
+  policyNumber   String?
+  premiumNet     Decimal?           @db.Decimal(18, 4)
+  startDate      String?
+  endDate        String?
+  evidence       Json?
+  reviewNote     String?
+  createdById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([organizationId])
+}
+
+model ImportJob {
+  id             String    @id @default(cuid())
+  organizationId String
+  profile        String
+  status         String    @default("PREVIEW")
+  fileName       String?
+  decisionNote   String?
+  choice         String?
+  createdById    String?
+  appliedAt      DateTime?
+  revertedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  rows ImportJobRow[]
+
+  @@index([organizationId])
+}
+
+model ImportJobRow {
+  id                String  @id @default(cuid())
+  organizationId    String
+  jobId             String
+  rowNo             Int
+  action            String
+  payload           Json
+  createdEntityType String?
+  createdEntityId   String?
+  message           String?
+
+  job ImportJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([jobId])
+}
+
+model TenantFeature {
+  id             String  @id @default(cuid())
+  organizationId String
+  code           String
+  enabled        Boolean @default(false)
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model IdempotencyRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  key            String
+  fingerprint    String
+  command        String
+  resultJson     Json?
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+}
+
+// Segundo factor del usuario. No es de una corredora.
+model MfaEnrollment {
+  userId        String   @id
+  secretBase32  String
+  enabled       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+}
+
 model Installment {
   id             String            @id @default(cuid())
   organizationId String
@@ -1911,6 +2019,7 @@ model Installment {
   paidAt         DateTime?         @db.Date
   // Cobrado cuando el estado es parcial. El resto se anula al cancelar.
   amountPaid     Decimal?          @db.Decimal(14, 2)
+  creditedAmount Decimal?          @db.Decimal(18, 4)
   // La cuota se anuló por la cascada de cancelación o anulación.
   voidedByTermination Boolean      @default(false)
   // Estado previo a esa anulación, para reabrirlo al borrar el endoso.

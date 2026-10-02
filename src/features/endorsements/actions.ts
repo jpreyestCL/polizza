@@ -23,6 +23,11 @@ import {
   type EndorsementProposalValues,
 } from "./schemas";
 import { reverseEndorsementMovements } from "@/features/ledger/record";
+import { hasPermission } from "@/lib/factory-roles";
+import {
+  inalterabilityDecision,
+  specEndorsementOf,
+} from "@/lib/domain/endorsement-catalog";
 
 type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -91,6 +96,44 @@ export async function createEndorsementAction(
   const transitionError = endorsementTransitionError(data.type, policy.status);
   if (transitionError) return { ok: false, error: transitionError };
 
+  const clause = policy.proposalId
+    ? await db.proposal.findFirst({
+        where: { id: policy.proposalId },
+        select: { conClausulaInalterabilidad: true },
+      })
+    : null;
+  const spec = specEndorsementOf(data.type);
+  const premiumDelta =
+    (parsePremiumDelta(data.premiumAffectedDelta) ?? 0) +
+    (parsePremiumDelta(data.premiumExemptDelta) ?? 0);
+  const clauseDecision = inalterabilityDecision({
+    hasClause: Boolean(clause?.conClausulaInalterabilidad),
+    specType: spec.code,
+    lowersSumInsured: data.type === "MODIFICA_MONTO_PRIMA" && premiumDelta < 0,
+    removesLossPayee: false,
+    hasCreditorAuthorization: false,
+    canOverride: hasPermission(ctx.role, "endorsements.override_inalterability"),
+    overrideReason: data.notes,
+    recordingWhatInsurerIssued:
+      data.mode === "DIRECTO" && data.type === "CANCELACION_NO_PAGO",
+  });
+  if (clauseDecision.blocked) {
+    return {
+      ok: false,
+      error:
+        clauseDecision.code === "REASON_REQUIRED"
+          ? "REASON_REQUIRED: para omitir la autorización del acreedor el motivo debe tener al menos 10 caracteres."
+          : "PERMISSION_DENIED: la póliza tiene cláusula de inalterabilidad. Falta la autorización del acreedor.",
+    };
+  }
+  const inalterabilityNote = clauseDecision.warnCreditor
+    ? "La compañía ya emitió el endoso. Hay que avisar al acreedor."
+    : clause?.conClausulaInalterabilidad &&
+        hasPermission(ctx.role, "endorsements.override_inalterability") &&
+        data.notes.trim().length >= 10
+      ? `Excepción de inalterabilidad: ${data.notes.trim()}`
+      : null;
+
   const label = ENDORSEMENT_TYPE_LABELS[data.type];
 
   if (data.mode === "DIRECTO") {
@@ -108,6 +151,8 @@ export async function createEndorsementAction(
         proposalId: null,
         premiumAffectedDelta: parsePremiumDelta(data.premiumAffectedDelta),
         premiumExemptDelta: parsePremiumDelta(data.premiumExemptDelta),
+        inalterabilityNote,
+        initiatedBy: data.type === "CANCELACION_NO_PAGO" ? "NON_PAYMENT" : "BROKER",
       }),
     );
     if (!result.ok) return result;
@@ -120,6 +165,19 @@ export async function createEndorsementAction(
       summary: `${label} de póliza ${policy.policyNumber}`,
       userId: ctx.userId,
     });
+    if (clauseDecision.warnCreditor) {
+      await db.task.create({
+        data: {
+          organizationId: ctx.organizationId,
+          title: "Avisar al acreedor",
+          description: inalterabilityNote,
+          entityType: "POLICY",
+          entityId: policyId,
+          assignedUserId: policy.assignedUserId ?? ctx.userId,
+          createdById: ctx.userId,
+        },
+      });
+    }
     revalidatePath(`/polizas/${policyId}`);
     return { ok: true, data: { id: result.id } };
   }
@@ -161,7 +219,9 @@ export async function createEndorsementAction(
           endorsementDetail: data.detail,
           endorsementPremiumAffected: deltaDecimal(data.premiumAffectedDelta),
           endorsementPremiumExempt: deltaDecimal(data.premiumExemptDelta),
-          observations: toNullable(data.notes),
+          observations: [toNullable(data.notes), inalterabilityNote]
+            .filter(Boolean)
+            .join("\n") || null,
           clientId: policy.clientId,
           proposalNumber,
           companyId: policy.companyId,

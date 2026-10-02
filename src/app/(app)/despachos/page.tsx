@@ -6,6 +6,7 @@ const LABEL: Record<string, string> = {
   PENDIENTE: "Pendiente",
   ENVIADO: "Enviado",
   ENTREGADO: "Entregado",
+  CANCELADO: "Cancelado",
 };
 
 export default async function DespachosPage() {

@@ -71,6 +71,8 @@ export function CobranzaPanel({
     null,
   );
   const [partialAmount, setPartialAmount] = useState("");
+  const [partialMode, setPartialMode] = useState<"PARCIAL" | "PAGADA">("PARCIAL");
+  const [companyOn, setCompanyOn] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const form = useForm<GeneratePlanValues>({
     resolver: zodResolver(generatePlanSchema),
@@ -227,13 +229,17 @@ export function CobranzaPanel({
                   <Select
                     value={installment.status}
                     onValueChange={(value) => {
-                      if (value === "PARCIAL") {
+                      if (value === "PARCIAL" || value === "PAGADA") {
+                        setPartialMode(value);
                         setPartialTarget(installment);
                         setPartialAmount(
-                          installment.amountPaid != null
-                            ? String(installment.amountPaid)
-                            : "",
+                          value === "PAGADA"
+                            ? String(installment.amount)
+                            : installment.amountPaid != null
+                              ? String(installment.amountPaid)
+                              : "",
                         );
+                        setCompanyOn("");
                         return;
                       }
                       runAction(
@@ -251,7 +257,9 @@ export function CobranzaPanel({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {INSTALLMENT_STATUSES.filter((status) => status !== "ANULADA").map(
+                      {INSTALLMENT_STATUSES.filter(
+                        (status) => status !== "ANULADA" && status !== "CREDITED",
+                      ).map(
                         (status) => (
                           <SelectItem key={status} value={status}>
                             {INSTALLMENT_STATUS_LABELS[status]}
@@ -291,21 +299,37 @@ export function CobranzaPanel({
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cuota parcial</DialogTitle>
+            <DialogTitle>
+              {partialMode === "PAGADA" ? "Registrar pago" : "Cuota parcial"}
+            </DialogTitle>
             <DialogDescription>
-              Indica cuánto se cobró. Al cancelar o anular la póliza, esa parte
-              cuenta como pagada y el resto de la cuota se anula.
+              {partialMode === "PAGADA"
+                ? "La fecha de la compañía puede quedar vacía si todavía no aparece en su cartola."
+                : "Indica cuánto se cobró. Al cancelar o anular la póliza, esa parte cuenta como pagada y el resto de la cuota se anula."}
             </DialogDescription>
           </DialogHeader>
+          {partialMode === "PARCIAL" ? (
+            <div>
+              <label className="text-xs" htmlFor="partial-amount">
+                Monto cobrado
+              </label>
+              <Input
+                id="partial-amount"
+                inputMode="decimal"
+                value={partialAmount}
+                onChange={(event) => setPartialAmount(event.target.value)}
+              />
+            </div>
+          ) : null}
           <div>
-            <label className="text-xs" htmlFor="partial-amount">
-              Monto cobrado
+            <label className="text-xs" htmlFor="company-on">
+              Fecha registrada por la compañía
             </label>
             <Input
-              id="partial-amount"
-              inputMode="decimal"
-              value={partialAmount}
-              onChange={(event) => setPartialAmount(event.target.value)}
+              id="company-on"
+              type="date"
+              value={companyOn}
+              onChange={(event) => setCompanyOn(event.target.value)}
             />
           </div>
           <DialogFooter>
@@ -318,8 +342,9 @@ export function CobranzaPanel({
                 setBusyId(id);
                 const result = await setInstallmentStatusAction(
                   id,
-                  "PARCIAL",
-                  amount,
+                  partialMode,
+                  partialMode === "PAGADA" ? Number(partialTarget.amount) : amount,
+                  companyOn || null,
                 );
                 setBusyId(null);
                 if (!result.ok) {

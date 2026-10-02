@@ -8,6 +8,7 @@ export const INSTALLMENT_STATUSES = [
   "RECHAZADA",
   "CASTIGADA",
   "ANULADA",
+  "CREDITED",
 ] as const;
 
 export type InstallmentStatusValue = (typeof INSTALLMENT_STATUSES)[number];
@@ -23,6 +24,7 @@ export const INSTALLMENT_STATUS_LABELS: Record<
   RECHAZADA: "Rechazada",
   CASTIGADA: "Castigada",
   ANULADA: "Anulada",
+  CREDITED: "Acreditada",
 };
 
 export const generatePlanSchema = z.object({

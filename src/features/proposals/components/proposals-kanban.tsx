@@ -43,6 +43,10 @@ export function ProposalsKanban({
     if (item.status === to) return;
     // "Por despachar" se asigna al registrar la recepción de la póliza, no por
     // arrastre manual (review #2).
+    if (to === "DESCARTADA") {
+      toast.error("Descartar se registra en la ficha, con un motivo.");
+      return;
+    }
     if (to === "RECHAZADA") {
       toast.error(
         "El rechazo se registra en la ficha, con un motivo de al menos 10 caracteres.",
@@ -75,7 +79,7 @@ export function ProposalsKanban({
   return (
     <>
       <div className="flex gap-3 overflow-x-auto pb-2">
-        {PROPOSAL_STATUSES.map((status) => {
+        {PROPOSAL_STATUSES.filter((status) => status !== "DESCARTADA").map((status) => {
           const items = proposals.filter((p) => p.status === status);
           return (
             <div

@@ -9,6 +9,20 @@ import { getSessionCookie } from "better-auth/cookies";
 export function middleware(request: NextRequest) {
   const sessionCookie = getSessionCookie(request);
   if (sessionCookie) {
+    if (
+      request.cookies.get("polizza_mfa")?.value === "pending" &&
+      !request.nextUrl.pathname.startsWith("/login")
+    ) {
+      const host =
+        request.headers.get("x-forwarded-host") ??
+        request.headers.get("host") ??
+        request.nextUrl.host;
+      const proto =
+        request.headers.get("x-forwarded-proto") ??
+        request.nextUrl.protocol.replace(":", "");
+      const back = new URL("/login?paso=mfa", `${proto}://${host}`);
+      return NextResponse.redirect(back);
+    }
     return NextResponse.next();
   }
   // Construye el destino desde los headers reenviados por el proxy para

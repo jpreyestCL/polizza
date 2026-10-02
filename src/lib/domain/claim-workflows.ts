@@ -93,6 +93,15 @@ export function claimWorkflowFamily(
   return null;
 }
 
+/** Plazo de liquidación de la plantilla. Si no hay, usa el cierre. */
+export function adjustmentDeadlineDays(family: ClaimWorkflowFamily): number | null {
+  const steps = CLAIM_WORKFLOWS[family];
+  const liquidation = steps.find((step) => /liquidaci/i.test(step.action));
+  if (liquidation?.dueDays != null) return liquidation.dueDays;
+  const close = steps.find((step) => step.action === "Cierre");
+  return close?.dueDays ?? null;
+}
+
 export function claimStepDueDate(from: Date, dueDays: number | null): Date | null {
   if (dueDays == null) return null;
   const next = new Date(

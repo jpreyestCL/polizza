@@ -6,6 +6,10 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
+import {
+  beginSecondFactorAction,
+  confirmSecondFactorAction,
+} from "@/features/access/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +26,9 @@ import {
 export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState<"password" | "totp" | "enroll">("password");
+  const [otpauth, setOtpauth] = useState("");
+  const [code, setCode] = useState("");
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,6 +46,25 @@ export default function LoginPage() {
       });
       return;
     }
+    const next = await beginSecondFactorAction();
+    if (next.step === "app") {
+      router.push("/");
+      router.refresh();
+      return;
+    }
+    if (next.step === "enroll") setOtpauth(next.otpauth);
+    setStep(next.step);
+  }
+
+  async function confirmCode(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    const result = await confirmSecondFactorAction(code);
+    setLoading(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
     router.push("/");
     router.refresh();
   }
@@ -54,6 +80,43 @@ export default function LoginPage() {
         </p>
       </div>
 
+      {step !== "password" ? (
+        <form onSubmit={confirmCode} className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            {step === "enroll"
+              ? "Esta corredora pide un segundo factor. Agrega esta clave en tu aplicación de códigos y confirma con el primer código."
+              : "Ingresa el código de 6 dígitos."}
+          </p>
+          {step === "enroll" && otpauth ? (
+            <p className="break-all rounded-md border bg-muted/40 p-2 text-xs">{otpauth}</p>
+          ) : null}
+          <Input
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            placeholder="123456"
+            required
+          />
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading && <Loader2 className="animate-spin" />}
+            Confirmar código
+          </Button>
+        </form>
+      ) : null}
+
+      {step === "password" && process.env.NEXT_PUBLIC_SSO_GOOGLE === "1" ? (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={() => authClient.signIn.social({ provider: "google", callbackURL: "/" })}
+        >
+          Entrar con Google
+        </Button>
+      ) : null}
+
+      {step === "password" ? (
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="email">Correo</Label>
@@ -84,6 +147,7 @@ export default function LoginPage() {
           Entrar
         </Button>
       </form>
+      ) : null}
 
       <p className="text-sm text-muted-foreground">
         ¿No tienes cuenta?{" "}

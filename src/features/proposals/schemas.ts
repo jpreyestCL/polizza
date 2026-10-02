@@ -8,6 +8,7 @@ export const PROPOSAL_STATUSES = [
   "DEVUELTA",
   "POR_DESPACHAR",
   "RECHAZADA",
+  "DESCARTADA",
 ] as const;
 
 export type ProposalStatusValue = (typeof PROPOSAL_STATUSES)[number];
@@ -19,6 +20,7 @@ export const STATUS_LABELS: Record<ProposalStatusValue, string> = {
   DEVUELTA: "Devuelta a la cía",
   POR_DESPACHAR: "Por despachar",
   RECHAZADA: "Rechazada por la compañía",
+  DESCARTADA: "Descartada",
 };
 
 /** Estados en los que la propuesta queda bloqueada para edición. */
@@ -26,6 +28,7 @@ export const LOCKED_STATUSES: ProposalStatusValue[] = [
   "POR_ENVIAR",
   "ENVIADA_COMPANIA",
   "POR_DESPACHAR",
+  "DESCARTADA",
 ];
 
 export function isProposalLocked(status: string): boolean {

@@ -24,6 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { factoryRoleOf } from "@/lib/factory-roles";
 
 type NavItem = {
   href: string;
@@ -58,6 +59,8 @@ const NAV_ITEMS: NavItem[] = [
   },
   { href: "/cobranza", label: "Cobranza", icon: Wallet, available: true },
   { href: "/informes", label: "Informes", icon: BarChart3, available: true },
+  { href: "/extraccion", label: "Extracción", icon: FileText, available: true },
+  { href: "/importaciones", label: "Importaciones", icon: FileText, available: true },
   {
     href: "/comisiones",
     label: "Revisión comisiones",
@@ -133,7 +136,7 @@ export function AppNav({
 }) {
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => {
-    if (item.adminOnly && role !== "admin") return false;
+    if (item.adminOnly && factoryRoleOf(role ?? "") !== "ADMIN") return false;
     if (item.managerOnly && role !== "admin" && role !== "gerente") {
       return false;
     }

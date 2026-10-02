@@ -76,6 +76,9 @@ export default async function InformesPage() {
               <p className="mt-1 text-sm">{report.question}</p>
               <p className="mt-2 text-sm font-medium">{report.value}</p>
               <p className="mt-1 text-xs text-muted-foreground">{report.note}</p>
+              <a className="mt-2 inline-block text-xs underline" href={`/api/informes/csv?codigo=${report.id}`}>
+                Descargar CSV
+              </a>
             </article>
           ))}
         </div>

@@ -370,6 +370,13 @@ export async function changeProposalStatusAction(
       };
     }
   }
+  if (data.status === "DESCARTADA") {
+    return {
+      ok: false,
+      error:
+        "INVALID_TRANSITION: descartar se hace en la ficha, con un motivo.",
+    };
+  }
   if (data.status === "POR_DESPACHAR") {
     return {
       ok: false,
@@ -1030,11 +1037,11 @@ export async function dispatchPolicyToContratanteAction(
 
   // Guarda de re-despacho: si la propuesta ya tiene una póliza en la cartera no
   // se vuelve a crear ni se reenvía el correo (review #4/#7).
-  const alreadyDispatched = await db.policy.findFirst({
+  const existingPolicy = await db.policy.findFirst({
     where: { proposalId },
-    select: { id: true },
+    select: { id: true, reopenedIssueAt: true },
   });
-  if (alreadyDispatched) {
+  if (existingPolicy && !existingPolicy.reopenedIssueAt) {
     return {
       ok: false,
       error: "Esta propuesta ya fue despachada y tiene una póliza en la cartera.",
@@ -1085,28 +1092,43 @@ export async function dispatchPolicyToContratanteAction(
   try {
     policyId = await db.$transaction(async (tx) => {
       await setTenantGuc(tx, ctx.organizationId);
-      const policy = await tx.policy.create({
-        data: {
-          organizationId: ctx.organizationId,
-          clientId: proposal.clientId,
-          proposalId,
-          policyNumber,
-          companyId: proposal.companyId,
-          lineId: proposal.lineId,
-          branchId: proposal.branchId,
-          status: "VIGENTE",
-          premiumNet:
-            totalNet > 0 ? new Prisma.Decimal(totalNet) : proposal.premiumNet,
-          issueProblemCode: proposal.emissionErrorReason,
-          issueProblemDetail: proposal.emissionErrorDetail,
-          issueProblemOpenedAt: proposal.emissionErrorReason ? new Date() : null,
-          currency: proposal.currency,
-          startDate: proposal.startDate,
-          endDate: proposal.endDate,
-          assignedUserId: proposal.assignedUserId ?? ctx.userId,
-          createdById: ctx.userId,
-        },
-      });
+      const policy = existingPolicy
+        ? await tx.policy.update({
+            where: { id: existingPolicy.id },
+            data: {
+              policyNumber,
+              premiumNet:
+                totalNet > 0 ? new Prisma.Decimal(totalNet) : proposal.premiumNet,
+              issueProblemCode: proposal.emissionErrorReason,
+              issueProblemDetail: proposal.emissionErrorDetail,
+              issueProblemOpenedAt: proposal.emissionErrorReason ? new Date() : null,
+              reopenedIssueAt: null,
+              reopenedIssueReason: null,
+              version: { increment: 1 },
+            },
+          })
+        : await tx.policy.create({
+            data: {
+              organizationId: ctx.organizationId,
+              clientId: proposal.clientId,
+              proposalId,
+              policyNumber,
+              companyId: proposal.companyId,
+              lineId: proposal.lineId,
+              branchId: proposal.branchId,
+              status: "VIGENTE",
+              premiumNet:
+                totalNet > 0 ? new Prisma.Decimal(totalNet) : proposal.premiumNet,
+              issueProblemCode: proposal.emissionErrorReason,
+              issueProblemDetail: proposal.emissionErrorDetail,
+              issueProblemOpenedAt: proposal.emissionErrorReason ? new Date() : null,
+              currency: proposal.currency,
+              startDate: proposal.startDate,
+              endDate: proposal.endDate,
+              assignedUserId: proposal.assignedUserId ?? ctx.userId,
+              createdById: ctx.userId,
+            },
+          });
 
       const itemsData = proposalItems.map((it) => {
         const itData = (it.data ?? {}) as Record<string, unknown>;
@@ -1127,7 +1149,7 @@ export async function dispatchPolicyToContratanteAction(
           currency: proposal.currency,
         };
       });
-      if (itemsData.length > 0) {
+      if (!existingPolicy && itemsData.length > 0) {
         await tx.policyItem.createMany({ data: itemsData });
       }
 
@@ -1157,7 +1179,7 @@ export async function dispatchPolicyToContratanteAction(
           };
         }),
       );
-      if (coveragesData.length > 0) {
+      if (!existingPolicy && coveragesData.length > 0) {
         await tx.policyCoverage.createMany({ data: coveragesData });
       }
 
