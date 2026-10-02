@@ -161,7 +161,10 @@ lectura) con alcance de toda la corredora. El ejecutivo histórico ve la
 corredora completa, igual que el resto. El gerente que ya existe conserva
 los permisos de administrador para no dejar la corredora piloto sin gestión.
 Borrar clientes, propuestas, pólizas y siniestros sigue en gerente y
-administrador.
+administrador. Los seis roles también existen en Better Auth, así que una
+invitación o un cambio de rol guarda el código de fábrica. En
+Configuración → Usuarios y roles se invita, se cambia el rol y se quita a
+un miembro; la corredora no puede quedar sin administrador.
 
 ## Informes R-01 a R-12
 
@@ -170,9 +173,10 @@ siniestros, sin el catálogo de las doce preguntas.
 
 **Ahora.** La página lista R-01 a R-12 con la pregunta y la cifra que sale
 de los datos actuales. R-05 cuenta cuotas marcadas pagadas, porque no hay
-un pago aparte de la cuota. R-11 no calcula tasa de éxito: la cotización de
-auto no tiene ganado ni perdido. R-12 usa la prima devengada a hoy y no
-mezcla monedas.
+un pago aparte de la cuota. R-11 calcula la tasa de éxito sobre las
+solicitudes de cotización ganadas y perdidas; la cotización de auto se
+cuenta aparte porque no tiene ganado ni perdido. R-12 usa la prima
+devengada a hoy y no mezcla monedas.
 
 ## Siniestros
 
@@ -245,6 +249,42 @@ del pool.
 
 **Ahora.** Guardar una propuesta de póliza abre o actualiza la misma póliza: elaboración, enviada, por despachar, rechazada o descartada, y al despachar pasa a vigente con sus ítems si todavía no los tenía. La cartera esconde elaboración, enviada, rechazada y descartada; por despachar sí se ve, porque la compañía ya emitió. Los dieciocho tipos de endoso se pueden registrar. Si la póliza tiene un solo ítem, el endoso de monto le deja el nuevo monto asegurado. La pérdida total puede apuntar al siniestro y no cierra el plan de pago. La rebaja de vigencia y la anulación de prórroga mueven el fin. El cambio de comisión guarda los porcentajes nuevos. Cada póliza guarda `lineageId` y el período; al despachar la sucesora el origen queda renovado. La no renovación usa los 23 motivos y se puede revertir. La liquidación acepta un archivo y nombra las pólizas que no estaban o que no tenían comisión pendiente. Al cambiar el estado del siniestro se puede elegir el subestado de esa etapa, y el cierre sigue pidiendo el resultado. Aplicar un lote de Brokeris crea la póliza si la fila traducida trae número y RUT, el endoso o el siniestro si trae la póliza, y la no renovación si la póliza ya está. Una fila en revisión no se crea. Los documentos se traducen y no se inventa el archivo. Revertir el lote borra la póliza, el endoso o el siniestro que ese lote creó, y en la no renovación devuelve la marca anterior sin borrar la póliza. Borrar un endoso devuelve vigencia, comisión, monto del ítem y el estado que ese endoso había dejado, si ninguno posterior los volvió a cambiar. Una propuesta que ya existía sin fila de póliza recibe esa fila al migrar. La lista de propuestas sigue mostrando la elaboración aunque la póliza ya exista, y la esconde cuando esa póliza entra a la cartera. El volcado X1–X17 sigue fuera del repositorio.
 
+## Ítems en la póliza, endosos por ítem, informes filtrados y usuarios
+
+**Antes.** Los ítems, las coberturas y el plan de pago vivían en la
+propuesta y se copiaban a la póliza recién al despachar. El endoso de
+agregar o eliminar ítems no tocaba la materia. No existían la
+rehabilitación ni el cambio de corredor, y el cambio de comisión no
+movía la comisión esperada. Al importar Brokeris la renovación no enlazaba
+madre y sucesora, una compañía desconocida dejaba la fila sin crear, y la
+póliza importada quedaba sin ítems. La liquidación de comisiones leía solo
+«póliza;monto» sin encabezado. Informes no filtraba y R-08 no medía el
+cierre a tiempo. Invitar usuarios fallaba porque la tabla de invitaciones
+no tenía `createdAt`.
+
+**Ahora.** Cada cambio de ítems, coberturas o plan en la propuesta se
+copia a la póliza en borrador dentro de la misma acción; el plan queda
+enlazado a la póliza y las cuotas pasan a cobranza solo al despachar. Un
+borrador que ya existía recibe sus ítems con la siguiente edición. El
+endoso elige el ítem: eliminar, reemplazar y la pérdida total lo sacan de
+la materia con fecha; agregar y reemplazar crean el nuevo; el endoso de
+monto cambia el monto de ese ítem y el de glosa su descripción. La lista
+de endosos dice qué ítem tocó, y la materia de la póliza muestra tachado
+lo que salió. La pérdida total cancela la póliza solo si no le quedan
+ítems. La rehabilitación se ofrece solo con la póliza cancelada o anulada:
+la deja vigente, reversa el crédito del término en el libro y reabre las
+cuotas. El cambio de corredor marca la póliza no renovable por ese motivo.
+El cambio de comisión asienta un movimiento de prima cero con la
+diferencia de comisión. Borrar cualquiera de esos endosos devuelve lo que
+cambió. La importación crea la compañía si no existe, crea el ítem y las
+coberturas de la fila (`Daños=650|RC=1000`) y enlaza la madre con la
+sucesora; revertir el lote devuelve la madre y borra la compañía si nadie
+más la usa. La liquidación lee un CSV con encabezado, comillas y
+separadores de miles chilenos o ingleses. Informes filtra por mes o rango,
+compañía y ejecutivo, y los CSV respetan el filtro. R-07 muestra la
+antigüedad de las comisiones pendientes y R-08 el porcentaje de siniestros
+cerrados a tiempo.
+
 ## Lo que queda apagado a propósito
 
 | Tema | Cómo queda | Por qué no se enciende solo |
@@ -252,3 +292,6 @@ del pool.
 | Llamada a un modelo para leer el PDF | La extracción es local, por el texto pegado, y la comparación sigue usando los campos digitados | Encender un proveedor externo sin contrato mandaría datos de clientes afuera |
 | SSO Google/Microsoft y MFA obligatorio | `mfaRequired` y `ssoEnabled` nacen en falso. El login consulta el segundo factor y, apagado, deja pasar la contraseña. Google y Microsoft se registran si hay credenciales. El botón de Google aparece con `NEXT_PUBLIC_SSO_GOOGLE=1` | No hay proveedor de identidad en el entorno de la corredora piloto. Encender el segundo factor sin inscripción deja a esa persona en la pantalla del código |
 | RLS forzado | La política existe y no está forzada | Forzarla con el rol dueño de las tablas, sin la variable de sesión en cada conexión, deja la aplicación sin leer |
+| Portales de las aseguradoras | Las credenciales se guardan cifradas y no se llama a ningún portal | Cada compañía tiene su propio portal y no hay acuerdo de integración |
+| Volcado X1–X17 de Brokeris | El traductor, el lote y el cuadre están listos; la carga completa espera el volcado | El volcado no está en el repositorio |
+| Solo lectura en cada acción | La navegación, usuarios, comisiones y portales miran la matriz de permisos; varias acciones de escritura siguen pidiendo solo sesión de la corredora | Revisar acción por acción sin romper los roles históricos queda como trabajo aparte |
