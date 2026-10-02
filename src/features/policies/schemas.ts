@@ -10,6 +10,33 @@ export const POLICY_STATUSES = [
 
 export type PolicyStatusValue = (typeof POLICY_STATUSES)[number];
 
+export const NON_RENEWAL_REASONS = [
+  "PRECIO",
+  "CAMBIO_COMPANIA",
+  "CLIENTE_NO_RENOVO",
+  "VENTA_BIEN",
+  "SIN_RESPUESTA",
+  "OTRO",
+] as const;
+
+export type NonRenewalReason = (typeof NON_RENEWAL_REASONS)[number];
+
+export const NON_RENEWAL_REASON_LABELS: Record<NonRenewalReason, string> = {
+  PRECIO: "Precio",
+  CAMBIO_COMPANIA: "Cambió de compañía",
+  CLIENTE_NO_RENOVO: "El cliente no renovó",
+  VENTA_BIEN: "Vendió el bien",
+  SIN_RESPUESTA: "Sin respuesta",
+  OTRO: "Otro",
+};
+
+export const nonRenewalSchema = z.object({
+  reason: z.enum(NON_RENEWAL_REASONS),
+  note: z.string().trim().max(500).default(""),
+});
+
+export type NonRenewalValues = z.infer<typeof nonRenewalSchema>;
+
 export const POLICY_STATUS_LABELS: Record<PolicyStatusValue, string> = {
   VIGENTE: "Vigente",
   VENCIDA: "Vencida",

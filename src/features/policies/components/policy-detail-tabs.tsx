@@ -36,6 +36,7 @@ export function PolicyDetailTabs({
   lineName,
   assignedUserName,
   ufValue,
+  termination,
 }: {
   policy: PolicyDetail;
   activity: ActivityLog[];
@@ -45,6 +46,11 @@ export function PolicyDetailTabs({
   lineName: string | null;
   assignedUserName: string | null;
   ufValue: number | null;
+  termination?: {
+    balance: number;
+    isEstimate: boolean;
+    reason: string | null;
+  } | null;
 }) {
   const currency = policy.currency as CurrencyCode;
   const insuredTotal = policy.items.reduce(
@@ -269,6 +275,7 @@ export function PolicyDetailTabs({
           policyId={policy.id}
           installments={installments}
           defaultCurrency={currency}
+          termination={termination}
         />
       </TabsContent>
 

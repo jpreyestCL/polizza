@@ -62,6 +62,18 @@ export default async function PanelPage() {
       alert: data.metrics.renewals > 0,
     },
     {
+      label: "Vencidas sin gestionar",
+      value: data.metrics.expiredUnmanaged,
+      href: "/renovaciones",
+      alert: data.metrics.expiredUnmanaged > 0,
+    },
+    {
+      label: "Cuotas vencidas",
+      value: data.metrics.overdueInstallments,
+      href: "/cobranza",
+      alert: data.metrics.overdueInstallments > 0,
+    },
+    {
       label: "Tareas abiertas",
       value: data.metrics.openTasks,
       href: "/tareas",
@@ -75,7 +87,7 @@ export default async function PanelPage() {
         description="Resumen operativo de la corredora."
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {metrics.map((metric) => (
           <Link
             key={metric.label}

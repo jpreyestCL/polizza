@@ -9,7 +9,10 @@ import { canDeletePolicy } from "@/lib/roles";
 import {
   policyFormSchema,
   policyStatusChangeSchema,
+  nonRenewalSchema,
+  NON_RENEWAL_REASON_LABELS,
   POLICY_STATUS_LABELS,
+  type NonRenewalValues,
   type PolicyFormValues,
   type PolicyStatusChangeValues,
 } from "./schemas";
@@ -378,6 +381,21 @@ export async function renewPolicyAction(id: string): Promise<ActionResult> {
   if (policy.status === "RENOVADA") {
     return { ok: false, error: "Esta póliza ya fue renovada." };
   }
+  if (policy.status === "CANCELADA" || policy.status === "ANULADA") {
+    return { ok: false, error: "Una póliza cancelada o anulada no se renueva." };
+  }
+  if (policy.notRenewable) {
+    return {
+      ok: false,
+      error: "Esta póliza está marcada como no renovable.",
+    };
+  }
+  if (policy.nonRenewalAt) {
+    return {
+      ok: false,
+      error: "Hay una no renovación registrada. Revierte esa decisión antes de renovar.",
+    };
+  }
 
   const newNumber = `${policy.policyNumber}-R`;
   try {
@@ -479,6 +497,111 @@ export async function renewPolicyAction(id: string): Promise<ActionResult> {
     }
     throw error;
   }
+}
+
+export async function recordNonRenewalAction(
+  id: string,
+  values: NonRenewalValues,
+): Promise<ActionResult> {
+  const parsed = nonRenewalSchema.safeParse(values);
+  if (!parsed.success) {
+    return { ok: false, error: "Elige un motivo de no renovación." };
+  }
+  const { ctx, db } = await requireOrgDb();
+  const policy = await db.policy.findFirst({
+    where: { id },
+    select: { id: true, policyNumber: true, status: true },
+  });
+  if (!policy) return { ok: false, error: "La póliza no existe o no tienes acceso." };
+  if (policy.status === "RENOVADA" || policy.status === "CANCELADA" || policy.status === "ANULADA") {
+    return { ok: false, error: "Esta póliza ya no está en la cola de renovación." };
+  }
+
+  await db.policy.update({
+    where: { id },
+    data: {
+      nonRenewalReason: parsed.data.reason,
+      nonRenewalNote: emptyToNull(parsed.data.note),
+      nonRenewalAt: new Date(),
+    },
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "POLICY",
+    entityId: id,
+    action: "non_renewal",
+    summary: `Póliza ${policy.policyNumber} no se renueva: ${NON_RENEWAL_REASON_LABELS[parsed.data.reason]}`,
+    userId: ctx.userId,
+  });
+  revalidatePath("/polizas");
+  revalidatePath(`/polizas/${id}`);
+  revalidatePath("/renovaciones");
+  revalidatePath("/informes");
+  return { ok: true, id };
+}
+
+export async function revertNonRenewalAction(id: string): Promise<ActionResult> {
+  const { ctx, db } = await requireOrgDb();
+  const policy = await db.policy.findFirst({
+    where: { id },
+    select: { id: true, policyNumber: true, nonRenewalAt: true },
+  });
+  if (!policy) return { ok: false, error: "La póliza no existe o no tienes acceso." };
+  if (!policy.nonRenewalAt) {
+    return { ok: false, error: "Esta póliza no tiene una no renovación registrada." };
+  }
+  await db.policy.update({
+    where: { id },
+    data: {
+      nonRenewalReason: null,
+      nonRenewalNote: null,
+      nonRenewalAt: null,
+    },
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "POLICY",
+    entityId: id,
+    action: "non_renewal_reverted",
+    summary: `No renovación revertida en la póliza ${policy.policyNumber}`,
+    userId: ctx.userId,
+  });
+  revalidatePath("/polizas");
+  revalidatePath(`/polizas/${id}`);
+  revalidatePath("/renovaciones");
+  revalidatePath("/informes");
+  return { ok: true, id };
+}
+
+export async function setPolicyRenewableAction(
+  id: string,
+  renewable: boolean,
+): Promise<ActionResult> {
+  const { ctx, db } = await requireOrgDb();
+  const policy = await db.policy.findFirst({
+    where: { id },
+    select: { id: true, policyNumber: true },
+  });
+  if (!policy) return { ok: false, error: "La póliza no existe o no tienes acceso." };
+  await db.policy.update({
+    where: { id },
+    data: { notRenewable: !renewable },
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "POLICY",
+    entityId: id,
+    action: "renewable_changed",
+    summary: renewable
+      ? `Póliza ${policy.policyNumber} vuelve a ser renovable`
+      : `Póliza ${policy.policyNumber} marcada como no renovable`,
+    userId: ctx.userId,
+  });
+  revalidatePath("/polizas");
+  revalidatePath(`/polizas/${id}`);
+  revalidatePath("/renovaciones");
+  revalidatePath("/informes");
+  return { ok: true, id };
 }
 
 export async function deletePolicyAction(id: string): Promise<ActionResult> {

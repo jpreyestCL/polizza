@@ -1,3 +1,5 @@
+import { commissionTolerance } from "@/lib/domain/money";
+
 /**
  * Cálculo de comisiones. Funciones puras (sin Prisma) para poder testearlas
  * y reusarlas en queries/actions y UI.
@@ -127,8 +129,7 @@ export function isPaidByCompany(
   if (decision === true) return true;
   if (decision === false) return false;
   if (brokerCommission <= 0) return false;
-  // Tolerancia de 1 peso por redondeos de conversión de moneda.
-  return totalPaid + 0.01 >= brokerCommission;
+  return totalPaid + commissionTolerance(brokerCommission) >= brokerCommission;
 }
 
 /**
@@ -136,7 +137,8 @@ export function isPaidByCompany(
  * en % sobre lo esperado. Cubre diferencias de redondeo y de valor de la UF
  * entre la fecha que usó la compañía y la de referencia.
  */
-export const COMMISSION_TOLERANCE_PCT = 1;
+/** 0,5 % sobre lo esperado. El piso de 0,01 vive en `commissionTolerance`. */
+export const COMMISSION_TOLERANCE_PCT = 0.5;
 
 export type RateSource = "same" | "entered" | "reference" | "implied" | "none";
 

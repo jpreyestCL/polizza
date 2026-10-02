@@ -40,6 +40,8 @@ export type DashboardData = {
     activeProposals: number;
     vigentePolicies: number;
     renewals: number;
+    expiredUnmanaged: number;
+    overdueInstallments: number;
     openTasks: number;
   };
   slaProposals: ProposalListItem[];
@@ -54,13 +56,27 @@ export async function getDashboardData(
   db: Db,
 ): Promise<DashboardData> {
   const holidays = await getHolidaySet();
-  const [clients, proposals, policies, renewals, tasks, recentActivity] =
+  const today = new Date();
+  const todayUtc = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+  );
+  const [clients, proposals, policies, renewals, tasks, overdueInstallments, recentActivity] =
     await Promise.all([
       db.client.count(),
       listAllProposalsForKanban(ctx, db, holidays),
       listAllPoliciesForDashboard(ctx, db),
       listAllRenewalsForDashboard(ctx, db),
       listTasks(ctx, db),
+      db.installment.count({
+        where: {
+          status: "PENDIENTE",
+          dueDate: { lt: todayUtc },
+          policyId: { not: null },
+          ...(ctx.role === "ejecutivo"
+            ? { policy: { assignedUserId: ctx.userId } }
+            : {}),
+        },
+      }),
       db.activityLog.findMany({
         orderBy: { createdAt: "desc" },
         take: 8,
@@ -93,6 +109,10 @@ export async function getDashboardData(
       activeProposals: activeProposals.length,
       vigentePolicies: vigentePolicies.length,
       renewals: renewals.length,
+      expiredUnmanaged: renewals.filter(
+        (policy) => policy.renewalStatus === "EXPIRED_UNMANAGED",
+      ).length,
+      overdueInstallments,
       openTasks: openTasks.length,
     },
     slaProposals: slaProposals.slice(0, 5),

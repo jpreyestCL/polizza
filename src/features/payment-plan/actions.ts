@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
+import { splitInstallments } from "@/lib/domain/money";
 import {
   paymentPlanSchema,
   proposalLogSchema,
@@ -95,26 +96,34 @@ export async function upsertPaymentPlanAction(
     const count = Number(parsed.data.installmentsCount);
     const valor = Number(parsed.data.valorCuota);
     const firstDate = toDate(parsed.data.firstPaymentDate);
-    if (count > 0 && valor > 0 && firstDate) {
+    const gross = Number(parsed.data.primaBruta);
+    const amounts =
+      count > 0 && gross > 0
+        ? splitInstallments(gross, count, proposal.currency === "CLP" ? 0 : 2)
+        : count > 0 && valor > 0
+          ? Array.from({ length: count }, () => valor)
+          : [];
+    if (amounts.length > 0 && firstDate) {
       // Eliminar cuotas anteriores de este plan
       await db.installment.deleteMany({
         where: { paymentPlanId: planId },
       });
-      const rows: Prisma.InstallmentCreateManyInput[] = [];
-      for (let i = 0; i < count; i++) {
-        const d = new Date(firstDate);
-        d.setMonth(d.getMonth() + i);
-        rows.push({
-          organizationId: ctx.organizationId,
-          paymentPlanId: planId,
-          policyId: null,
-          number: i + 1,
-          amount: new Prisma.Decimal(valor),
-          currency: proposal.currency,
-          dueDate: d,
-          status: "PENDIENTE",
-        });
-      }
+      const rows: Prisma.InstallmentCreateManyInput[] = amounts.map(
+        (amount, i) => {
+          const d = new Date(firstDate);
+          d.setMonth(d.getMonth() + i);
+          return {
+            organizationId: ctx.organizationId,
+            paymentPlanId: planId,
+            policyId: null,
+            number: i + 1,
+            amount: new Prisma.Decimal(amount),
+            currency: proposal.currency,
+            dueDate: d,
+            status: "PENDIENTE" as const,
+          };
+        },
+      );
       await db.installment.createMany({ data: rows });
     }
   }

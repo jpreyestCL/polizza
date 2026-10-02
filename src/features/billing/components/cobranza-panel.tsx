@@ -49,10 +49,16 @@ export function CobranzaPanel({
   policyId,
   installments,
   defaultCurrency,
+  termination,
 }: {
   policyId: string;
   installments: InstallmentItem[];
   defaultCurrency: CurrencyCode;
+  termination?: {
+    balance: number;
+    isEstimate: boolean;
+    reason: string | null;
+  } | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -108,8 +114,26 @@ export function CobranzaPanel({
     .filter((i) => i.status === "PENDIENTE")
     .reduce((sum, i) => sum + i.amount, 0);
 
+  const closedLabel =
+    termination?.reason === "ANNULMENT"
+      ? "Anulación"
+      : termination?.reason === "CANCELLATION"
+        ? "Cancelación"
+        : "Término";
+
   return (
     <div className="space-y-4">
+      {termination && (
+        <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+          Saldo de {closedLabel.toLowerCase()}:{" "}
+          <span className="font-medium">
+            {formatMoney(termination.balance, defaultCurrency)}
+          </span>
+          {termination.isEstimate
+            ? ". Estimado hasta que la compañía confirme el monto. Positivo: el cliente debe. Negativo: devolución."
+            : "."}
+        </p>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {installments.length > 0 && (
           <p className="text-sm text-muted-foreground">

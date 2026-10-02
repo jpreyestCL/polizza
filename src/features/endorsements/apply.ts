@@ -1,6 +1,10 @@
 import "server-only";
 import type { EndorsementType } from "@prisma/client";
 import {
+  closePlanOnTermination,
+  terminationKindOf,
+} from "@/features/billing/termination";
+import {
   ENDORSEMENT_TYPE_LABELS,
   endorsementStatusEffect,
   endorsementTransitionError,
@@ -82,6 +86,14 @@ export async function applyEndorsementToPolicy(
         changedById: input.userId,
       },
     });
+    const kind = terminationKindOf(input.type);
+    if (kind) {
+      await closePlanOnTermination(tx, {
+        policyId: input.policyId,
+        kind,
+        effectiveDate: input.effectiveDate,
+      });
+    }
   }
   return { ok: true, id: created.id };
 }

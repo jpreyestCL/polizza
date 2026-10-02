@@ -3,6 +3,7 @@ import { Building2 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import type { PolicyListItem } from "../queries";
 import type { CatalogItem } from "@/features/catalog/queries";
+import { RENEWAL_STATUS_LABELS } from "@/lib/domain/renewal-status";
 import { PolicyRenewalBadge } from "./policy-badges";
 import { RenewPolicyButton } from "./renew-policy-button";
 
@@ -34,6 +35,9 @@ export function RenewalsList({
                 level={policy.renewalLevel}
                 days={policy.daysToExpiry}
               />
+              <span className="text-xs text-muted-foreground">
+                {RENEWAL_STATUS_LABELS[policy.renewalStatus]}
+              </span>
             </div>
             <p className="text-sm">{policy.client.name}</p>
             <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">

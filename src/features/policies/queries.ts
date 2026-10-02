@@ -4,7 +4,12 @@ import type { SessionContext } from "@/server/context";
 import { computeGross } from "./premium";
 import type { Db } from "@/server/db";
 import { canSeeAllClients } from "@/lib/roles";
-import { needsRenewal, renewalInfo, type RenewalLevel } from "@/lib/renewal";
+import { renewalInfo, type RenewalLevel } from "@/lib/renewal";
+import {
+  ACTIONABLE_RENEWAL_STATUSES,
+  type RenewalStatus,
+} from "@/lib/domain/renewal-status";
+import { renewalStatusByPolicy } from "./renewal-context";
 import {
   buildPaginated,
   cursorArgs,
@@ -27,7 +32,76 @@ export type PolicyListItem = {
   client: { id: string; name: string };
   daysToExpiry: number | null;
   renewalLevel: RenewalLevel;
+  renewalStatus: RenewalStatus;
 };
+
+type PolicyListRow = {
+  id: string;
+  policyNumber: string;
+  status: PolicyStatus;
+  premiumNet: { toString(): string } | null;
+  currency: string;
+  startDate: Date | null;
+  endDate: Date | null;
+  companyId: string | null;
+  lineId: string | null;
+  assignedUserId: string | null;
+  createdAt: Date;
+  notRenewable: boolean;
+  nonRenewalAt: Date | null;
+  productId: string | null;
+  client: { id: string; name: string };
+};
+
+async function toPolicyListItems(
+  db: Db,
+  rows: PolicyListRow[],
+): Promise<PolicyListItem[]> {
+  const productIds = [
+    ...new Set(rows.map((row) => row.productId).filter((id): id is string => !!id)),
+  ];
+  const products =
+    productIds.length === 0
+      ? []
+      : await db.insuranceProduct.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, isRenewable: true },
+        });
+  const renewableByProduct = new Map(products.map((product) => [product.id, product.isRenewable]));
+  const statuses = await renewalStatusByPolicy(
+    db,
+    rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      endDate: row.endDate,
+      notRenewable: row.notRenewable,
+      nonRenewalAt: row.nonRenewalAt,
+      productRenewable: row.productId
+        ? (renewableByProduct.get(row.productId) ?? null)
+        : null,
+    })),
+  );
+  return rows.map((row) => {
+    const renewal = renewalInfo(row.status, row.endDate);
+    return {
+      id: row.id,
+      policyNumber: row.policyNumber,
+      status: row.status,
+      premiumNet: row.premiumNet ? Number(row.premiumNet) : null,
+      currency: row.currency,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      companyId: row.companyId,
+      lineId: row.lineId,
+      assignedUserId: row.assignedUserId,
+      createdAt: row.createdAt,
+      client: row.client,
+      daysToExpiry: renewal.daysToExpiry,
+      renewalLevel: renewal.level,
+      renewalStatus: statuses.get(row.id) ?? "NOT_DUE",
+    };
+  });
+}
 
 export type PolicyListFilters = {
   /** Texto libre: busca en número de póliza y nombre del cliente (insensitive). */
@@ -74,22 +148,16 @@ export async function listPolicies(
         lineId: true,
         assignedUserId: true,
         createdAt: true,
+        notRenewable: true,
+        nonRenewalAt: true,
+        productId: true,
         client: { select: { id: true, name: true } },
       },
     }),
     db.policy.count({ where }),
   ]);
 
-  const enriched: PolicyListItem[] = rows.map((p) => {
-    const renewal = renewalInfo(p.status, p.endDate);
-    return {
-      ...p,
-      premiumNet: p.premiumNet ? Number(p.premiumNet) : null,
-      daysToExpiry: renewal.daysToExpiry,
-      renewalLevel: renewal.level,
-    };
-  });
-  return buildPaginated(enriched, page, total);
+  return buildPaginated(await toPolicyListItems(db, rows), page, total);
 }
 
 /**
@@ -106,7 +174,9 @@ export async function listRenewals(
   const term = q?.trim();
   const where = {
     ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
-    status: "VIGENTE" as const,
+    status: { in: ["VIGENTE", "VENCIDA"] as PolicyStatus[] },
+    notRenewable: false,
+    nonRenewalAt: null,
     endDate: { not: null },
     ...(term
       ? {
@@ -134,23 +204,18 @@ export async function listRenewals(
         lineId: true,
         assignedUserId: true,
         createdAt: true,
+        notRenewable: true,
+        nonRenewalAt: true,
+        productId: true,
         client: { select: { id: true, name: true } },
       },
     }),
     db.policy.count({ where }),
   ]);
 
-  const enriched: PolicyListItem[] = rows
-    .map((p) => {
-      const renewal = renewalInfo(p.status, p.endDate);
-      return {
-        ...p,
-        premiumNet: p.premiumNet ? Number(p.premiumNet) : null,
-        daysToExpiry: renewal.daysToExpiry,
-        renewalLevel: renewal.level,
-      };
-    })
-    .filter((p) => needsRenewal(p.renewalLevel));
+  const enriched = (await toPolicyListItems(db, rows)).filter((p) =>
+    ACTIONABLE_RENEWAL_STATUSES.includes(p.renewalStatus),
+  );
   return buildPaginated(enriched, page, total);
 }
 
@@ -179,18 +244,13 @@ export async function listAllPoliciesForDashboard(
       lineId: true,
       assignedUserId: true,
       createdAt: true,
+      notRenewable: true,
+      nonRenewalAt: true,
+      productId: true,
       client: { select: { id: true, name: true } },
     },
   });
-  return rows.map((p) => {
-    const renewal = renewalInfo(p.status, p.endDate);
-    return {
-      ...p,
-      premiumNet: p.premiumNet ? Number(p.premiumNet) : null,
-      daysToExpiry: renewal.daysToExpiry,
-      renewalLevel: renewal.level,
-    };
-  });
+  return toPolicyListItems(db, rows);
 }
 
 /** Renovaciones para el dashboard — derivadas de listAllPoliciesForDashboard. */
@@ -200,7 +260,11 @@ export async function listAllRenewalsForDashboard(
 ): Promise<PolicyListItem[]> {
   const all = await listAllPoliciesForDashboard(ctx, db);
   return all
-    .filter((p) => needsRenewal(p.renewalLevel))
+    .filter(
+      (p) =>
+        (p.status === "VIGENTE" || p.status === "VENCIDA") &&
+        ACTIONABLE_RENEWAL_STATUSES.includes(p.renewalStatus),
+    )
     .sort((a, b) => (a.daysToExpiry ?? 9999) - (b.daysToExpiry ?? 9999));
 }
 

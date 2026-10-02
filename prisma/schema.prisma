@@ -398,6 +398,8 @@ model InsuranceProduct {
   code                String?
   commissionAffectPct Decimal? @db.Decimal(6, 3)
   commissionExemptPct Decimal? @db.Decimal(6, 3)
+  // Garantías por obra, transporte por viaje, etc. no entran a la cola.
+  isRenewable         Boolean  @default(true)
   active              Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -836,6 +838,11 @@ model PaymentPlan {
   payerPhone        String?
   payerCelular      String?
   payerEmail        String?
+  // Saldo único tras cancelar o anular: positivo = el cliente debe,
+  // negativo = devolución. Estimado hasta que la compañía confirme el monto.
+  terminationBalance            Decimal? @db.Decimal(18, 4)
+  terminationBalanceIsEstimate  Boolean  @default(false)
+  closedReason                  String?
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -1050,6 +1057,17 @@ model Policy {
   // la tasa default configurada del vendedor (SalespersonCommissionRate). El
   // admin la baja aquí cuando se negocia un acuerdo para cerrar un deal.
   salesCommissionPct     Decimal?     @db.Decimal(6, 3)
+  // No renovable por naturaleza (garantía de obra, viaje, etc.).
+  notRenewable           Boolean      @default(false)
+  // No renovación registrada, reversible. null = no hay decisión.
+  nonRenewalReason       String?
+  nonRenewalNote         String?
+  nonRenewalAt           DateTime?
+  // Saldo único tras cancelar o anular. Positivo: el cliente debe.
+  // Negativo: devolución. Estimado hasta el monto de la compañía.
+  terminationBalance           Decimal? @db.Decimal(18, 4)
+  terminationBalanceIsEstimate Boolean  @default(false)
+  terminationReason            String?
   createdById            String?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
@@ -1592,6 +1610,8 @@ model Installment {
   dueDate        DateTime          @db.Date
   status         InstallmentStatus @default(PENDIENTE)
   paidAt         DateTime?         @db.Date
+  // La cuota se anuló por la cascada de cancelación o anulación.
+  voidedByTermination Boolean      @default(false)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 

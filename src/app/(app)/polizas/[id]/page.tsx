@@ -25,6 +25,7 @@ import {
   listPolicyEndorsementProposals,
 } from "@/features/endorsements/queries";
 import { EndorsementsPanel } from "@/features/endorsements/components/endorsements-panel";
+import { NonRenewalPanel } from "@/features/policies/components/non-renewal-panel";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight } from "lucide-react";
 
@@ -79,7 +80,10 @@ export default async function PolizaDetailPage({
     : null;
 
   const renewal = renewalInfo(policy.status, policy.endDate);
-  const canRenew = policy.status === "VIGENTE" || policy.status === "VENCIDA";
+  const openForRenewal =
+    policy.status === "VIGENTE" || policy.status === "VENCIDA";
+  const canRenew =
+    openForRenewal && !policy.notRenewable && !policy.nonRenewalAt;
 
   return (
     <div className="space-y-6">
@@ -147,6 +151,16 @@ export default async function PolizaDetailPage({
         <ClientAlertBanner message={policy.client.comentarioAlerta} />
       )}
 
+      {(openForRenewal || policy.notRenewable || policy.nonRenewalAt) && (
+        <NonRenewalPanel
+          policyId={id}
+          notRenewable={policy.notRenewable}
+          reason={policy.nonRenewalReason}
+          note={policy.nonRenewalNote}
+          recordedAt={policy.nonRenewalAt}
+        />
+      )}
+
       <PolicyDetailTabs
         policy={policy}
         activity={activity}
@@ -156,6 +170,15 @@ export default async function PolizaDetailPage({
         lineName={lineName}
         assignedUserName={assignedUserName}
         ufValue={uf?.value ?? null}
+        termination={
+          policy.terminationBalance != null
+            ? {
+                balance: Number(policy.terminationBalance),
+                isEstimate: policy.terminationBalanceIsEstimate,
+                reason: policy.terminationReason,
+              }
+            : null
+        }
       />
 
       <EndorsementsPanel

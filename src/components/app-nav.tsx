@@ -10,6 +10,7 @@ import {
   RefreshCw,
   TriangleAlert,
   Wallet,
+  BarChart3,
   Percent,
   ListChecks,
   LayoutDashboard,
@@ -54,6 +55,7 @@ const NAV_ITEMS: NavItem[] = [
     available: true,
   },
   { href: "/cobranza", label: "Cobranza", icon: Wallet, available: true },
+  { href: "/informes", label: "Informes", icon: BarChart3, available: true },
   {
     href: "/comisiones",
     label: "Revisión comisiones",

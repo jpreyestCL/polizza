@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
 import { listRenewals } from "@/features/policies/queries";
+import { getReportsSnapshot } from "@/features/reports/queries";
 import { getCompanies } from "@/features/catalog/queries";
 import { RenewalsList } from "@/features/policies/components/renewals-list";
 import { PageHeader } from "@/components/page-header";
@@ -22,10 +23,19 @@ export default async function RenovacionesPage({
   const page = parsePageParams(sp);
   const { ctx, db } = await requireOrgDb();
   const q = typeof sp?.q === "string" ? sp.q : undefined;
-  const [renewalsPage, companies] = await Promise.all([
+  const [renewalsPage, companies, reports] = await Promise.all([
     listRenewals(ctx, db, page, q),
     getCompanies(db),
+    getReportsSnapshot(ctx, db),
   ]);
+  const denominator = reports.retention.universe - reports.retention.notRenewable;
+  const retention =
+    reports.retentionRate == null
+      ? null
+      : `${new Intl.NumberFormat("es-CL", {
+          style: "percent",
+          maximumFractionDigits: 1,
+        }).format(reports.retentionRate)}`;
 
   return (
     <div className="space-y-6">
@@ -33,6 +43,23 @@ export default async function RenovacionesPage({
         title="Renovaciones"
         description="Pólizas próximas a vencer o ya vencidas que requieren gestión."
       />
+      <section className="grid gap-3 sm:grid-cols-3">
+        <article className="rounded-xl border bg-card px-4 py-3">
+          <p className="text-2xl font-semibold">{reports.retention.universe}</p>
+          <p className="text-xs text-muted-foreground">Universo del mes</p>
+        </article>
+        <article className="rounded-xl border bg-card px-4 py-3">
+          <p className="text-2xl font-semibold">{retention ?? "—"}</p>
+          <p className="text-xs text-muted-foreground">
+            Retención ({reports.retention.renewed}
+            {denominator > 0 ? ` / ${denominator}` : ""})
+          </p>
+        </article>
+        <article className="rounded-xl border bg-card px-4 py-3">
+          <p className="text-2xl font-semibold">{reports.retention.notRenewed}</p>
+          <p className="text-xs text-muted-foreground">No renovadas del mes</p>
+        </article>
+      </section>
       <ListSearch placeholder="Buscar por N° de póliza o cliente…" />
       {renewalsPage.rows.length === 0 && !renewalsPage.prevCursor && !q ? (
         <EmptyState

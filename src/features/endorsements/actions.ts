@@ -9,6 +9,10 @@ import { generateProposalNumber } from "@/features/proposals/number-generator";
 import { isProposalLocked } from "@/features/proposals/schemas";
 import { applyEndorsementToPolicy } from "./apply";
 import {
+  reopenPlanAfterTermination,
+  terminationKindOf,
+} from "@/features/billing/termination";
+import {
   endorsementSchema,
   endorsementProposalSchema,
   endorsementTransitionError,
@@ -305,6 +309,28 @@ export async function deleteEndorsementAction(
           changedById: ctx.userId,
         },
       });
+    }
+  }
+
+  if (terminationKindOf(endorsement.type)) {
+    const otherTerminations = await db.endorsement.count({
+      where: {
+        policyId: endorsement.policyId,
+        NOT: { id: endorsement.id },
+        type: {
+          in: [
+            "ANULACION_ENDOSO",
+            "ANULACION_COMPANIA",
+            "SOLICITUD_ANULACION",
+            "CANCELACION_COMPANIA",
+            "CANCELACION_NO_PAGO",
+            "SOLICITUD_CANCELACION",
+          ],
+        },
+      },
+    });
+    if (otherTerminations === 0) {
+      await reopenPlanAfterTermination(db, endorsement.policyId);
     }
   }
 
