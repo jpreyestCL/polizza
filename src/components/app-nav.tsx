@@ -24,7 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { factoryRoleOf } from "@/lib/factory-roles";
+import { factoryRoleOf, hasPermission } from "@/lib/factory-roles";
 
 type NavItem = {
   href: string;
@@ -76,6 +76,13 @@ const NAV_ITEMS: NavItem[] = [
     managerOnly: true,
   },
   { href: "/tareas", label: "Tareas", icon: ListChecks, available: true },
+  {
+    href: "/configuracion/usuarios",
+    label: "Usuarios y roles",
+    icon: Users,
+    available: true,
+    adminOnly: true,
+  },
   {
     href: "/configuracion/companias",
     label: "Compañías",
@@ -137,7 +144,7 @@ export function AppNav({
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && factoryRoleOf(role ?? "") !== "ADMIN") return false;
-    if (item.managerOnly && role !== "admin" && role !== "gerente") {
+    if (item.managerOnly && !hasPermission(role ?? "", "commissions.reconcile")) {
       return false;
     }
     return true;

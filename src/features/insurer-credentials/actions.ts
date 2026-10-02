@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOrgDb } from "@/server/context";
+import { hasPermission } from "@/lib/factory-roles";
 import { logActivity } from "@/server/activity";
 import { encryptSecret, isCryptoConfigured } from "@/lib/insurer-crypto";
 import { getInsurerAdapter } from "@/features/car-quotes/insurers/registry";
@@ -20,7 +21,7 @@ export async function upsertCredentialAction(
   }
   const data = parsed.data;
   const { ctx, db } = await requireOrgDb();
-  if (ctx.role !== "admin") {
+  if (!hasPermission(ctx.role, "settings.manage")) {
     return {
       ok: false,
       error: "Solo administradores pueden configurar credenciales.",
@@ -94,7 +95,7 @@ export async function deleteCredentialAction(
   id: string,
 ): Promise<ActionResult> {
   const { ctx, db } = await requireOrgDb();
-  if (ctx.role !== "admin") {
+  if (!hasPermission(ctx.role, "settings.manage")) {
     return { ok: false, error: "No autorizado." };
   }
   const existing = await db.insurerPortalCredential.findFirst({

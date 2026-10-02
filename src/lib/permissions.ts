@@ -31,7 +31,47 @@ export const admin = ac.newRole({
   client: ["create", "read", "readAll", "update", "delete", "export"],
 });
 
-export const roles = { ejecutivo, gerente, admin };
+const readClients = { client: ["read", "readAll"] } as const;
+const writeClients = {
+  client: ["create", "read", "readAll", "update", "export"],
+} as const;
+
+/**
+ * Seis roles de fábrica (`@/lib/factory-roles`). Better Auth los conoce
+ * para invitar y cambiar de rol; el permiso fino de cada acción lo decide
+ * `hasPermission`.
+ */
+export const ADMIN = ac.newRole({
+  ...adminAc.statements,
+  client: ["create", "read", "readAll", "update", "delete", "export"],
+});
+export const ACCOUNT_EXECUTIVE = ac.newRole(writeClients);
+export const COLLECTIONS = ac.newRole(writeClients);
+export const CLAIMS = ac.newRole(writeClients);
+export const FINANCE = ac.newRole(readClients);
+export const READ_ONLY = ac.newRole(readClients);
+
+export const roles = {
+  ejecutivo,
+  gerente,
+  admin,
+  ADMIN,
+  ACCOUNT_EXECUTIVE,
+  COLLECTIONS,
+  CLAIMS,
+  FINANCE,
+  READ_ONLY,
+};
 
 export type AppRole = keyof typeof roles;
-export const APP_ROLES = ["ejecutivo", "gerente", "admin"] as const;
+export const APP_ROLES = [
+  "ejecutivo",
+  "gerente",
+  "admin",
+  "ADMIN",
+  "ACCOUNT_EXECUTIVE",
+  "COLLECTIONS",
+  "CLAIMS",
+  "FINANCE",
+  "READ_ONLY",
+] as const;

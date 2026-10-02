@@ -98,3 +98,62 @@ export async function isOrgMember(
   });
   return count > 0;
 }
+
+/** Cambia el rol de una membresía de la organización. */
+export async function updateOrgMemberRole(
+  organizationId: string,
+  memberId: string,
+  role: string,
+): Promise<boolean> {
+  if (!organizationId || !memberId) return false;
+  const result = await basePrisma.member.updateMany({
+    where: { id: memberId, organizationId },
+    data: { role },
+  });
+  return result.count > 0;
+}
+
+/** Saca a un miembro de la organización (no borra el usuario). */
+export async function removeOrgMember(
+  organizationId: string,
+  memberId: string,
+): Promise<boolean> {
+  if (!organizationId || !memberId) return false;
+  const result = await basePrisma.member.deleteMany({
+    where: { id: memberId, organizationId },
+  });
+  return result.count > 0;
+}
+
+export type OrgInvitation = {
+  id: string;
+  email: string;
+  role: string | null;
+  status: string;
+  expiresAt: Date;
+};
+
+/** Invitaciones pendientes de la organización. */
+export async function listOrgInvitations(
+  organizationId: string,
+): Promise<OrgInvitation[]> {
+  if (!organizationId) return [];
+  return basePrisma.invitation.findMany({
+    where: { organizationId, status: "pending" },
+    orderBy: { expiresAt: "desc" },
+    select: { id: true, email: true, role: true, status: true, expiresAt: true },
+  });
+}
+
+/** Cancela una invitación pendiente de la organización. */
+export async function cancelOrgInvitation(
+  organizationId: string,
+  invitationId: string,
+): Promise<boolean> {
+  if (!organizationId || !invitationId) return false;
+  const result = await basePrisma.invitation.updateMany({
+    where: { id: invitationId, organizationId, status: "pending" },
+    data: { status: "canceled" },
+  });
+  return result.count > 0;
+}

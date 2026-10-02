@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireOrgDb } from "@/server/context";
+import { hasPermission } from "@/lib/factory-roles";
 import { listCredentials } from "@/features/insurer-credentials/queries";
 import { CredentialsPanel } from "@/features/insurer-credentials/components/credentials-panel";
 import { listInsurers } from "@/features/car-quotes/insurers/registry";
@@ -7,7 +8,7 @@ import { PageHeader } from "@/components/page-header";
 
 export default async function ConfiguracionPortalesPage() {
   const { ctx, db } = await requireOrgDb();
-  if (ctx.role !== "admin") notFound();
+  if (!hasPermission(ctx.role, "settings.manage")) notFound();
   const credentials = await listCredentials(db);
   const insurers = listInsurers();
   return (
