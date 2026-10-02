@@ -28,7 +28,10 @@ export async function postCommissionStatementAction(form: FormData): Promise<voi
   const uploaded = form.get("file");
   const fileText =
     uploaded instanceof File && uploaded.size > 0 ? await uploaded.text() : "";
-  const parsed = parseCommissionLines(`${text(form, "lines")}\n${fileText}`);
+  const parsed = [
+    ...parseCommissionLines(text(form, "lines"), currency),
+    ...parseCommissionLines(fileText, currency),
+  ];
   if (!insurerName || parsed.length === 0) {
     redirect("/comisiones/liquidacion?error=datos");
   }

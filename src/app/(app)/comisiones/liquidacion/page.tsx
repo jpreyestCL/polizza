@@ -23,7 +23,7 @@ export default async function LiquidacionPage({
     <div className="space-y-6">
       <PageHeader
         title="Liquidación de la compañía"
-        description="Una línea por póliza: número y monto, separados por espacio, tabulación o punto y coma. También puedes subir un archivo de texto o CSV. El calce parte o junta montos contra la comisión esperada de esa póliza y esa moneda."
+        description="Una línea por póliza: número y monto, separados por espacio, tabulación o punto y coma. También puedes subir el CSV de la compañía: si trae encabezado, se toman las columnas de póliza y de comisión (o monto) en cualquier orden, con comillas y separador de miles. El calce parte o junta montos contra la comisión esperada de esa póliza y esa moneda."
       />
       <p className="text-sm">
         <Link href="/comisiones" className="text-primary hover:underline">Volver a revisión</Link>
