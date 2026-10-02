@@ -82,7 +82,7 @@ export function buildReportCatalog(input: ReportCatalogInput): ReportCard[] {
           .join(" · ");
   const requests =
     input.quoteRequestsByStatus.length === 0
-      ? "sin solicitudes"
+      ? "0"
       : input.quoteRequestsByStatus
           .map((row) => `${row.status} ${row.count}`)
           .join(" · ");
