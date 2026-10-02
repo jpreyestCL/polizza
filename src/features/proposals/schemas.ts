@@ -7,6 +7,7 @@ export const PROPOSAL_STATUSES = [
   "ENVIADA_COMPANIA",
   "DEVUELTA",
   "POR_DESPACHAR",
+  "RECHAZADA",
 ] as const;
 
 export type ProposalStatusValue = (typeof PROPOSAL_STATUSES)[number];
@@ -17,6 +18,7 @@ export const STATUS_LABELS: Record<ProposalStatusValue, string> = {
   ENVIADA_COMPANIA: "Enviada a compañía",
   DEVUELTA: "Devuelta a la cía",
   POR_DESPACHAR: "Por despachar",
+  RECHAZADA: "Rechazada por la compañía",
 };
 
 /** Estados en los que la propuesta queda bloqueada para edición. */

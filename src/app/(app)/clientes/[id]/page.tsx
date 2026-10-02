@@ -17,6 +17,8 @@ import { listClientCarQuotations } from "@/features/car-quotes/queries";
 import { listDocuments } from "@/features/documents/queries";
 import { listClientBranches } from "@/features/branches/queries";
 import { canDeleteClient } from "@/lib/roles";
+import { mergeClientFormAction } from "@/features/clients/actions";
+import { hasPermission } from "@/lib/factory-roles";
 import { formatRut } from "@/lib/rut";
 import { ClientAlertBanner } from "@/components/alert-banner";
 import { Badge } from "@/components/ui/badge";
@@ -24,10 +26,14 @@ import { Button } from "@/components/ui/button";
 
 export default async function ClienteDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
+  const aviso = typeof sp.aviso === "string" ? sp.aviso : null;
   const { ctx, db } = await requireOrgDb();
 
   const client = await getClientDetail(db, id);
@@ -85,6 +91,24 @@ export default async function ClienteDetailPage({
           )}
         </div>
       </div>
+
+      {aviso ? (
+        <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{aviso}</p>
+      ) : null}
+      {hasPermission(ctx.role, "parties.merge") ? (
+        <form action={mergeClientFormAction} className="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-4">
+          <input type="hidden" name="targetId" value={id} />
+          <label className="flex flex-col gap-1 text-sm">
+            Fusionar otro RUT en esta ficha
+            <input name="sourceRut" required className="rounded-md border bg-background px-2 py-1.5" placeholder="RUT duplicado" />
+          </label>
+          <label className="flex min-w-64 flex-1 flex-col gap-1 text-sm">
+            Motivo
+            <input name="reason" required minLength={10} className="rounded-md border bg-background px-2 py-1.5" />
+          </label>
+          <button type="submit" className="rounded-md border px-3 py-2 text-sm">Fusionar</button>
+        </form>
+      ) : null}
 
       {client.comentarioAlerta?.trim() && (
         <ClientAlertBanner message={client.comentarioAlerta} />

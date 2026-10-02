@@ -43,6 +43,12 @@ export function ProposalsKanban({
     if (item.status === to) return;
     // "Por despachar" se asigna al registrar la recepción de la póliza, no por
     // arrastre manual (review #2).
+    if (to === "RECHAZADA") {
+      toast.error(
+        "El rechazo se registra en la ficha, con un motivo de al menos 10 caracteres.",
+      );
+      return;
+    }
     if (to === "POR_DESPACHAR") {
       toast.error(
         "“Por despachar” se asigna al registrar la recepción de la póliza emitida, no arrastrando la tarjeta.",

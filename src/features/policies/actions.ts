@@ -1,8 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
+import { hasPermission } from "@/lib/factory-roles";
+import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import { sanitizeRichText } from "@/lib/sanitize";
 import { logActivity } from "@/server/activity";
 import { appendPremiumMovement } from "@/features/ledger/record";
@@ -691,4 +694,47 @@ export async function deletePolicyAction(id: string): Promise<ActionResult> {
   revalidatePath("/polizas");
   revalidatePath("/renovaciones");
   return { ok: true, id };
+}
+
+/** Renueva hasta 20 pólizas vigentes que terminan este mes. Solo administración. */
+export async function bulkRenewMonthAction(form: FormData): Promise<void> {
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "renewals.bulk")) {
+    redirect("/renovaciones?aviso=No+tienes+permiso+para+renovar+en+lote.");
+  }
+  const reason = String(form.get("reason") ?? "");
+  const reasonError = sensitiveReasonError(reason);
+  if (reasonError) {
+    redirect(`/renovaciones?aviso=${encodeURIComponent(reasonError)}`);
+  }
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const policies = await db.policy.findMany({
+    where: {
+      status: "VIGENTE",
+      notRenewable: false,
+      nonRenewalAt: null,
+      endDate: { gte: start, lt: end },
+    },
+    select: { id: true },
+    take: 20,
+  });
+  let renewed = 0;
+  for (const policy of policies) {
+    const result = await renewPolicyAction(policy.id);
+    if (result.ok) renewed += 1;
+  }
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "POLICY",
+    entityId: policies[0]?.id ?? ctx.organizationId,
+    action: "bulk_renew",
+    summary: `Renovación masiva: ${renewed} de ${policies.length}. ${reason.trim()}`,
+    userId: ctx.userId,
+  });
+  revalidatePath("/renovaciones");
+  redirect(
+    `/renovaciones?aviso=${encodeURIComponent(`Se renovaron ${renewed} de ${policies.length} pólizas del mes.`)}`,
+  );
 }

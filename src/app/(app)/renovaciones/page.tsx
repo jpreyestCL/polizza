@@ -9,6 +9,8 @@ import { ListSearch } from "@/components/list-search";
 import { EmptyState } from "@/components/empty-state";
 import { Pager } from "@/components/pager";
 import { parsePageParams } from "@/lib/pagination";
+import { bulkRenewMonthAction } from "@/features/policies/actions";
+import { hasPermission } from "@/lib/factory-roles";
 
 type SearchParams = Promise<
   Record<string, string | string[] | undefined> | undefined
@@ -23,6 +25,7 @@ export default async function RenovacionesPage({
   const page = parsePageParams(sp);
   const { ctx, db } = await requireOrgDb();
   const q = typeof sp?.q === "string" ? sp.q : undefined;
+  const aviso = typeof sp?.aviso === "string" ? sp.aviso : null;
   const [renewalsPage, companies, reports] = await Promise.all([
     listRenewals(ctx, db, page, q),
     getCompanies(db),
@@ -60,6 +63,18 @@ export default async function RenovacionesPage({
           <p className="text-xs text-muted-foreground">No renovadas del mes</p>
         </article>
       </section>
+      {aviso ? (
+        <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{aviso}</p>
+      ) : null}
+      {hasPermission(ctx.role, "renewals.bulk") ? (
+        <form action={bulkRenewMonthAction} className="flex flex-wrap items-end gap-2 rounded-lg border bg-card p-4">
+          <label className="flex min-w-64 flex-1 flex-col gap-1 text-sm">
+            Renovar las vigentes que terminan este mes (máximo 20)
+            <input name="reason" required minLength={10} className="rounded-md border bg-background px-2 py-1.5" placeholder="Motivo de la renovación masiva" />
+          </label>
+          <button type="submit" className="rounded-md border px-3 py-2 text-sm">Renovar el mes</button>
+        </form>
+      ) : null}
       <ListSearch placeholder="Buscar por N° de póliza o cliente…" />
       {renewalsPage.rows.length === 0 && !renewalsPage.prevCursor && !q ? (
         <EmptyState

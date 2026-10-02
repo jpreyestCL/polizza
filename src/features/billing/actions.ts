@@ -186,6 +186,12 @@ export async function setInstallmentStatusAction(
     }
   }
   const collected = status === "PAGADA" || status === "PRESUNTA";
+  const paidAmount =
+    status === "PARCIAL" && amountPaid != null
+      ? amountPaid
+      : status === "PAGADA"
+        ? Number(installment.amount)
+        : null;
   await db.installment.update({
     where: { id },
     data: {
@@ -195,6 +201,20 @@ export async function setInstallmentStatusAction(
         status === "PARCIAL" && amountPaid != null ? amountPaid : null,
     },
   });
+  if (paidAmount != null && paidAmount > 0) {
+    const today = new Date();
+    await db.installmentPayment.create({
+      data: {
+        organizationId: ctx.organizationId,
+        installmentId: id,
+        amount: paidAmount.toFixed(4),
+        paidOn: today,
+        markedOn: today,
+        source: "MANUAL",
+        createdById: ctx.userId,
+      },
+    });
+  }
   if (installment.policyId) {
     await logActivity(db, {
       organizationId: ctx.organizationId,

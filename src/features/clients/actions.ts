@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { logActivity } from "@/server/activity";
 import { canDeleteClient } from "@/lib/roles";
-import { normalizeRut } from "@/lib/rut";
+import { hasPermission } from "@/lib/factory-roles";
+import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
+import { cleanRut, normalizeRut } from "@/lib/rut";
 import {
   clientFormSchema,
   composeClientName,
@@ -384,4 +387,97 @@ export async function logClientInteractionAction(
   });
   revalidatePath(`/clientes/${clientId}`);
   return { ok: true, id: clientId };
+}
+
+/** Pasa la cartera del RUT duplicado al cliente abierto y borra el duplicado. */
+export async function mergeClientFormAction(form: FormData): Promise<void> {
+  const targetId = String(form.get("targetId") ?? "");
+  const sourceRut = String(form.get("sourceRut") ?? "");
+  const reason = String(form.get("reason") ?? "");
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "parties.merge")) {
+    redirect(`/clientes/${targetId}?aviso=${encodeURIComponent("No tienes permiso para fusionar clientes.")}`);
+  }
+  const reasonError = sensitiveReasonError(reason);
+  if (reasonError) {
+    redirect(`/clientes/${targetId}?aviso=${encodeURIComponent(reasonError)}`);
+  }
+  const cleaned = cleanRut(sourceRut);
+  const candidates = await db.client.findMany({
+    select: { id: true, rut: true, name: true },
+  });
+  const source = candidates.find(
+    (client) => client.rut && cleanRut(client.rut) === cleaned && client.id !== targetId,
+  );
+  if (!source) {
+    redirect(`/clientes/${targetId}?aviso=${encodeURIComponent("No hay otro cliente con ese RUT.")}`);
+  }
+  const target = candidates.find((client) => client.id === targetId);
+  if (!target) {
+    redirect("/clientes");
+  }
+  await db.$transaction(async (tx) => {
+    await tx.proposal.updateMany({
+      where: { clientId: source.id },
+      data: { clientId: targetId },
+    });
+    await tx.proposal.updateMany({
+      where: { insuredClientId: source.id },
+      data: { insuredClientId: targetId },
+    });
+    await tx.proposal.updateMany({
+      where: { beneficiaryClientId: source.id },
+      data: { beneficiaryClientId: targetId },
+    });
+    await tx.policy.updateMany({
+      where: { clientId: source.id },
+      data: { clientId: targetId },
+    });
+    await tx.claim.updateMany({
+      where: { clientId: source.id },
+      data: { clientId: targetId },
+    });
+    await tx.carQuotation.updateMany({
+      where: { clientId: source.id },
+      data: { clientId: targetId },
+    });
+    await tx.quoteRequest.updateMany({
+      where: { clientId: source.id },
+      data: { clientId: targetId },
+    });
+    await tx.branch.updateMany({
+      where: { clientId: source.id },
+      data: { clientId: targetId },
+    });
+    await tx.clientContact.updateMany({
+      where: { clientId: source.id },
+      data: { clientId: targetId },
+    });
+    const targetTags = await tx.clientTagAssignment.findMany({
+      where: { clientId: targetId },
+      select: { tagId: true },
+    });
+    const tagIds = new Set(targetTags.map((row) => row.tagId));
+    if (tagIds.size > 0) {
+      await tx.clientTagAssignment.deleteMany({
+        where: { clientId: source.id, tagId: { in: [...tagIds] } },
+      });
+    }
+    await tx.clientTagAssignment.updateMany({
+      where: { clientId: source.id },
+      data: { clientId: targetId },
+    });
+    await tx.client.delete({ where: { id: source.id } });
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "CLIENT",
+    entityId: targetId,
+    action: "merged",
+    summary: `Se fusionó ${source.name} (${normalizeRut(source.rut ?? sourceRut)}) en este cliente. ${reason.trim()}`,
+    userId: ctx.userId,
+  });
+  revalidatePath("/clientes");
+  revalidatePath(`/clientes/${targetId}`);
+  redirect(`/clientes/${targetId}?aviso=${encodeURIComponent(`Se fusionó ${source.name}.`)}`);
 }

@@ -40,6 +40,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/holdings", label: "Holdings", icon: Layers, available: true },
   { href: "/panel", label: "Dashboard", icon: LayoutDashboard, available: true },
   { href: "/cotizaciones", label: "Cotizaciones auto", icon: Car, available: true },
+  { href: "/cotizaciones-comparativo", label: "Cotizaciones", icon: FileText, available: true },
+  { href: "/despachos", label: "Despachos", icon: FileText, available: true },
   { href: "/propuestas", label: "Propuestas", icon: FileText, available: true },
   { href: "/polizas", label: "Pólizas", icon: ShieldCheck, available: true },
   {
@@ -109,6 +111,13 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: "/configuracion/propuestas",
     label: "Ajustes propuestas",
+    icon: Settings,
+    available: true,
+    adminOnly: true,
+  },
+  {
+    href: "/configuracion/plantillas",
+    label: "Plantillas de correo",
     icon: Settings,
     available: true,
     adminOnly: true,

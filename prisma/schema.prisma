@@ -508,6 +508,7 @@ model Client {
   claims         Claim[]
   branches       Branch[]
   carQuotations  CarQuotation[]
+  quoteRequests  QuoteRequest[]
   holding        Holding?              @relation(fields: [holdingId], references: [id])
 
   @@unique([organizationId, rut])
@@ -634,6 +635,7 @@ enum ProposalStatus {
   ENVIADA_COMPANIA
   DEVUELTA
   POR_DESPACHAR
+  RECHAZADA
 }
 
 model Proposal {
@@ -742,6 +744,8 @@ model Proposal {
   endorsement             Endorsement?
   submissions             PolicySubmission[]
   aiComparisons           AiComparison[]
+  dispatches              Dispatch[]
+  sourceQuote             QuoteRequest?
 
   @@unique([organizationId, proposalNumber])
   @@index([organizationId])
@@ -1106,6 +1110,7 @@ model Policy {
   premiumMovements          PremiumMovement[]
   commissionReceivables     CommissionReceivable[]
   aiComparisons             AiComparison[]
+  dispatches                Dispatch[]
   companyCommissionPayments CompanyCommissionPayment[]
   sellerCommissionItem      SellerCommissionSettlementItem?
 
@@ -1804,6 +1809,95 @@ model OrganizationSettings {
   ssoEnabled           Boolean @default(false)
 }
 
+enum QuoteRequestStatus {
+  BORRADOR
+  SOLICITADA
+  COTIZADA
+  ENVIADA_CLIENTE
+  GANADA
+  PERDIDA
+}
+
+// Solicitud de cotización a varias compañías. No reemplaza la cotización
+// de auto: esa sigue siendo el comparador simulado de vehículos.
+model QuoteRequest {
+  id             String             @id @default(cuid())
+  organizationId String
+  clientId       String
+  title          String
+  status         QuoteRequestStatus @default(BORRADOR)
+  currency       String             @default("UF")
+  lossReason     String?
+  proposalId     String?            @unique
+  assignedUserId String?
+  createdById    String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  client   Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  proposal Proposal?    @relation(fields: [proposalId], references: [id])
+  offers   QuoteOffer[]
+
+  @@index([organizationId])
+  @@index([clientId])
+}
+
+model QuoteOffer {
+  id             String   @id @default(cuid())
+  organizationId String
+  requestId      String
+  insurerName    String
+  premiumNet     Decimal? @db.Decimal(18, 4)
+  currency       String   @default("UF")
+  notes          String?
+  recommended    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  request QuoteRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([requestId])
+}
+
+// Cola de despacho. Nace al recepcionar y se marca enviada al despachar.
+model Dispatch {
+  id             String    @id @default(cuid())
+  organizationId String
+  proposalId     String
+  policyId       String?
+  status         String    @default("PENDIENTE")
+  recipientEmail String?
+  sentAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  policy   Policy?  @relation(fields: [policyId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([proposalId])
+  @@index([status])
+}
+
+// Un pago de cuota. La cuota sigue siendo el saldo; esto es el hecho de pago.
+model InstallmentPayment {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  installmentId       String
+  amount              Decimal  @db.Decimal(18, 4)
+  paidOn              DateTime @db.Date
+  companyRegisteredOn DateTime? @db.Date
+  markedOn            DateTime @db.Date
+  source              String   @default("MANUAL")
+  note                String?
+  createdById         String?
+  createdAt           DateTime @default(now())
+
+  installment Installment @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([installmentId])
+}
+
 model Installment {
   id             String            @id @default(cuid())
   organizationId String
@@ -1824,7 +1918,8 @@ model Installment {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
-  policy Policy? @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  policy   Policy?              @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  payments InstallmentPayment[]
 
   @@index([organizationId])
   @@index([policyId])

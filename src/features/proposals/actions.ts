@@ -12,6 +12,12 @@ import { saveIssuanceComparison } from "@/features/proposals/issuance-comparison
 import { parseDeductible } from "@/lib/domain/deductible";
 import { setTenantGuc } from "@/server/tenant-rls";
 import {
+  ensureDispatchQueued,
+  markDispatchSent,
+} from "@/features/dispatch/record";
+import { hasPermission } from "@/lib/factory-roles";
+import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
+import {
   ensureIssueCorrectionTask,
   moveIssueCorrectionTaskToPolicy,
 } from "@/features/policies/issue-correction-task";
@@ -352,6 +358,18 @@ export async function changeProposalStatusAction(
   // "Por despachar" se asigna automáticamente al registrar la recepción de la
   // póliza emitida; no es un destino manual (review #2). Evita que un arrastre
   // en el kanban deje la propuesta sin N° de póliza y atascada en el flujo.
+  if (data.status === "RECHAZADA") {
+    const reasonError = sensitiveReasonError(data.note);
+    if (reasonError) {
+      return { ok: false, error: reasonError };
+    }
+    if (proposal.status !== "ENVIADA_COMPANIA") {
+      return {
+        ok: false,
+        error: "Solo se rechaza una propuesta que ya fue enviada a la compañía.",
+      };
+    }
+  }
   if (data.status === "POR_DESPACHAR") {
     return {
       ok: false,
@@ -819,8 +837,14 @@ export async function registerPolicyEmissionAction(
     userId: ctx.userId,
   });
 
+  await ensureDispatchQueued(db, {
+    organizationId: ctx.organizationId,
+    proposalId,
+  });
+
   revalidatePath("/propuestas");
   revalidatePath(`/propuestas/${proposalId}`);
+  revalidatePath("/despachos");
   return { ok: true, id: proposalId };
 }
 
@@ -918,8 +942,14 @@ export async function registerEmissionErrorAction(
     userId: ctx.userId,
   });
 
+  await ensureDispatchQueued(db, {
+    organizationId: ctx.organizationId,
+    proposalId,
+  });
+
   revalidatePath("/propuestas");
   revalidatePath(`/propuestas/${proposalId}`);
+  revalidatePath("/despachos");
   return { ok: true, id: proposalId };
 }
 
@@ -1297,6 +1327,13 @@ export async function dispatchPolicyToContratanteAction(
     }
   }
 
+  await markDispatchSent(db, {
+    organizationId: ctx.organizationId,
+    proposalId,
+    policyId,
+    recipientEmail: data.send ? recipient || null : null,
+  });
+
   await logActivity(db, {
     organizationId: ctx.organizationId,
     entityType: "PROPOSAL",
@@ -1309,7 +1346,85 @@ export async function dispatchPolicyToContratanteAction(
   revalidatePath("/propuestas");
   revalidatePath("/polizas");
   revalidatePath(`/propuestas/${proposalId}`);
+  revalidatePath("/despachos");
   return { ok: true, id: policyId };
+}
+
+export async function reopenSentProposalAction(
+  proposalId: string,
+  reason: string,
+): Promise<ActionResult> {
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "policies.reopen")) {
+    return { ok: false, error: "No tienes permiso para reabrir una propuesta enviada." };
+  }
+  const reasonError = sensitiveReasonError(reason);
+  if (reasonError) return { ok: false, error: reasonError };
+  const proposal = await db.proposal.findFirst({
+    where: { id: proposalId },
+    select: { id: true, status: true, proposalNumber: true },
+  });
+  if (!proposal) return { ok: false, error: "La propuesta no existe o no tienes acceso." };
+  if (proposal.status !== "ENVIADA_COMPANIA" && proposal.status !== "RECHAZADA") {
+    return {
+      ok: false,
+      error: "Solo se reabre una propuesta enviada o rechazada por la compañía.",
+    };
+  }
+  await db.$transaction(async (tx) => {
+    await tx.proposal.update({
+      where: { id: proposalId },
+      data: {
+        status: "ELABORACION",
+        sentAt: null,
+        currentStateStartedAt: new Date(),
+      },
+    });
+    await tx.proposalStatusHistory.create({
+      data: {
+        organizationId: ctx.organizationId,
+        proposalId,
+        status: "ELABORACION",
+        note: reason.trim(),
+        changedById: ctx.userId,
+      },
+    });
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "PROPOSAL",
+    entityId: proposalId,
+    action: "reopened",
+    summary: `Propuesta ${proposal.proposalNumber} reabierta: ${reason.trim()}`,
+    userId: ctx.userId,
+  });
+  revalidatePath("/propuestas");
+  revalidatePath(`/propuestas/${proposalId}`);
+  return { ok: true, id: proposalId };
+}
+
+export async function rejectProposalFormAction(form: FormData): Promise<void> {
+  const { redirect } = await import("next/navigation");
+  const proposalId = String(form.get("proposalId") ?? "");
+  const note = String(form.get("note") ?? "");
+  const result = await changeProposalStatusAction(proposalId, {
+    status: "RECHAZADA",
+    note,
+    returnReasonId: "",
+  });
+  redirect(
+    `/propuestas/${proposalId}?aviso=${encodeURIComponent(result.ok ? "Rechazada por la compañía." : result.error)}`,
+  );
+}
+
+export async function reopenProposalFormAction(form: FormData): Promise<void> {
+  const { redirect } = await import("next/navigation");
+  const proposalId = String(form.get("proposalId") ?? "");
+  const reason = String(form.get("reason") ?? "");
+  const result = await reopenSentProposalAction(proposalId, reason);
+  redirect(
+    `/propuestas/${proposalId}?aviso=${encodeURIComponent(result.ok ? "Propuesta reabierta." : result.error)}`,
+  );
 }
 
 /**

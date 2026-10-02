@@ -202,6 +202,12 @@ app sigue leyendo con el rol actual. Dentro de una transacción de envío o
 despacho se fija la corredora solo para esa transacción, no en la conexión
 del pool.
 
+## Cotización, rechazo, despacho y pago
+
+**Antes.** La única cotización era la de auto, con un simulador. No había rechazo de la compañía ni reapertura de una enviada. El despacho era un botón sin cola. Marcar una cuota pagada no dejaba un pago con fechas. La liquidación de la compañía no se cargaba. Fusionar clientes y renovar el mes en lote no existían.
+
+**Ahora.** Una solicitud de cotización recorre borrador, solicitada, cotizada, enviada al cliente, ganada o perdida. Ganada crea una propuesta en elaboración. Rechazar una enviada exige motivo y la deja `RECHAZADA`. Reabrirla vuelve a elaboración y conserva la foto del envío. Al recepcionar nace un despacho pendiente; al despachar queda enviado. Una cuota pagada o parcial deja un `InstallmentPayment` con fecha de pago, fecha en que se marcó y fuente manual. La liquidación se carga por número de póliza y monto y se calza. Fusionar pasa la cartera de un RUT duplicado a la ficha que se conserva. Renovar el mes, en lote, queda reservado a administración y pide motivo. El catálogo de plantillas de correo está en configuración.
+
 ## Lo que queda apagado a propósito
 
 | Tema | Cómo queda | Por qué no se enciende solo |

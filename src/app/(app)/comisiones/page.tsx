@@ -7,6 +7,7 @@ import { getCompanies, getLines } from "@/features/catalog/queries";
 import { getIndicatorValues } from "@/server/uf";
 import { CommissionsTable } from "@/features/commissions/components/commissions-table";
 import { PageHeader } from "@/components/page-header";
+import Link from "next/link";
 
 type SearchParams = Promise<
   Record<string, string | string[] | undefined> | undefined
@@ -60,6 +61,11 @@ export default async function ComisionesPage({
 
   return (
     <div className="space-y-6">
+      <p className="text-sm">
+        <Link href="/comisiones/liquidacion" className="text-primary hover:underline">
+          Cargar liquidación de la compañía
+        </Link>
+      </p>
       <PageHeader
         title="Revisión de comisiones"
         description="Comisión calculada por póliza, pagos de la compañía y diferencias a reclamar."
