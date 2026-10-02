@@ -58,6 +58,8 @@ export default async function EditarClientePage({
     holdingId: client.holdingId ?? "",
     source: client.source ?? "",
     comentarioAlerta: client.comentarioAlerta ?? "",
+    marketingConsent: client.marketingConsent,
+    aiProcessingConsent: client.aiProcessingConsent,
     observaciones: client.observaciones ?? "",
     contacts: client.contacts.map((contact) => ({
       name: contact.name,

@@ -2,7 +2,11 @@ import { z } from "zod";
 
 export const INSTALLMENT_STATUSES = [
   "PENDIENTE",
+  "PARCIAL",
+  "PRESUNTA",
   "PAGADA",
+  "RECHAZADA",
+  "CASTIGADA",
   "ANULADA",
 ] as const;
 
@@ -13,7 +17,11 @@ export const INSTALLMENT_STATUS_LABELS: Record<
   string
 > = {
   PENDIENTE: "Pendiente",
+  PARCIAL: "Parcial",
+  PRESUNTA: "Presunta pagada",
   PAGADA: "Pagada",
+  RECHAZADA: "Rechazada",
+  CASTIGADA: "Castigada",
   ANULADA: "Anulada",
 };
 

@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { requireOrgDb } from "@/server/context";
 import { sanitizeRichText } from "@/lib/sanitize";
 import { logActivity } from "@/server/activity";
+import { appendPremiumMovement } from "@/features/ledger/record";
 import { canDeletePolicy } from "@/lib/roles";
 import {
   policyFormSchema,
@@ -143,6 +144,19 @@ export async function createPolicyAction(
           changedById: ctx.userId,
         },
       });
+      const net = Number(data.premiumNet);
+      if (net > 0) {
+        await appendPremiumMovement(tx, {
+          organizationId: ctx.organizationId,
+          policyId: created.id,
+          movementType: "ISSUE",
+          issuedOn: new Date(),
+          effectiveOn: parseDate(data.startDate) ?? new Date(),
+          currency: data.currency,
+          createdById: ctx.userId,
+          parts: { affected: net, exempt: 0 },
+        });
+      }
 
       // Si viene de propuesta: vincular plan de pago e installments + marcar propuesta como emitida
       const proposalId = emptyToNull(data.proposalId);
@@ -449,6 +463,30 @@ export async function renewPolicyAction(id: string): Promise<ActionResult> {
           changedById: ctx.userId,
         },
       });
+      const renewedNet = policy.premiumNet ? Number(policy.premiumNet) : 0;
+      if (renewedNet > 0) {
+        await appendPremiumMovement(tx, {
+          organizationId: ctx.organizationId,
+          policyId: renewed.id,
+          movementType: "ISSUE",
+          issuedOn: new Date(),
+          effectiveOn: policy.endDate ?? new Date(),
+          currency: policy.currency,
+          createdById: ctx.userId,
+          parts: {
+            affected: policy.premiumAffect
+              ? Number(policy.premiumAffect)
+              : renewedNet,
+            exempt: policy.premiumExempt ? Number(policy.premiumExempt) : 0,
+            pctAffected: policy.commissionAffectPct
+              ? Number(policy.commissionAffectPct)
+              : 0,
+            pctExempt: policy.commissionExemptPct
+              ? Number(policy.commissionExemptPct)
+              : 0,
+          },
+        });
+      }
       await tx.policy.update({
         where: { id: policy.id },
         data: { status: "RENOVADA", nextPolicyId: renewed.id },

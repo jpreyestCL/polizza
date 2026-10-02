@@ -1,6 +1,11 @@
 import "server-only";
 import { Prisma, type EndorsementType } from "@prisma/client";
 import { terminationResult, type TerminationKind } from "@/lib/domain/termination";
+import {
+  appendPremiumMovement,
+  ensureIssueMovement,
+  reverseEndorsementMovements,
+} from "@/features/ledger/record";
 
 const ANNULMENT_TYPES = new Set<EndorsementType>([
   "ANULACION_ENDOSO",
@@ -31,7 +36,10 @@ type Tx = any;
 export async function closePlanOnTermination(
   tx: Tx,
   input: {
+    organizationId: string;
     policyId: string;
+    endorsementId: string;
+    userId: string;
     kind: TerminationKind;
     effectiveDate: Date;
   },
@@ -40,11 +48,16 @@ export async function closePlanOnTermination(
     where: { id: input.policyId },
     select: {
       id: true,
-      premiumNet: true,
+      organizationId: true,
       premiumAffect: true,
       premiumExempt: true,
+      premiumNet: true,
+      commissionAffectPct: true,
+      commissionExemptPct: true,
+      currency: true,
       startDate: true,
       endDate: true,
+      createdAt: true,
     },
   });
   if (!policy) return;
@@ -67,10 +80,10 @@ export async function closePlanOnTermination(
   });
 
   const paid = installments
-    .filter((row) => row.status === "PAGADA")
+    .filter((row) => row.status === "PAGADA" || row.status === "PRESUNTA")
     .reduce((sum, row) => sum + Number(row.amount), 0);
   const pendingIds = installments
-    .filter((row) => row.status === "PENDIENTE")
+    .filter((row) => row.status === "PENDIENTE" || row.status === "RECHAZADA")
     .map((row) => row.id);
 
   const affect =
@@ -100,6 +113,27 @@ export async function closePlanOnTermination(
       terminationReason: input.kind,
     },
   });
+  await ensureIssueMovement(tx, policy);
+  await appendPremiumMovement(tx, {
+    organizationId: input.organizationId,
+    policyId: input.policyId,
+    endorsementId: input.endorsementId,
+    movementType: "ENDORSEMENT",
+    issuedOn: new Date(),
+    effectiveOn: input.effectiveDate,
+    currency: policy.currency,
+    createdById: input.userId,
+    parts: {
+      affected: result.creditAffected,
+      exempt: result.creditExempt,
+      pctAffected: policy.commissionAffectPct
+        ? Number(policy.commissionAffectPct)
+        : 0,
+      pctExempt: policy.commissionExemptPct
+        ? Number(policy.commissionExemptPct)
+        : 0,
+    },
+  });
 
   if (pendingIds.length > 0) {
     await tx.installment.updateMany({
@@ -123,14 +157,25 @@ export async function closePlanOnTermination(
 /** Revierte la cascada cuando se borra el último endoso de término. */
 export async function reopenPlanAfterTermination(
   tx: Tx,
-  policyId: string,
+  input: {
+    organizationId: string;
+    policyId: string;
+    endorsementId: string;
+    userId: string;
+  },
 ): Promise<void> {
   const plan = await tx.paymentPlan.findFirst({
-    where: { policyId },
+    where: { policyId: input.policyId },
     select: { id: true },
   });
+  await reverseEndorsementMovements(tx, {
+    organizationId: input.organizationId,
+    policyId: input.policyId,
+    endorsementId: input.endorsementId,
+    createdById: input.userId,
+  });
   await tx.policy.update({
-    where: { id: policyId },
+    where: { id: input.policyId },
     data: {
       terminationBalance: null,
       terminationBalanceIsEstimate: false,
@@ -142,9 +187,13 @@ export async function reopenPlanAfterTermination(
       ? {
           voidedByTermination: true,
           status: "ANULADA",
-          OR: [{ policyId }, { paymentPlanId: plan.id }],
+          OR: [{ policyId: input.policyId }, { paymentPlanId: plan.id }],
         }
-      : { policyId, voidedByTermination: true, status: "ANULADA" },
+      : {
+          policyId: input.policyId,
+          voidedByTermination: true,
+          status: "ANULADA",
+        },
     data: { status: "PENDIENTE", voidedByTermination: false },
   });
   if (plan) {

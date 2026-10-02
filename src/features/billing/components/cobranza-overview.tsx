@@ -25,15 +25,19 @@ export function CobranzaOverview({
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const overdueCount = installments.filter((i) => i.overdue).length;
+  const openStatuses = new Set(["PENDIENTE", "PARCIAL", "RECHAZADA"]);
+  const collectedStatuses = new Set(["PAGADA", "PRESUNTA"]);
   const pendingCount = installments.filter(
-    (i) => i.status === "PENDIENTE" && !i.overdue,
+    (i) => openStatuses.has(i.status) && !i.overdue,
   ).length;
-  const paidCount = installments.filter((i) => i.status === "PAGADA").length;
+  const paidCount = installments.filter((i) =>
+    collectedStatuses.has(i.status),
+  ).length;
 
   const visible = installments.filter((i) => {
     if (filter === "vencida") return i.overdue;
-    if (filter === "porvencer") return i.status === "PENDIENTE" && !i.overdue;
-    if (filter === "pagada") return i.status === "PAGADA";
+    if (filter === "porvencer") return openStatuses.has(i.status) && !i.overdue;
+    if (filter === "pagada") return collectedStatuses.has(i.status);
     return true;
   });
 
@@ -113,7 +117,10 @@ export function CobranzaOverview({
                   status={installment.status}
                   overdue={installment.overdue}
                 />
-                {installment.status !== "PAGADA" && (
+                {(installment.status === "PENDIENTE" ||
+                  installment.status === "PARCIAL" ||
+                  installment.status === "RECHAZADA") &&
+                  !installment.voidedByTermination && (
                   <Button
                     type="button"
                     variant="outline"

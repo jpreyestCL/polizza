@@ -12,6 +12,7 @@ import {
 import {
   COMPANY_INITIATED_TYPES,
   endorsementSchema,
+  endorsementUsesCalculatedCredit,
   ENDORSEMENT_TYPES,
   ENDORSEMENT_TYPE_LABELS,
   endorsementStatusEffect,
@@ -234,6 +235,8 @@ function emptyValues(policyEndDate: string): EndorsementValues {
     detail: "",
     endorsementNumber: "",
     notes: "",
+    premiumAffectedDelta: "",
+    premiumExemptDelta: "",
   };
 }
 
@@ -388,6 +391,47 @@ function EndorsementDialog({
               />
             </div>
           ) : null}
+          {!endorsementUsesCalculatedCredit(values.type) ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Delta prima afecta</Label>
+                <Input
+                  inputMode="decimal"
+                  value={values.premiumAffectedDelta}
+                  onChange={(e) =>
+                    setValues({
+                      ...values,
+                      premiumAffectedDelta: e.target.value,
+                    })
+                  }
+                  placeholder="0, o negativo si baja"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Delta prima exenta</Label>
+                <Input
+                  inputMode="decimal"
+                  value={values.premiumExemptDelta}
+                  onChange={(e) =>
+                    setValues({
+                      ...values,
+                      premiumExemptDelta: e.target.value,
+                    })
+                  }
+                  placeholder="0, o negativo si baja"
+                />
+              </div>
+              <p className="col-span-2 text-xs text-muted-foreground">
+                Se suma al libro de primas al registrar el endoso. En una
+                cancelación o anulación el crédito se calcula solo.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              La prima vigente baja por el crédito de la cancelación o
+              anulación. No hace falta informar un delta.
+            </p>
+          )}
           <div>
             <Label className="text-xs">
               Detalle del endoso{isProposal ? " *" : ""}

@@ -101,6 +101,30 @@ export function EndorsementProposalForm({
           />
         </div>
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <Label className="text-xs">Delta prima afecta</Label>
+          <Input
+            inputMode="decimal"
+            value={values.premiumAffectedDelta}
+            onChange={(e) =>
+              setValues({ ...values, premiumAffectedDelta: e.target.value })
+            }
+            placeholder="Vacío si no cambia"
+          />
+        </div>
+        <div>
+          <Label className="text-xs">Delta prima exenta</Label>
+          <Input
+            inputMode="decimal"
+            value={values.premiumExemptDelta}
+            onChange={(e) =>
+              setValues({ ...values, premiumExemptDelta: e.target.value })
+            }
+            placeholder="Vacío si no cambia"
+          />
+        </div>
+      </div>
       <div>
         <Label className="text-xs">Detalle del endoso *</Label>
         <Textarea

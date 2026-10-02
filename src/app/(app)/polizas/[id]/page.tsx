@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
 import { getPolicyActivity, getPolicyDetail } from "@/features/policies/queries";
+import { backfillPolicyIssueMovement } from "@/features/ledger/record";
 import { getCompanies, getLines } from "@/features/catalog/queries";
 import { getOrgMembers } from "@/features/clients/queries";
 import { listDocuments } from "@/features/documents/queries";
@@ -37,6 +38,7 @@ export default async function PolizaDetailPage({
   const { id } = await params;
   const { ctx, db } = await requireOrgDb();
 
+  await backfillPolicyIssueMovement(db, id);
   const policy = await getPolicyDetail(db, id);
   if (!policy) notFound();
 
@@ -149,6 +151,19 @@ export default async function PolizaDetailPage({
 
       {policy.client.comentarioAlerta?.trim() && (
         <ClientAlertBanner message={policy.client.comentarioAlerta} />
+      )}
+
+      {policy.issueProblemCode && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-medium">Emitida con problemas</p>
+          <p>
+            {policy.issueProblemCode}
+            {policy.issueProblemDetail ? ` — ${policy.issueProblemDetail}` : ""}
+          </p>
+          <p className="mt-1 text-xs">
+            La póliza está en cartera. La corrección se pide con un endoso.
+          </p>
+        </div>
       )}
 
       {(openForRenewal || policy.notRenewable || policy.nonRenewalAt) && (

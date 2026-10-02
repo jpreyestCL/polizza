@@ -11,6 +11,7 @@ import {
   type RetentionCounts,
 } from "@/lib/domain/renewal-status";
 import { renewalStatusByPolicy } from "@/features/policies/renewal-context";
+import { backfillMissingIssueMovements } from "@/features/ledger/record";
 
 export type AgingRow = {
   policyNumber: string;
@@ -22,9 +23,19 @@ export type AgingRow = {
   bucket: AgingBucket;
 };
 
+export type ProductionRow = {
+  currency: string;
+  movementType: string;
+  count: number;
+  net: number;
+  gross: number;
+  commission: number;
+};
+
 export type ReportsSnapshot = {
   portfolioCount: number;
   premiumByCurrency: { currency: string; amount: number }[];
+  production: ProductionRow[];
   retention: RetentionCounts;
   retentionRate: number | null;
   aging: Record<AgingBucket, { count: number; amount: number }>;
@@ -59,8 +70,9 @@ export async function getReportsSnapshot(
 ): Promise<ReportsSnapshot> {
   const scope = canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId };
   const { start, end, today } = monthBounds(now);
+  await backfillMissingIssueMovements(db);
 
-  const [portfolio, monthPolicies, overdue, claims] = await Promise.all([
+  const [portfolio, monthPolicies, overdue, claims, movements] = await Promise.all([
     db.policy.findMany({
       where: { ...scope, status: "VIGENTE" },
       select: { premiumNet: true, currency: true },
@@ -82,7 +94,7 @@ export async function getReportsSnapshot(
     }),
     db.installment.findMany({
       where: {
-        status: "PENDIENTE",
+        status: { in: ["PENDIENTE", "PARCIAL", "RECHAZADA"] },
         dueDate: { lt: today },
         policy: { ...scope },
       },
@@ -103,6 +115,19 @@ export async function getReportsSnapshot(
     db.claim.groupBy({
       by: ["status"],
       _count: { _all: true },
+    }),
+    db.premiumMovement.findMany({
+      where: {
+        issuedOn: { gte: start, lt: end },
+        policy: scope,
+      },
+      select: {
+        movementType: true,
+        currency: true,
+        premiumNet: true,
+        premiumGross: true,
+        commissionTotal: true,
+      },
     }),
   ]);
 
@@ -179,12 +204,31 @@ export async function getReportsSnapshot(
     .filter((row) => row.status !== "CERRADO")
     .reduce((sum, row) => sum + row.count, 0);
 
+  const productionMap = new Map<string, ProductionRow>();
+  for (const movement of movements) {
+    const key = `${movement.currency}|${movement.movementType}`;
+    const current = productionMap.get(key) ?? {
+      currency: movement.currency,
+      movementType: movement.movementType,
+      count: 0,
+      net: 0,
+      gross: 0,
+      commission: 0,
+    };
+    current.count += 1;
+    current.net += Number(movement.premiumNet);
+    current.gross += Number(movement.premiumGross);
+    current.commission += Number(movement.commissionTotal);
+    productionMap.set(key, current);
+  }
+
   return {
     portfolioCount: portfolio.length,
     premiumByCurrency: [...premium.entries()].map(([currency, amount]) => ({
       currency,
       amount,
     })),
+    production: [...productionMap.values()],
     retention,
     retentionRate: retentionRate(retention),
     aging,

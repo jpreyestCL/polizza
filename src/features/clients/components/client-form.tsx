@@ -636,6 +636,50 @@ export function ClientForm({
           />
           <FormField
             control={form.control}
+            name="marketingConsent"
+            render={({ field }) => (
+              <FormItem className="flex items-start gap-2 space-y-0">
+                <FormControl>
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={field.value}
+                    onChange={(event) => field.onChange(event.target.checked)}
+                  />
+                </FormControl>
+                <div>
+                  <FormLabel>Acepta comunicaciones comerciales</FormLabel>
+                  <p className="text-xs text-muted-foreground">
+                    Consentimiento explícito para marketing. Sin esta marca no se usan sus datos para campañas.
+                  </p>
+                </div>
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="aiProcessingConsent"
+            render={({ field }) => (
+              <FormItem className="flex items-start gap-2 space-y-0">
+                <FormControl>
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={field.value}
+                    onChange={(event) => field.onChange(event.target.checked)}
+                  />
+                </FormControl>
+                <div>
+                  <FormLabel>Acepta procesamiento con IA</FormLabel>
+                  <p className="text-xs text-muted-foreground">
+                    Permite enviar documentos de este cliente a un proveedor de IA, sin uso para entrenamiento.
+                  </p>
+                </div>
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
             name="observaciones"
             render={({ field }) => (
               <FormItem>

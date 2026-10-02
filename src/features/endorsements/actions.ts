@@ -18,9 +18,11 @@ import {
   endorsementTransitionError,
   ENDORSEMENT_TYPE_LABELS,
   endorsementStatusEffect,
+  parsePremiumDelta,
   type EndorsementValues,
   type EndorsementProposalValues,
 } from "./schemas";
+import { reverseEndorsementMovements } from "@/features/ledger/record";
 
 type ActionResult<T = undefined> =
   | { ok: true; data?: T }
@@ -35,6 +37,12 @@ function toDate(v: string): Date | null {
   if (!v) return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function deltaDecimal(value: string): Prisma.Decimal | null {
+  const amount = parsePremiumDelta(value);
+  if (amount == null) return null;
+  return new Prisma.Decimal(amount.toFixed(4));
 }
 
 /**
@@ -98,6 +106,8 @@ export async function createEndorsementAction(
         detail: toNullable(data.detail),
         notes: toNullable(data.notes),
         proposalId: null,
+        premiumAffectedDelta: parsePremiumDelta(data.premiumAffectedDelta),
+        premiumExemptDelta: parsePremiumDelta(data.premiumExemptDelta),
       }),
     );
     if (!result.ok) return result;
@@ -149,6 +159,8 @@ export async function createEndorsementAction(
           endorsedPolicyId: policy.id,
           endorsementType: data.type,
           endorsementDetail: data.detail,
+          endorsementPremiumAffected: deltaDecimal(data.premiumAffectedDelta),
+          endorsementPremiumExempt: deltaDecimal(data.premiumExemptDelta),
           observations: toNullable(data.notes),
           clientId: policy.clientId,
           proposalNumber,
@@ -258,6 +270,8 @@ export async function updateEndorsementProposalAction(
     data: {
       endorsementType: data.type,
       endorsementDetail: data.detail,
+      endorsementPremiumAffected: deltaDecimal(data.premiumAffectedDelta),
+      endorsementPremiumExempt: deltaDecimal(data.premiumExemptDelta),
       startDate: effective,
       endDate: toDate(data.endDate),
       observations: toNullable(data.observations),
@@ -312,6 +326,12 @@ export async function deleteEndorsementAction(
     }
   }
 
+  await reverseEndorsementMovements(db, {
+    organizationId: ctx.organizationId,
+    policyId: endorsement.policyId,
+    endorsementId: endorsement.id,
+    createdById: ctx.userId,
+  });
   if (terminationKindOf(endorsement.type)) {
     const otherTerminations = await db.endorsement.count({
       where: {
@@ -330,7 +350,12 @@ export async function deleteEndorsementAction(
       },
     });
     if (otherTerminations === 0) {
-      await reopenPlanAfterTermination(db, endorsement.policyId);
+      await reopenPlanAfterTermination(db, {
+        organizationId: ctx.organizationId,
+        policyId: endorsement.policyId,
+        endorsementId: endorsement.id,
+        userId: ctx.userId,
+      });
     }
   }
 

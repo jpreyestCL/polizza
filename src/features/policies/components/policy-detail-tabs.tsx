@@ -72,6 +72,9 @@ export function PolicyDetailTabs({
         <TabsTrigger value="coberturas">
           Coberturas ({policy.coverages.length})
         </TabsTrigger>
+        <TabsTrigger value="libro">
+          Libro ({policy.premiumMovements.length})
+        </TabsTrigger>
         <TabsTrigger value="cobranza">
           Cobranza ({installments.length})
         </TabsTrigger>
@@ -267,6 +270,67 @@ export function PolicyDetailTabs({
               </li>
             ))}
           </ul>
+        )}
+      </TabsContent>
+
+      <TabsContent value="libro">
+        {policy.premiumMovements.length === 0 ? (
+          <EmptyState
+            icon={History}
+            title="Sin movimientos"
+            description="La prima vigente es la suma de este libro. Todavía no hay asientos."
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-xl border bg-card">
+            <table className="w-full min-w-[720px] text-sm">
+              <thead className="border-b bg-muted/40 text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2.5 text-left font-medium">#</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Tipo</th>
+                  <th className="px-3 py-2.5 text-left font-medium">Vigente</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Afecta</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Exenta</th>
+                  <th className="px-3 py-2.5 text-right font-medium">IVA</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Neta</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Bruta</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Comisión</th>
+                </tr>
+              </thead>
+              <tbody>
+                {policy.premiumMovements.map((movement) => (
+                  <tr key={movement.id} className="border-b last:border-0">
+                    <td className="px-3 py-2">{movement.seqNo}</td>
+                    <td className="px-3 py-2">
+                      {movement.movementType === "ISSUE"
+                        ? "Emisión"
+                        : movement.movementType === "REVERSAL"
+                          ? "Reverso"
+                          : "Endoso"}
+                    </td>
+                    <td className="px-3 py-2">{formatDate(movement.effectiveOn)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {formatMoney(movement.premiumAffected, currency)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {formatMoney(movement.premiumExempt, currency)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {formatMoney(movement.taxAmount, currency)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {formatMoney(movement.premiumNet, currency)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {formatMoney(movement.premiumGross, currency)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {formatMoney(movement.commissionTotal, currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </TabsContent>
 

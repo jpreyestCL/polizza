@@ -69,7 +69,7 @@ export async function getDashboardData(
       listTasks(ctx, db),
       db.installment.count({
         where: {
-          status: "PENDIENTE",
+          status: { in: ["PENDIENTE", "PARCIAL", "RECHAZADA"] },
           dueDate: { lt: todayUtc },
           policyId: { not: null },
           ...(ctx.role === "ejecutivo"

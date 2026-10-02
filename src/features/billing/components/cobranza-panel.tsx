@@ -5,15 +5,20 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Check, Loader2, Plus, RotateCcw, Trash2, Wallet } from "lucide-react";
+import { Loader2, Plus, Trash2, Wallet } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { CURRENCIES, formatMoney, type CurrencyCode } from "@/lib/money";
-import { generatePlanSchema, type GeneratePlanValues } from "../schemas";
+import {
+  generatePlanSchema,
+  INSTALLMENT_STATUS_LABELS,
+  INSTALLMENT_STATUSES,
+  type GeneratePlanValues,
+  type InstallmentStatusValue,
+} from "../schemas";
 import {
   deleteInstallmentAction,
   generateInstallmentPlanAction,
-  markInstallmentPaidAction,
-  markInstallmentPendingAction,
+  setInstallmentStatusAction,
   type ActionResult,
 } from "../actions";
 import type { InstallmentItem } from "../queries";
@@ -197,44 +202,35 @@ export function CobranzaPanel({
                   status={installment.status}
                   overdue={installment.overdue}
                 />
-                {installment.status === "PAGADA" ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Marcar pendiente"
-                    disabled={busyId === installment.id}
-                    onClick={() =>
+                {installment.voidedByTermination ||
+                installment.status === "ANULADA" ? null : (
+                  <Select
+                    value={installment.status}
+                    onValueChange={(value) =>
                       runAction(
                         installment.id,
-                        markInstallmentPendingAction,
-                        "Cuota reabierta",
+                        (id) =>
+                          setInstallmentStatusAction(
+                            id,
+                            value as InstallmentStatusValue,
+                          ),
+                        `Cuota ${INSTALLMENT_STATUS_LABELS[value as InstallmentStatusValue].toLowerCase()}`,
                       )
                     }
                   >
-                    <RotateCcw className="text-muted-foreground" />
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Marcar pagada"
-                    disabled={busyId === installment.id}
-                    onClick={() =>
-                      runAction(
-                        installment.id,
-                        markInstallmentPaidAction,
-                        "Cuota marcada como pagada",
-                      )
-                    }
-                  >
-                    {busyId === installment.id ? (
-                      <Loader2 className="animate-spin" />
-                    ) : (
-                      <Check className="text-primary" />
-                    )}
-                  </Button>
+                    <SelectTrigger className="h-8 w-[9.5rem]" aria-label="Estado de la cuota">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INSTALLMENT_STATUSES.filter((status) => status !== "ANULADA").map(
+                        (status) => (
+                          <SelectItem key={status} value={status}>
+                            {INSTALLMENT_STATUS_LABELS[status]}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectContent>
+                  </Select>
                 )}
                 <Button
                   type="button"

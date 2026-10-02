@@ -64,6 +64,8 @@ export const clientFormSchema = z
     holdingId: z.string().trim().default(""),
     source: z.string().trim().max(80).default(""),
     comentarioAlerta: z.string().trim().max(2000).default(""),
+    marketingConsent: z.boolean().default(false),
+    aiProcessingConsent: z.boolean().default(false),
     observaciones: z.string().trim().max(2000).default(""),
     contacts: z.array(contactSchema).max(20).default([]),
   })

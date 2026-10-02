@@ -6,6 +6,12 @@ import { PageHeader } from "@/components/page-header";
 import { formatMoney, type CurrencyCode } from "@/lib/money";
 import { formatDate } from "@/lib/utils";
 
+const MOVEMENT_LABELS: Record<string, string> = {
+  ISSUE: "Emisión",
+  ENDORSEMENT: "Endoso",
+  REVERSAL: "Reverso",
+};
+
 const CLAIM_LABELS: Record<string, string> = {
   REPORTADO: "Reportado",
   INGRESADO_COMPANIA: "Ingresado en compañía",
@@ -32,7 +38,7 @@ export default async function InformesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Informes"
-        description="Cartera vigente, retención del mes, mora por antigüedad y siniestros. Cada cifra sale de la misma definición que usa la operación."
+        description="Producción del mes desde el libro de primas, cartera vigente, retención, mora y siniestros. Cada cifra sale de la misma definición que usa la operación."
       />
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -57,6 +63,38 @@ export default async function InformesPage() {
           <p className="text-2xl font-semibold">{data.claimsOpen}</p>
           <p className="text-xs text-muted-foreground">Siniestros abiertos</p>
         </article>
+      </section>
+
+      <section className="space-y-3 rounded-xl border bg-card p-5">
+        <h2 className="text-sm font-semibold">Producción del mes</h2>
+        <p className="text-xs text-muted-foreground">
+          Suma de los movimientos del libro con fecha de asiento en el mes.
+          Un reverso resta. La cartera vigente de abajo es el stock, no este flujo.
+        </p>
+        {data.production.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No hay movimientos en el mes.</p>
+        ) : (
+          <ul className="divide-y text-sm">
+            {data.production.map((row) => (
+              <li
+                key={`${row.currency}-${row.movementType}`}
+                className="flex items-center justify-between gap-3 py-2"
+              >
+                <span>
+                  {MOVEMENT_LABELS[row.movementType] ?? row.movementType}
+                  <span className="ml-2 text-muted-foreground">
+                    {row.currency} · {row.count}
+                  </span>
+                </span>
+                <span className="text-right text-xs text-muted-foreground">
+                  Neta {formatMoney(row.net, row.currency as CurrencyCode)} · Bruta{" "}
+                  {formatMoney(row.gross, row.currency as CurrencyCode)} · Comisión{" "}
+                  {formatMoney(row.commission, row.currency as CurrencyCode)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="space-y-3 rounded-xl border bg-card p-5">

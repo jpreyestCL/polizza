@@ -68,6 +68,35 @@ export function endorsementStatusEffect(
 
 const optionalString = z.string().trim().default("");
 
+/** Vacío o un número con signo. La coma decimal se acepta. */
+export const optionalPremiumDelta = z
+  .string()
+  .trim()
+  .default("")
+  .refine((value) => {
+    if (!value) return true;
+    return Number.isFinite(Number(value.replace(",", ".")));
+  }, "Ingresa un monto válido");
+
+export function parsePremiumDelta(value: string): number | null {
+  const trimmed = value.trim().replace(",", ".");
+  if (!trimmed) return null;
+  const amount = Number(trimmed);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+/**
+ * Cancelación y anulación calculan el crédito de prima. El corte por
+ * pérdida total no cierra el plan: si cambia la prima, se informa el delta.
+ */
+export function endorsementUsesCalculatedCredit(
+  type: EndorsementTypeValue,
+): boolean {
+  return (
+    endorsementStatusEffect(type) != null && type !== "CORTE_PERDIDA_TOTAL"
+  );
+}
+
 /**
  * Cómo se crea el endoso:
  *  - PROPUESTA: genera una propuesta de endoso que recorre el mismo flujo que
@@ -90,6 +119,8 @@ export const endorsementSchema = z
     detail: z.string().trim().max(20000).default(""),
     endorsementNumber: optionalString,
     notes: optionalString,
+    premiumAffectedDelta: optionalPremiumDelta,
+    premiumExemptDelta: optionalPremiumDelta,
   })
   .superRefine((val, ctx) => {
     if (val.mode === "PROPUESTA" && !val.detail) {
@@ -122,6 +153,8 @@ export const endorsementProposalSchema = z
       .min(1, "Describe el detalle del endoso para la compañía")
       .max(20000),
     observations: optionalString,
+    premiumAffectedDelta: optionalPremiumDelta,
+    premiumExemptDelta: optionalPremiumDelta,
   })
   .superRefine((val, ctx) => {
     if (val.endDate && val.endDate < val.effectiveDate) {

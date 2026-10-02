@@ -1,9 +1,13 @@
 import "server-only";
-import type { EndorsementType } from "@prisma/client";
+import { Prisma, type EndorsementType } from "@prisma/client";
 import {
   closePlanOnTermination,
   terminationKindOf,
 } from "@/features/billing/termination";
+import {
+  appendPremiumMovement,
+  ensureIssueMovement,
+} from "@/features/ledger/record";
 import {
   ENDORSEMENT_TYPE_LABELS,
   endorsementStatusEffect,
@@ -22,6 +26,9 @@ export type ApplyEndorsementInput = {
   notes: string | null;
   /** Propuesta de endoso que lo origina (null = registro directo). */
   proposalId: string | null;
+  /** Delta de prima. Se ignora en cancelación y anulación. */
+  premiumAffectedDelta?: number | null;
+  premiumExemptDelta?: number | null;
 };
 
 /** Día puro (columna Date, en UTC) como dd-mm-aaaa. */
@@ -62,6 +69,14 @@ export async function applyEndorsementToPolicy(
       detail: input.detail,
       notes: input.notes,
       proposalId: input.proposalId,
+      premiumAffectedDelta:
+        input.premiumAffectedDelta != null
+          ? new Prisma.Decimal(input.premiumAffectedDelta.toFixed(4))
+          : null,
+      premiumExemptDelta:
+        input.premiumExemptDelta != null
+          ? new Prisma.Decimal(input.premiumExemptDelta.toFixed(4))
+          : null,
       createdById: input.userId,
     },
     select: { id: true },
@@ -89,11 +104,78 @@ export async function applyEndorsementToPolicy(
     const kind = terminationKindOf(input.type);
     if (kind) {
       await closePlanOnTermination(tx, {
+        organizationId: input.organizationId,
         policyId: input.policyId,
+        endorsementId: created.id,
+        userId: input.userId,
         kind,
         effectiveDate: input.effectiveDate,
       });
     }
   }
+  if (!terminationKindOf(input.type)) {
+    await postPremiumDelta(tx, {
+      organizationId: input.organizationId,
+      policyId: input.policyId,
+      endorsementId: created.id,
+      userId: input.userId,
+      effectiveDate: input.effectiveDate,
+      affected: input.premiumAffectedDelta ?? 0,
+      exempt: input.premiumExemptDelta ?? 0,
+    });
+  }
   return { ok: true, id: created.id };
+}
+
+async function postPremiumDelta(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  input: {
+    organizationId: string;
+    policyId: string;
+    endorsementId: string;
+    userId: string;
+    effectiveDate: Date;
+    affected: number;
+    exempt: number;
+  },
+): Promise<void> {
+  if (input.affected === 0 && input.exempt === 0) return;
+  const policy = await tx.policy.findFirst({
+    where: { id: input.policyId },
+    select: {
+      id: true,
+      organizationId: true,
+      premiumAffect: true,
+      premiumExempt: true,
+      premiumNet: true,
+      commissionAffectPct: true,
+      commissionExemptPct: true,
+      currency: true,
+      startDate: true,
+      createdAt: true,
+    },
+  });
+  if (!policy) return;
+  await ensureIssueMovement(tx, policy);
+  await appendPremiumMovement(tx, {
+    organizationId: input.organizationId,
+    policyId: input.policyId,
+    endorsementId: input.endorsementId,
+    movementType: "ENDORSEMENT",
+    issuedOn: new Date(),
+    effectiveOn: input.effectiveDate,
+    currency: policy.currency,
+    createdById: input.userId,
+    parts: {
+      affected: input.affected,
+      exempt: input.exempt,
+      pctAffected: policy.commissionAffectPct
+        ? Number(policy.commissionAffectPct)
+        : 0,
+      pctExempt: policy.commissionExemptPct
+        ? Number(policy.commissionExemptPct)
+        : 0,
+    },
+  });
 }

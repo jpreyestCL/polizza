@@ -171,6 +171,10 @@ export async function createClientAction(
           siniestrosUserId: emptyToNull(data.siniestrosUserId),
           holdingId: emptyToNull(data.holdingId),
           comentarioAlerta: emptyToNull(data.comentarioAlerta),
+          marketingConsent: data.marketingConsent,
+          marketingConsentAt: data.marketingConsent ? new Date() : null,
+          aiProcessingConsent: data.aiProcessingConsent,
+          aiProcessingConsentAt: data.aiProcessingConsent ? new Date() : null,
           observaciones: emptyToNull(data.observaciones),
           createdById: ctx.userId,
           updatedById: ctx.userId,
@@ -268,6 +272,14 @@ export async function updateClientAction(
           siniestrosUserId: emptyToNull(data.siniestrosUserId),
           holdingId: emptyToNull(data.holdingId),
           comentarioAlerta: emptyToNull(data.comentarioAlerta),
+          marketingConsent: data.marketingConsent,
+          marketingConsentAt: data.marketingConsent
+            ? (existing.marketingConsentAt ?? new Date())
+            : null,
+          aiProcessingConsent: data.aiProcessingConsent,
+          aiProcessingConsentAt: data.aiProcessingConsent
+            ? (existing.aiProcessingConsentAt ?? new Date())
+            : null,
           observaciones: emptyToNull(data.observaciones),
           updatedById: ctx.userId,
         },

@@ -5,6 +5,8 @@ import {
   endorsementStatusEffect,
   endorsementSchema,
   endorsementTransitionError,
+  endorsementUsesCalculatedCredit,
+  parsePremiumDelta,
 } from "@/features/endorsements/schemas";
 
 describe("tipos de endoso", () => {
@@ -73,6 +75,27 @@ describe("formulario de endoso", () => {
       effectiveDate: "2026-09-23",
     });
     expect(res.success).toBe(false);
+  });
+
+  it("acepta un delta de prima con signo", () => {
+    const res = endorsementSchema.safeParse({
+      mode: "DIRECTO",
+      type: "MODIFICA_MONTO_PRIMA",
+      effectiveDate: "2026-09-23",
+      premiumAffectedDelta: "-4,5",
+      premiumExemptDelta: "1.25",
+    });
+    expect(res.success).toBe(true);
+    if (res.success) {
+      expect(parsePremiumDelta(res.data.premiumAffectedDelta)).toBe(-4.5);
+      expect(parsePremiumDelta(res.data.premiumExemptDelta)).toBe(1.25);
+    }
+  });
+
+  it("el crédito de cancelación se calcula; el corte por pérdida total no", () => {
+    expect(endorsementUsesCalculatedCredit("CANCELACION_COMPANIA")).toBe(true);
+    expect(endorsementUsesCalculatedCredit("CORTE_PERDIDA_TOTAL")).toBe(false);
+    expect(endorsementUsesCalculatedCredit("MODIFICA_MONTO_PRIMA")).toBe(false);
   });
 
   it("el registro directo no exige detalle", () => {

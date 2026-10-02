@@ -50,6 +50,8 @@ const TENANT_MODELS = new Set<string>([
   "PolicyCoverage",
   "PolicyStatusHistory",
   "Endorsement",
+  "PremiumMovement",
+  "CommissionReceivable",
   "Claim",
   "ClaimStatusHistory",
   "ClaimThirdParty",

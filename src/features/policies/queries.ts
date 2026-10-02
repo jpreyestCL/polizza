@@ -284,6 +284,7 @@ export async function getPolicyDetail(db: Db, id: string) {
       items: { orderBy: { createdAt: "asc" } },
       coverages: { orderBy: { createdAt: "asc" } },
       statusHistory: { orderBy: { createdAt: "desc" } },
+      premiumMovements: { orderBy: { seqNo: "asc" } },
       proposal: {
         select: {
           items: {
@@ -312,6 +313,15 @@ export async function getPolicyDetail(db: Db, id: string) {
       insuredAmount: coverage.insuredAmount
         ? Number(coverage.insuredAmount)
         : null,
+    })),
+    premiumMovements: policy.premiumMovements.map((movement) => ({
+      ...movement,
+      premiumAffected: Number(movement.premiumAffected),
+      premiumExempt: Number(movement.premiumExempt),
+      taxAmount: Number(movement.taxAmount),
+      premiumNet: Number(movement.premiumNet),
+      premiumGross: Number(movement.premiumGross),
+      commissionTotal: Number(movement.commissionTotal),
     })),
   };
 }

@@ -118,7 +118,9 @@ export function PolicyReceptionPanel({
       toast.error(r.error);
       return;
     }
-    toast.success("Registrada como devuelta a la compañía.");
+    toast.success(
+      "Emitida con problemas. Queda por despachar; la corrección se pide con un endoso.",
+    );
     router.refresh();
   }
 
@@ -150,9 +152,10 @@ export function PolicyReceptionPanel({
                 registrado en la póliza (una cancelación o anulación cambia su
                 estado ahora, con vigencia desde el inicio del endoso) y la
                 propuesta queda <strong>Por despachar</strong> al cliente. Si
-                vino con error, regístralo (queda{" "}
-                <strong>Devuelta a la cía</strong>). Sube el PDF del endoso en
-                la pestaña Documentos como tipo “Endoso”.
+                vino con problemas, regístralo igual: queda{" "}
+                <strong>Por despachar</strong> y la corrección se pide con otro
+                endoso. Sube el PDF del endoso en la pestaña Documentos como
+                tipo “Endoso”.
               </>
             )
           ) : isReturned ? (
@@ -166,10 +169,11 @@ export function PolicyReceptionPanel({
             </>
           ) : (
             <>
-              A la espera de que la compañía emita la póliza. Registra la emisión
-              correcta (la propuesta pasa a <strong>Por despachar</strong>) o el
-              error de emisión (queda <strong>Devuelta a la cía</strong>). El PDF
-              de la póliza se adjunta en la pestaña Documentos.
+              A la espera de que la compañía emita la póliza. La emisión correcta
+              y la emisión con problemas dejan la propuesta en{" "}
+              <strong>Por despachar</strong>. El problema queda marcado y se
+              corrige con un endoso; no devuelve la propuesta. El PDF de la
+              póliza se adjunta en la pestaña Documentos.
             </>
           )}
         </p>
@@ -318,7 +322,7 @@ export function PolicyReceptionPanel({
                 ) : (
                   <AlertTriangle className="size-4" />
                 )}
-                Devolver a la compañía
+                Registrar emisión con problemas
               </Button>
             </div>
           </div>

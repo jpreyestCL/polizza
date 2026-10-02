@@ -37,6 +37,8 @@ export default async function NuevoClientePage() {
     holdingId: "",
     source: "",
     comentarioAlerta: "",
+    marketingConsent: false,
+    aiProcessingConsent: false,
     observaciones: "",
     contacts: [],
   };

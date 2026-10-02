@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { requireOrgDb } from "@/server/context";
 import { logActivity } from "@/server/activity";
-import { generatePlanSchema, type GeneratePlanValues } from "./schemas";
+import {
+  generatePlanSchema,
+  INSTALLMENT_STATUSES,
+  INSTALLMENT_STATUS_LABELS,
+  type GeneratePlanValues,
+  type InstallmentStatusValue,
+} from "./schemas";
 
 export type ActionResult =
   | { ok: true }
@@ -121,6 +127,67 @@ export async function markInstallmentPaidAction(
 
   revalidatePath("/cobranza");
   revalidatePath(`/polizas/${installment.policyId}`);
+  return { ok: true };
+}
+
+const MANUAL_INSTALLMENT_STATUSES = INSTALLMENT_STATUSES.filter(
+  (status) => status !== "ANULADA",
+);
+
+/**
+ * Cambia el estado de una cuota a mano. Presunta pagada no se asigna sola:
+ * solo queda si alguien la marca. Anulada queda reservada al cierre por
+ * cancelación o anulación.
+ */
+export async function setInstallmentStatusAction(
+  id: string,
+  status: InstallmentStatusValue,
+): Promise<ActionResult> {
+  if (status === "ANULADA") {
+    return { ok: false, error: "Ese estado no se asigna a mano." };
+  }
+  if (!MANUAL_INSTALLMENT_STATUSES.includes(status)) {
+    return { ok: false, error: "Ese estado no se asigna a mano." };
+  }
+  const { ctx, db } = await requireOrgDb();
+  const installment = await db.installment.findFirst({
+    where: { id },
+    select: {
+      id: true,
+      number: true,
+      policyId: true,
+      voidedByTermination: true,
+    },
+  });
+  if (!installment) {
+    return { ok: false, error: "La cuota no existe o no tienes acceso." };
+  }
+  if (installment.voidedByTermination) {
+    return {
+      ok: false,
+      error: "La cuota se anuló al cancelar o anular la póliza.",
+    };
+  }
+  const collected = status === "PAGADA" || status === "PRESUNTA";
+  await db.installment.update({
+    where: { id },
+    data: {
+      status,
+      paidAt: collected ? new Date() : null,
+    },
+  });
+  if (installment.policyId) {
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "POLICY",
+      entityId: installment.policyId,
+      action: "installment_status",
+      summary: `Cuota ${installment.number} quedó ${INSTALLMENT_STATUS_LABELS[status].toLowerCase()}`,
+      userId: ctx.userId,
+    });
+    revalidatePath(`/polizas/${installment.policyId}`);
+  }
+  revalidatePath("/cobranza");
   return { ok: true };
 }
 

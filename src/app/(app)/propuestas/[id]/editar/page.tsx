@@ -50,6 +50,14 @@ export default async function EditarPropuestaPage({
             endDate: toDateInput(proposal.endDate),
             detail: proposal.endorsementDetail ?? "",
             observations: proposal.observations ?? "",
+            premiumAffectedDelta:
+              proposal.endorsementPremiumAffected != null
+                ? String(Number(proposal.endorsementPremiumAffected))
+                : "",
+            premiumExemptDelta:
+              proposal.endorsementPremiumExempt != null
+                ? String(Number(proposal.endorsementPremiumExempt))
+                : "",
           }}
         />
       </div>

@@ -239,8 +239,9 @@ export type ProposalDraftValues = z.infer<typeof proposalDraftSchema>;
 
 /**
  * Recepción de la póliza emitida por la compañía (flujo post-envío).
- * Si la emisión fue correcta → estado POR_DESPACHAR (obs 8). Si hubo error →
- * estado DEVUELTA ("devuelta a la cía") con su motivo.
+ * Si la emisión fue correcta → POR_DESPACHAR. Si el documento trae diferencias,
+ * también queda POR_DESPACHAR y el motivo viaja como problema de emisión.
+ * DEVUELTA sigue siendo la devolución de la propuesta antes de que la compañía emita.
  */
 export const EMISSION_ERROR_REASONS = [
   "Por digitación",

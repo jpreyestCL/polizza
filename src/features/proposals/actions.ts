@@ -6,6 +6,7 @@ import { requireOrgDb } from "@/server/context";
 import { basePrisma, type Db } from "@/server/db";
 import type { SessionContext } from "@/server/context";
 import { applyEndorsementToPolicy } from "@/features/endorsements/apply";
+import { appendPremiumMovement } from "@/features/ledger/record";
 import { ENDORSEMENT_TYPE_LABELS } from "@/features/endorsements/schemas";
 import { logActivity } from "@/server/activity";
 import { canDeleteProposal } from "@/lib/roles";
@@ -632,6 +633,8 @@ export async function registerPolicyEmissionAction(
       endorsedPolicyId: true,
       endorsementType: true,
       endorsementDetail: true,
+      endorsementPremiumAffected: true,
+      endorsementPremiumExempt: true,
       startDate: true,
       endDate: true,
     },
@@ -733,6 +736,12 @@ export async function registerPolicyEmissionAction(
             detail: proposal.endorsementDetail,
             notes: null,
             proposalId,
+            premiumAffectedDelta: proposal.endorsementPremiumAffected
+              ? Number(proposal.endorsementPremiumAffected)
+              : null,
+            premiumExemptDelta: proposal.endorsementPremiumExempt
+              ? Number(proposal.endorsementPremiumExempt)
+              : null,
           });
           if (!result.ok) {
             endorsementFailure = result.error;
@@ -801,8 +810,9 @@ export async function registerPolicyEmissionAction(
 }
 
 /**
- * Registra que la compañía emitió la póliza con un error: la propuesta queda
- * DEVUELTA ("devuelta a la compañía") con el motivo del error de emisión.
+ * La compañía emitió, pero el documento no coincide con lo pedido.
+ * La propuesta igual queda POR_DESPACHAR (emitida). El motivo queda como
+ * problema de emisión y viaja a la póliza al despachar. La corrección es un endoso.
  */
 export async function registerEmissionErrorAction(
   proposalId: string,
@@ -831,7 +841,7 @@ export async function registerEmissionErrorAction(
     await tx.proposal.update({
       where: { id: proposalId },
       data: {
-        status: "DEVUELTA",
+        status: "POR_DESPACHAR",
         currentStateStartedAt: new Date(),
         // Obs 16: registra el N° de póliza generado (erróneo) y la fecha de
         // recepción aun cuando la emisión vino con error.
@@ -845,8 +855,8 @@ export async function registerEmissionErrorAction(
       data: {
         organizationId: ctx.organizationId,
         proposalId,
-        status: "DEVUELTA",
-        note: `Devuelta a la compañía · ${docWord} N° ${data.policyNumber.trim()} · ${data.reason}${
+        status: "POR_DESPACHAR",
+        note: `Emitida con problemas · ${docWord} N° ${data.policyNumber.trim()} · ${data.reason}${
           data.detail ? ` — ${data.detail}` : ""
         }`,
         changedById: ctx.userId,
@@ -857,7 +867,7 @@ export async function registerEmissionErrorAction(
         organizationId: ctx.organizationId,
         proposalId,
         action: "EMISSION_ERROR",
-        summary: `Devuelta a la compañía por error de emisión: ${data.reason}`,
+        summary: `Emitida con problemas: ${data.reason}. Queda por despachar y el problema se corrige con endoso.`,
         payload: {
           reason: data.reason,
           detail: data.detail,
@@ -874,7 +884,7 @@ export async function registerEmissionErrorAction(
     entityType: "PROPOSAL",
     entityId: proposalId,
     action: "emission_error",
-    summary: `Propuesta ${proposal.proposalNumber}: devuelta a la compañía (${data.reason})`,
+    summary: `Propuesta ${proposal.proposalNumber}: emitida con problemas (${data.reason})`,
     userId: ctx.userId,
   });
 
@@ -922,6 +932,10 @@ export async function dispatchPolicyToContratanteAction(
       endDate: true,
       assignedUserId: true,
       premiumNet: true,
+      commissionAffectPct: true,
+      commissionExemptPct: true,
+      emissionErrorReason: true,
+      emissionErrorDetail: true,
       policyNumberGenerated: true,
       contratanteEmail: true,
       kind: true,
@@ -1022,6 +1036,9 @@ export async function dispatchPolicyToContratanteAction(
           status: "VIGENTE",
           premiumNet:
             totalNet > 0 ? new Prisma.Decimal(totalNet) : proposal.premiumNet,
+          issueProblemCode: proposal.emissionErrorReason,
+          issueProblemDetail: proposal.emissionErrorDetail,
+          issueProblemOpenedAt: proposal.emissionErrorReason ? new Date() : null,
           currency: proposal.currency,
           startDate: proposal.startDate,
           endDate: proposal.endDate,
@@ -1071,8 +1088,50 @@ export async function dispatchPolicyToContratanteAction(
           organizationId: ctx.organizationId,
           policyId: policy.id,
           status: "VIGENTE",
-          note: `Póliza ${policy.policyNumber} despachada desde la propuesta ${proposal.proposalNumber}`,
+          note: proposal.emissionErrorReason
+            ? `Póliza ${policy.policyNumber} despachada con problemas de emisión: ${proposal.emissionErrorReason}`
+            : `Póliza ${policy.policyNumber} despachada desde la propuesta ${proposal.proposalNumber}`,
           changedById: ctx.userId,
+        },
+      });
+
+      const affect = proposalItems.reduce(
+        (sum, item) =>
+          sum +
+          item.coverages.reduce(
+            (inner, coverage) =>
+              inner + (coverage.premiumAffect ? Number(coverage.premiumAffect) : 0),
+            0,
+          ),
+        0,
+      );
+      const exempt = proposalItems.reduce(
+        (sum, item) =>
+          sum +
+          item.coverages.reduce(
+            (inner, coverage) =>
+              inner + (coverage.premiumExempt ? Number(coverage.premiumExempt) : 0),
+            0,
+          ),
+        0,
+      );
+      await appendPremiumMovement(tx, {
+        organizationId: ctx.organizationId,
+        policyId: policy.id,
+        movementType: "ISSUE",
+        issuedOn: new Date(),
+        effectiveOn: proposal.startDate ?? new Date(),
+        currency: proposal.currency,
+        createdById: ctx.userId,
+        parts: {
+          affected: affect > 0 || exempt > 0 ? affect : totalNet,
+          exempt: affect > 0 || exempt > 0 ? exempt : 0,
+          pctAffected: proposal.commissionAffectPct
+            ? Number(proposal.commissionAffectPct)
+            : 0,
+          pctExempt: proposal.commissionExemptPct
+            ? Number(proposal.commissionExemptPct)
+            : 0,
         },
       });
 

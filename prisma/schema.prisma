@@ -488,6 +488,11 @@ model Client {
   updatedById      String?
   giro             String?
   comentarioAlerta String?
+  // Consentimiento explícito (Ley 21.719): marketing y procesamiento con IA.
+  marketingConsent       Boolean   @default(false)
+  marketingConsentAt     DateTime?
+  aiProcessingConsent    Boolean   @default(false)
+  aiProcessingConsentAt  DateTime?
   vendedor         String?
   cobranzaUserId   String?
   siniestrosUserId String?
@@ -643,6 +648,10 @@ model Proposal {
   endorsedPolicyId           String?
   endorsementType            EndorsementType?
   endorsementDetail          String?
+  // Delta de prima del endoso (puede ser negativo). La cancelación y la
+  // anulación no lo usan: su crédito se calcula al registrar la emisión.
+  endorsementPremiumAffected Decimal?         @db.Decimal(18, 4)
+  endorsementPremiumExempt   Decimal?         @db.Decimal(18, 4)
   companyId                  String?
   lineId                     String?
   branchId                   String?
@@ -906,6 +915,10 @@ model Endorsement {
   notes             String?
   // Propuesta de endoso que originó este endoso (null = registro directo).
   proposalId        String?         @unique
+  // Delta de prima neta afecta y exenta. Vacío en cancelación y anulación,
+  // porque ese crédito lo calcula el cierre del plan.
+  premiumAffectedDelta Decimal?      @db.Decimal(18, 4)
+  premiumExemptDelta   Decimal?      @db.Decimal(18, 4)
   createdById       String?
   createdAt         DateTime        @default(now())
 
@@ -1068,6 +1081,11 @@ model Policy {
   terminationBalance           Decimal? @db.Decimal(18, 4)
   terminationBalanceIsEstimate Boolean  @default(false)
   terminationReason            String?
+  // La póliza se emite aunque el documento venga con diferencias.
+  // Vacío = emisión correcta.
+  issueProblemCode     String?
+  issueProblemDetail   String?
+  issueProblemOpenedAt DateTime?
   createdById            String?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
@@ -1079,6 +1097,8 @@ model Policy {
   statusHistory             PolicyStatusHistory[]
   installments              Installment[]
   endorsements              Endorsement[]
+  premiumMovements          PremiumMovement[]
+  commissionReceivables     CommissionReceivable[]
   companyCommissionPayments CompanyCommissionPayment[]
   sellerCommissionItem      SellerCommissionSettlementItem?
 
@@ -1595,8 +1615,74 @@ model ClaimLog {
 
 enum InstallmentStatus {
   PENDIENTE
+  PARCIAL
+  PRESUNTA
   PAGADA
+  RECHAZADA
+  CASTIGADA
   ANULADA
+}
+
+enum PremiumMovementType {
+  ISSUE
+  ENDORSEMENT
+  REVERSAL
+}
+
+enum CommissionReceivableStatus {
+  PENDING
+  VOID
+  SETTLED
+}
+
+// Libro de primas. La prima vigente de la póliza es la suma de estos asientos.
+model PremiumMovement {
+  id                    String               @id @default(cuid())
+  organizationId        String
+  policyId              String
+  endorsementId         String?
+  seqNo                 Int
+  movementType          PremiumMovementType
+  issuedOn              DateTime             @db.Date
+  effectiveOn           DateTime             @db.Date
+  premiumAffected       Decimal              @db.Decimal(18, 4)
+  premiumExempt         Decimal              @db.Decimal(18, 4)
+  taxAmount             Decimal              @db.Decimal(18, 4)
+  premiumNet            Decimal              @db.Decimal(18, 4)
+  premiumGross          Decimal              @db.Decimal(18, 4)
+  commissionAffected    Decimal              @db.Decimal(18, 4)
+  commissionExempt      Decimal              @db.Decimal(18, 4)
+  commissionTotal       Decimal              @db.Decimal(18, 4)
+  currency              String               @default("UF")
+  reversesMovementId    String?              @unique
+  createdById           String?
+  createdAt             DateTime             @default(now())
+
+  policy      Policy                  @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  receivable  CommissionReceivable?
+
+  @@unique([policyId, seqNo])
+  @@index([organizationId])
+  @@index([policyId])
+  @@index([endorsementId])
+}
+
+// Comisión esperada de la corredora, una por movimiento de prima.
+model CommissionReceivable {
+  id             String                      @id @default(cuid())
+  organizationId String
+  policyId       String
+  movementId     String                      @unique
+  amount         Decimal                     @db.Decimal(18, 4)
+  currency       String                      @default("UF")
+  status         CommissionReceivableStatus  @default(PENDING)
+  createdAt      DateTime                    @default(now())
+
+  policy   Policy           @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  movement PremiumMovement  @relation(fields: [movementId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([policyId])
 }
 
 model Installment {

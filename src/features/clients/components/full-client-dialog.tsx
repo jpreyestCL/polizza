@@ -161,6 +161,8 @@ export function FullClientDialog({
       holdingId: "",
       source: "",
       comentarioAlerta: "",
+      marketingConsent: false,
+      aiProcessingConsent: false,
       observaciones: "",
       contacts: [],
     });

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { expectedCommission, premiumTotals, roundHalfUp } from "@/lib/domain/money";
 
 const optionalString = z.string().trim().default("");
 const optionalNumeric = z
@@ -80,25 +81,41 @@ export function computeCoverage(
   ivaRate = 0.19,
 ): CoverageCalc {
   const insured = Number(values.insuredAmount) || 0;
-  const premiumAffect = resolvePremium(
-    values.manualPremium,
-    values.taxRateAffect,
-    values.premiumAffect,
-    insured,
+  const premiumAffect = roundHalfUp(
+    resolvePremium(
+      values.manualPremium,
+      values.taxRateAffect,
+      values.premiumAffect,
+      insured,
+    ),
+    4,
   );
-  const premiumExempt = resolvePremium(
-    values.manualPremium,
-    values.taxRateExempt,
-    values.premiumExempt,
-    insured,
+  const premiumExempt = roundHalfUp(
+    resolvePremium(
+      values.manualPremium,
+      values.taxRateExempt,
+      values.premiumExempt,
+      insured,
+    ),
+    4,
   );
-  const premiumNet = premiumAffect + premiumExempt;
-  const ivaAmount = values.affectedByIva ? premiumAffect * ivaRate : 0;
-  const premiumGross = premiumNet + ivaAmount;
+  const totals = premiumTotals(
+    {
+      affected: values.affectedByIva ? premiumAffect : 0,
+      exempt: values.affectedByIva ? premiumExempt : premiumAffect + premiumExempt,
+    },
+    ivaRate,
+  );
+  const premiumNet = roundHalfUp(premiumAffect + premiumExempt, 4);
+  const ivaAmount = totals.vat;
+  const premiumGross = roundHalfUp(premiumNet + ivaAmount, 4);
   const commAffPct = Number(values.commissionAffectPct) || 0;
   const commExePct = Number(values.commissionExemptPct) || 0;
-  const commissionAmount =
-    premiumAffect * (commAffPct / 100) + premiumExempt * (commExePct / 100);
+  const commissionAmount = expectedCommission(
+    { affected: premiumAffect, exempt: premiumExempt },
+    commAffPct,
+    commExePct,
+  ).total;
   return {
     premiumNet,
     ivaAmount,

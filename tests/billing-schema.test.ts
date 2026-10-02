@@ -48,4 +48,15 @@ describe("isInstallmentOverdue", () => {
   it("no marca vencida una cuota con fecha futura", () => {
     expect(isInstallmentOverdue("PENDIENTE", future)).toBe(false);
   });
+
+  it("trata parcial y rechazada como abiertas", () => {
+    expect(isInstallmentOverdue("PARCIAL", past)).toBe(true);
+    expect(isInstallmentOverdue("RECHAZADA", past)).toBe(true);
+  });
+
+  it("no trata presunta, castigada ni anulada como mora", () => {
+    expect(isInstallmentOverdue("PRESUNTA", past)).toBe(false);
+    expect(isInstallmentOverdue("CASTIGADA", past)).toBe(false);
+    expect(isInstallmentOverdue("ANULADA", past)).toBe(false);
+  });
 });

@@ -20,6 +20,7 @@ export type InstallmentItem = {
   status: InstallmentStatus;
   paidAt: Date | null;
   overdue: boolean;
+  voidedByTermination: boolean;
 };
 
 export type InstallmentWithPolicy = InstallmentItem & {
@@ -44,6 +45,7 @@ export async function listPolicyInstallments(
       dueDate: true,
       status: true,
       paidAt: true,
+      voidedByTermination: true,
     },
   });
   return rows.map((row) => ({
@@ -98,6 +100,7 @@ export async function listAllInstallments(
         dueDate: true,
         status: true,
         paidAt: true,
+        voidedByTermination: true,
         policyId: true,
         policy: {
           select: {
@@ -124,6 +127,7 @@ export async function listAllInstallments(
       dueDate: row.dueDate,
       status: row.status,
       paidAt: row.paidAt,
+      voidedByTermination: row.voidedByTermination,
       overdue: isInstallmentOverdue(row.status, row.dueDate),
       policyId: row.policyId,
       policyNumber: row.policy.policyNumber,
