@@ -57,7 +57,9 @@ export default async function ImportacionesPage({
         <h2 className="text-sm font-medium">Traducción Brokeris</h2>
         <p className="text-sm text-muted-foreground">
           Columnas separadas por tabulación. Pólizas: id, estado, es renovación, id madre,
-          vigencia, número, RUT, nombre, prima, moneda, inicio, fin, compañía. Sin RUT y número
+          vigencia, número, RUT, nombre, prima, moneda, inicio, fin, compañía y, si vienen, glosa
+          del ítem, monto asegurado y coberturas (Daños=500|RC=1000). Una compañía que no está
+          en la corredora se crea como propia. Sin RUT y número
           la fila se traduce y no se crea. Endosos: id, tipo, número de póliza, vigencia, delta,
           detalle. Siniestros: id, estado, subestado, cierre, número de póliza, relato.
           Documentos: id, etiqueta; no se inventa el archivo. No renovación: id, tipo, motivo,

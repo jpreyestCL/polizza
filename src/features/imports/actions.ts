@@ -1,5 +1,6 @@
 "use server";
 
+import type { PolicyStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireOrgDb } from "@/server/context";
@@ -243,6 +244,20 @@ export async function revertImportAction(form: FormData): Promise<void> {
   if (!job) redirect("/importaciones?aviso=lote");
   if (job.profile.startsWith("BROKERIS_")) {
     for (const row of job.rows) {
+      const mother = ((row.payload ?? {}) as {
+        _mother?: { id: string; status: string; nextPolicyId: string | null };
+      })._mother;
+      if (mother) {
+        await db.policy
+          .update({
+            where: { id: mother.id },
+            data: {
+              status: mother.status as PolicyStatus,
+              nextPolicyId: mother.nextPolicyId,
+            },
+          })
+          .catch(() => null);
+      }
       if (!row.createdEntityId) continue;
       if (row.createdEntityType === "CLAIM") {
         await db.claim.delete({ where: { id: row.createdEntityId } }).catch(() => null);
@@ -291,6 +306,19 @@ export async function revertImportAction(form: FormData): Promise<void> {
           continue;
         }
         await db.policy.delete({ where: { id: row.createdEntityId } }).catch(() => null);
+        const extra = (row.payload ?? {}) as {
+          _createdCompanyId?: string;
+        };
+        if (extra._createdCompanyId) {
+          const used = await db.policy.count({
+            where: { companyId: extra._createdCompanyId },
+          });
+          if (used === 0) {
+            await db.insuranceCompany
+              .delete({ where: { id: extra._createdCompanyId } })
+              .catch(() => null);
+          }
+        }
       }
       await db.importJobRow.update({
         where: { id: row.id },

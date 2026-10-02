@@ -108,7 +108,94 @@ export async function applyBrokerisJob(
       if (await applyNonRenewal(tx, input, row.id, payload)) created += 1;
     }
   }
+  if (input.profile === "BROKERIS_POLIZAS") {
+    await linkImportedRenewals(tx, input, input.rows);
+  }
   return created;
+}
+
+const ISSUED = ["VIGENTE", "VENCIDA", "RENOVADA"];
+
+/**
+ * Une cada póliza importada con su madre (columna "id madre"). Se hace al
+ * final del lote para que el orden de las filas no importe. Si la sucesora
+ * ya está emitida, la madre queda renovada.
+ */
+async function linkImportedRenewals(
+  tx: Tx,
+  input: { organizationId: string; userId: string },
+  rows: JobRow[],
+): Promise<void> {
+  for (const row of rows) {
+    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    const childExternal = text(payload.id);
+    const motherExternal = text(payload.renewedFromId);
+    if (!childExternal || !motherExternal || childExternal === motherExternal) continue;
+    const [child, mother] = await Promise.all([
+      tx.policy.findFirst({
+        where: { externalId: childExternal },
+        select: { id: true, status: true, previousPolicyId: true },
+      }),
+      tx.policy.findFirst({
+        where: { externalId: motherExternal },
+        select: {
+          id: true,
+          status: true,
+          nextPolicyId: true,
+          lineageId: true,
+          termNumber: true,
+        },
+      }),
+    ]);
+    if (!child || !mother || child.previousPolicyId) continue;
+    await tx.policy.update({
+      where: { id: child.id },
+      data: {
+        previousPolicyId: mother.id,
+        lineageId: mother.lineageId ?? mother.id,
+        termNumber: (mother.termNumber ?? 1) + 1,
+      },
+    });
+    const renews =
+      ISSUED.includes(child.status) &&
+      (mother.status === "VIGENTE" || mother.status === "VENCIDA");
+    await tx.policy.update({
+      where: { id: mother.id },
+      data: {
+        ...(mother.nextPolicyId ? {} : { nextPolicyId: child.id }),
+        ...(mother.lineageId ? {} : { lineageId: mother.id }),
+        ...(renews ? { status: "RENOVADA" } : {}),
+      },
+    });
+    if (renews) {
+      await tx.policyStatusHistory.create({
+        data: {
+          organizationId: input.organizationId,
+          policyId: mother.id,
+          status: "RENOVADA",
+          note: "Renovada por una póliza importada desde Brokeris",
+          changedById: input.userId,
+        },
+      });
+    }
+    const stored = await tx.importJobRow.findFirst({
+      where: { id: row.id },
+      select: { payload: true },
+    });
+    await tx.importJobRow.update({
+      where: { id: row.id },
+      data: {
+        payload: {
+          ...((stored?.payload ?? payload) as Record<string, unknown>),
+          _mother: {
+            id: mother.id,
+            status: mother.status,
+            nextPolicyId: mother.nextPolicyId,
+          },
+        },
+      },
+    });
+  }
 }
 
 async function applyPolicy(
@@ -176,12 +263,36 @@ async function applyPolicy(
     });
   }
   const companyName = text(payload.companyName);
-  const company = companyName
-    ? await tx.insuranceCompany.findFirst({
-        where: { name: { contains: companyName, mode: "insensitive" } },
+  let createdCompanyId: string | null = null;
+  let company: { id: string } | null = null;
+  if (companyName) {
+    company =
+      (await tx.insuranceCompany.findFirst({
+        where: { name: { equals: companyName, mode: "insensitive" } },
         select: { id: true },
-      })
-    : null;
+      })) ??
+      (await tx.insuranceCompany.findFirst({
+        where: {
+          OR: [
+            { name: { contains: companyName, mode: "insensitive" } },
+            { globalCompany: { name: { contains: companyName, mode: "insensitive" } } },
+          ],
+        },
+        select: { id: true },
+      }));
+  }
+  if (companyName && !company) {
+    const newCompany: { id: string } = await tx.insuranceCompany.create({
+      data: {
+        organizationId: input.organizationId,
+        name: companyName,
+        status: "ACTIVA",
+      },
+      select: { id: true },
+    });
+    company = newCompany;
+    createdCompanyId = newCompany.id;
+  }
   const premium = amount(payload.premium);
   const status = policyStatusOf(text(payload.status));
   const policy = await tx.policy.create({
@@ -217,7 +328,54 @@ async function applyPolicy(
       changedById: input.userId,
     },
   });
-  await mark(tx, rowId, "CREADO", "Póliza creada.", { type: "POLICY", id: policy.id });
+  const currency = currencyOf(text(payload.currency));
+  const itemDescription = text(payload.itemDescription);
+  const insuredAmount = amount(payload.insuredAmount);
+  const coverages = Array.isArray(payload.coverages)
+    ? (payload.coverages as { name?: unknown; insuredAmount?: unknown }[])
+    : [];
+  if (itemDescription || insuredAmount != null) {
+    await tx.policyItem.create({
+      data: {
+        organizationId: input.organizationId,
+        policyId: policy.id,
+        description: itemDescription || policyNumber,
+        insuredAmount:
+          insuredAmount == null ? null : new Prisma.Decimal(insuredAmount.toFixed(2)),
+        currency,
+      },
+    });
+  }
+  const coverageRows = coverages
+    .map((coverage) => ({ name: text(coverage.name), value: amount(coverage.insuredAmount) }))
+    .filter((coverage) => coverage.name);
+  if (coverageRows.length > 0) {
+    await tx.policyCoverage.createMany({
+      data: coverageRows.map((coverage) => ({
+        organizationId: input.organizationId,
+        policyId: policy.id,
+        name: coverage.name,
+        insuredAmount:
+          coverage.value == null ? null : new Prisma.Decimal(coverage.value.toFixed(2)),
+        currency,
+      })),
+    });
+  }
+  await mark(
+    tx,
+    rowId,
+    "CREADO",
+    createdCompanyId
+      ? `Póliza creada. Se agregó la compañía ${companyName} a la corredora.`
+      : "Póliza creada.",
+    { type: "POLICY", id: policy.id },
+  );
+  if (createdCompanyId) {
+    await tx.importJobRow.update({
+      where: { id: rowId },
+      data: { payload: { ...payload, _createdCompanyId: createdCompanyId } },
+    });
+  }
   return true;
 }
 
@@ -254,6 +412,7 @@ async function applyEndorsement(
     premiumAffectedDelta: delta,
     premiumExemptDelta: null,
     initiatedBy: text(payload.initiatedBy) || null,
+    historical: true,
   });
   if (!result.ok) {
     await mark(tx, rowId, "REVISAR", result.error);

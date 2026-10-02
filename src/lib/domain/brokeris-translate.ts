@@ -67,6 +67,21 @@ export function translateBrokerisPaste(
   return translateNonRenewals(parsed);
 }
 
+/** "Daños=500|RC=1000" → coberturas con nombre y monto asegurado. */
+export function parseCoverageList(
+  raw: string,
+): { name: string; insuredAmount: string | null }[] {
+  return raw
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [name, value] = part.split("=").map((piece) => piece.trim());
+      return { name, insuredAmount: value || null };
+    })
+    .filter((coverage) => coverage.name);
+}
+
 function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
   const drafts = parsed.map((row, index) => {
     const id = row[0] || `fila-${index + 1}`;
@@ -82,6 +97,9 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
     const startDate = row[10] || "";
     const endDate = row[11] || "";
     const companyName = row[12] || "";
+    const itemDescription = row[13] || "";
+    const insuredAmount = row[14] || "";
+    const coverages = parseCoverageList(row[15] || "");
     const status =
       statusCode == null
         ? null
@@ -102,6 +120,9 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
       startDate,
       endDate,
       companyName,
+      itemDescription,
+      insuredAmount,
+      coverages,
     };
   });
   const chain = assignRenewalLineage(
@@ -124,6 +145,12 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
     if (row.premium && !Number.isFinite(Number(row.premium.replace(",", ".")))) {
       notes.push("La prima no es un número.");
     }
+    if (
+      row.insuredAmount &&
+      !Number.isFinite(Number(row.insuredAmount.replace(",", ".")))
+    ) {
+      notes.push("El monto asegurado no es un número.");
+    }
     const mapped = ambiguousAnnulment ? "sin clasificar" : (row.status?.status ?? "sin mapa");
     const observation = row.status?.insurerObservation ? ", con observación" : "";
     const chainText = link ? `, cadena ${link.lineageId} período ${link.termNumber}` : "";
@@ -145,6 +172,9 @@ function translatePolicies(parsed: string[][]): BrokerisTranslatedRow[] {
         startDate: row.startDate || null,
         endDate: row.endDate || null,
         companyName: row.companyName || null,
+        itemDescription: row.itemDescription || null,
+        insuredAmount: row.insuredAmount || null,
+        coverages: row.coverages,
       },
       message: `${row.id}: estado ${row.statusCode ?? "—"} → ${mapped}${observation}${chainText}${
         notes.length ? `. ${notes.join(" ")}` : ""

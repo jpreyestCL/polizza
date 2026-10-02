@@ -105,6 +105,23 @@ describe("migración con columnas extra", () => {
     });
   });
 
+  it("trae el ítem, el monto y las coberturas cuando vienen", () => {
+    const [row] = translateBrokerisPaste(
+      "POLIZAS",
+      "pol-2\t4\t1\tpol-1\t01-01-2027\tPOL-200\t12.345.678-5\tAna Pérez\t11\tUF\t2027-01-01\t2028-01-01\tNueva Cía\tPatente ABCD12\t650\tDaños=650|RC=1000",
+    );
+    expect(row?.payload).toMatchObject({
+      renewedFromId: "pol-1",
+      companyName: "Nueva Cía",
+      itemDescription: "Patente ABCD12",
+      insuredAmount: "650",
+      coverages: [
+        { name: "Daños", insuredAmount: "650" },
+        { name: "RC", insuredAmount: "1000" },
+      ],
+    });
+  });
+
   it("deja el endoso y el siniestro con la póliza a la que pertenecen", () => {
     const [endorsement] = translateBrokerisPaste(
       "ENDOSOS",
