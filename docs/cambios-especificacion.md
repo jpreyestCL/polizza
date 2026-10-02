@@ -207,12 +207,9 @@ marcado anulado pasó a `VOID`.
 
 ## Migración Brokeris
 
-**Antes.** No había tabla de equivalencias en el código.
+**Antes.** El mapa traía el estado de la propuesta, la moneda, el siniestro, el despacho y el cliente, y solo diez tipos de endoso. No distinguía quién inicia el endoso, ni la periodicidad 596–599, ni el tipo de despacho, ni los 23 motivos de no renovación, ni los 40 cierres, ni la etiqueta original del documento. No armaba `lineageId` ni el período de la cadena. No evaluaba Q1–Q13. La pantalla de importación solo creaba clientes.
 
-**Ahora.** Los códigos de estado de propuesta, tipo de endoso, medio de
-pago, moneda, siniestro, despacho, tipo de cliente y perfil administrador
-se traducen con el mapa de la especificación. No hay todavía un cargador
-del respaldo: el mapa es el que va a usar esa carga.
+**Ahora.** Los 35 tipos de endoso de Brokeris quedan en los 18 códigos, con quién los inicia. El 0 es la emisión, no un tipo. El 40 queda en rebaja de vigencia y el 37 en anulación de prórroga. El 23 y el 24 quedan en ajuste de prima, y el 28 en declaración. Un tipo apagado en el MVP conserva su código y entra con método manual. La periodicidad mensual, trimestral, semestral y anual se traduce aparte del medio de pago: el contado sigue siendo `SINGLE`. La no renovación, el tipo de despacho, el subestado, el resultado de cierre y la etiqueta del documento usan las tablas de la sección 7. Una etiqueta que no está en el punto de partida queda en `OTHER` para revisar, y se conserva el texto original. Las compañías con el mismo RUT se fusionan quedándose con la ficha que tiene más pólizas. La cadena de renovación asigna la raíz y el período en orden de vigencia. El cuadre compara los conteos del 29-09-2026: exacto en pólizas, partes, renovaciones y siniestros abiertos; ±0,01 UF en prima y comisión; ±0,1 % en pagos de comisión; ±0,5 % en la producción 2025. Q2 queda informativo y fuera del Gate A. En Importaciones se pega el texto tabulado y se ve la traducción; el lote se registra y no crea pólizas. El respaldo X1–X17 no está en el repositorio, así que esa carga completa no corre todavía. La moneda UF que ya guarda el producto sigue como UF; el código 1 de Brokeris se traduce a CLF.
 
 ## Aislamiento en la base
 

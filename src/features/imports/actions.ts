@@ -7,6 +7,11 @@ import { hasPermission } from "@/lib/factory-roles";
 import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import { cleanRut, isValidRut } from "@/lib/rut";
 import { cleanPhone, suggestNaturalPerson } from "@/lib/domain/brokeris-clean";
+import { evaluateBrokerisCuadre, type CuadreInput } from "@/lib/domain/brokeris-cuadre";
+import {
+  isBrokerisPasteProfile,
+  translateBrokerisPaste,
+} from "@/lib/domain/brokeris-translate";
 import { logActivity } from "@/server/activity";
 import {
   commandFingerprint,
@@ -104,6 +109,29 @@ export async function applyImportAction(form: FormData): Promise<void> {
     include: { rows: { orderBy: { rowNo: "asc" } } },
   });
   if (!job) redirect("/importaciones?aviso=lote");
+  if (job.profile !== "CLIENTES") {
+    await db.importJob.update({
+      where: { id: jobId },
+      data: { status: "APLICADO", appliedAt: new Date() },
+    });
+    await storeIdempotency(db, {
+      organizationId: ctx.organizationId,
+      key: `import:${jobId}`,
+      fingerprint,
+      command: "imports.apply",
+      resultJson: { profile: job.profile },
+    });
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "CLIENT",
+      entityId: ctx.organizationId,
+      action: "import_applied",
+      summary: `Lote ${job.profile} registrado. La traducción queda en el lote y no crea fichas.`,
+      userId: ctx.userId,
+    });
+    revalidatePath("/importaciones");
+    redirect(`/importaciones?job=${jobId}&aviso=registrado`);
+  }
   let created = 0;
   for (const row of job.rows) {
     const payload = row.payload as ParsedClient;
@@ -178,6 +206,14 @@ export async function revertImportAction(form: FormData): Promise<void> {
     include: { rows: true },
   });
   if (!job) redirect("/importaciones?aviso=lote");
+  if (job.profile !== "CLIENTES") {
+    await db.importJob.update({
+      where: { id: jobId },
+      data: { status: "REVERTIDO", revertedAt: new Date(), decisionNote: reason },
+    });
+    revalidatePath("/importaciones");
+    redirect(`/importaciones?job=${jobId}&aviso=revertido`);
+  }
   for (const row of job.rows) {
     if (row.createdEntityType !== "CLIENT" || !row.createdEntityId) continue;
     const [proposals, policies] = await Promise.all([
@@ -204,4 +240,136 @@ export async function revertImportAction(form: FormData): Promise<void> {
   revalidatePath("/importaciones");
   revalidatePath("/clientes");
   redirect(`/importaciones?job=${jobId}&aviso=revertido`);
+}
+
+function amount(form: FormData, key: string): number {
+  const raw = text(form, key).replace(/\s/g, "").replace(",", ".");
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function checked(form: FormData, key: string): boolean {
+  const value = form.get(key);
+  return value === "on" || value === "1" || value === "true";
+}
+
+function diffs(form: FormData, key: string): number[] {
+  return text(form, key)
+    .split(/[\s,;]+/)
+    .map((part) => Number(part.replace(",", ".")))
+    .filter((value) => Number.isFinite(value));
+}
+
+export async function previewBrokerisAction(form: FormData): Promise<void> {
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "imports.run")) {
+    redirect("/importaciones?aviso=permiso");
+  }
+  const profile = text(form, "profile");
+  if (!isBrokerisPasteProfile(profile)) redirect("/importaciones?aviso=perfil");
+  const parsed = translateBrokerisPaste(profile, text(form, "rows"));
+  if (parsed.length === 0) redirect("/importaciones?aviso=vacio");
+  const job = await db.importJob.create({
+    data: {
+      organizationId: ctx.organizationId,
+      profile: `BROKERIS_${profile}`,
+      status: "PREVIEW",
+      fileName: text(form, "fileName") || "brokeris.txt",
+      createdById: ctx.userId,
+      decisionNote: "Traducción de códigos. No crea pólizas ni siniestros.",
+    },
+    select: { id: true },
+  });
+  await db.importJobRow.createMany({
+    data: parsed.map((row) => ({
+      organizationId: ctx.organizationId,
+      jobId: job.id,
+      rowNo: row.rowNo,
+      action: row.action,
+      payload: row.payload,
+      message: row.message,
+    })),
+  });
+  revalidatePath("/importaciones");
+  redirect(`/importaciones?job=${job.id}`);
+}
+
+export async function previewCuadreAction(form: FormData): Promise<void> {
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "imports.run")) {
+    redirect("/importaciones?aviso=permiso");
+  }
+  const year = amount(form, "commissionYear");
+  const input: CuadreInput = {
+    policiesInForce: amount(form, "policiesInForce"),
+    endorsementsInForce: amount(form, "endorsementsInForce"),
+    endorsementDifferenceExplained: checked(form, "endorsementDifferenceExplained"),
+    policyPremiumDiffsUf: diffs(form, "policyPremiumDiffsUf"),
+    commissionDiffsUf: diffs(form, "commissionDiffsUf"),
+    commissionLargerDiffsExplained: checked(form, "commissionLargerDiffsExplained"),
+    contractors: amount(form, "contractors"),
+    insureds: amount(form, "insureds"),
+    companiesBeforeMerge: amount(form, "companiesBeforeMerge"),
+    personsBeforeMerge: amount(form, "personsBeforeMerge"),
+    companiesAfterMerge: amount(form, "companiesAfterMerge"),
+    personsAfterMerge: amount(form, "personsAfterMerge"),
+    clientsAfterExplained: checked(form, "clientsAfterExplained"),
+    renewalsCutMonth: amount(form, "renewalsCutMonth"),
+    renewalsNextMonth: amount(form, "renewalsNextMonth"),
+    openClaims: amount(form, "openClaims"),
+    claimsToExtend: amount(form, "claimsToExtend"),
+    claimsToExtendExplained: checked(form, "claimsToExtendExplained"),
+    pendingInstallmentCount: amount(form, "pendingInstallmentCount"),
+    pendingInstallmentAmount: amount(form, "pendingInstallmentAmount"),
+    approvedInstallmentCount: amount(form, "approvedInstallmentCount"),
+    approvedInstallmentAmount: amount(form, "approvedInstallmentAmount"),
+    commissionPaymentsByYear:
+      year > 0
+        ? [
+            {
+              year,
+              brokerisClp: amount(form, "brokerisCommissionClp"),
+              polizzaClp: amount(form, "polizzaCommissionClp"),
+              times100Explained: checked(form, "times100Explained"),
+            },
+          ]
+        : [],
+    grossPremium2025Clp: amount(form, "grossPremium2025Clp"),
+    commissions2025Clp: amount(form, "commissions2025Clp"),
+    productionExplained: checked(form, "productionExplained"),
+    documentsTotal: amount(form, "documentsTotal"),
+    documentsLinked: amount(form, "documentsLinked"),
+    maxProposal: amount(form, "maxProposal"),
+    maxClaimFolder: amount(form, "maxClaimFolder"),
+    maxPlan: amount(form, "maxPlan"),
+    counterProposal: amount(form, "counterProposal"),
+    counterClaimFolder: amount(form, "counterClaimFolder"),
+    counterPlan: amount(form, "counterPlan"),
+  };
+  const report = evaluateBrokerisCuadre(input);
+  const job = await db.importJob.create({
+    data: {
+      organizationId: ctx.organizationId,
+      profile: "CUADRE",
+      status: "PREVIEW",
+      fileName: "cuadre",
+      createdById: ctx.userId,
+      decisionNote: report.gateA
+        ? "Gate A listo. Q2 no entra en esa puerta."
+        : "Gate A con cuadres fuera de tolerancia.",
+    },
+    select: { id: true },
+  });
+  await db.importJobRow.createMany({
+    data: report.rows.map((row, index) => ({
+      organizationId: ctx.organizationId,
+      jobId: job.id,
+      rowNo: index + 1,
+      action: row.status,
+      payload: row,
+      message: `${row.code} ${row.label}: ${row.actual} · ${row.status}. Tolerancia: ${row.tolerance}.`,
+    })),
+  });
+  revalidatePath("/importaciones");
+  redirect(`/importaciones?job=${job.id}`);
 }

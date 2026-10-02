@@ -31,6 +31,11 @@ export function mergeRutGroups(rows: RutRow[]): {
   return merges;
 }
 
+/** L5. Liberty, HDI y Liberty-HDI comparten RUT: queda la ficha con más pólizas. */
+export function mergeInsurersByRut(rows: RutRow[]) {
+  return mergeRutGroups(rows);
+}
+
 /** L2. RUT bajo 50 millones marcado como empresa se propone persona. */
 export function suggestNaturalPerson(rut: string, type: string): boolean {
   const numeric = Number(cleanRut(rut).slice(0, -1));
