@@ -292,7 +292,7 @@ export async function updatePolicyAction(
           salespersonId: emptyToNull(data.salespersonId),
         },
       });
-      await tx.policyItem.deleteMany({ where: { policyId: id } });
+      await tx.policyItem.deleteMany({ where: { policyId: id, removedAt: null } });
       await tx.policyCoverage.deleteMany({ where: { policyId: id } });
       if (data.items.length > 0) {
         await tx.policyItem.createMany({

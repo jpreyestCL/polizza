@@ -734,6 +734,8 @@ export async function registerPolicyEmissionAction(
       endorsementOffsetClaimId: true,
       endorsementCommissionAffectPct: true,
       endorsementCommissionExemptPct: true,
+      endorsementTargetItemId: true,
+      endorsementItemDescription: true,
       startDate: true,
       endDate: true,
     },
@@ -851,6 +853,8 @@ export async function registerPolicyEmissionAction(
             commissionExemptPct: proposal.endorsementCommissionExemptPct
               ? Number(proposal.endorsementCommissionExemptPct)
               : null,
+            targetItemId: proposal.endorsementTargetItemId,
+            itemDescription: proposal.endorsementItemDescription,
           });
           if (!result.ok) {
             endorsementFailure = result.error;

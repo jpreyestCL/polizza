@@ -45,7 +45,7 @@ export default async function EditarPolizaPage({
     endDate: toDateInput(policy.endDate),
     assignedUserId: policy.assignedUserId ?? "",
     salespersonId: policy.salespersonId ?? "",
-    items: policy.items.map((item) => ({
+    items: policy.items.filter((item) => !item.removedAt).map((item) => ({
       description: item.description,
       insuredAmount:
         item.insuredAmount !== null ? String(item.insuredAmount) : "",

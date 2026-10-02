@@ -11,6 +11,10 @@ import {
   type EndorsementProposalValues,
   type EndorsementTypeValue,
 } from "../schemas";
+import {
+  EndorsementItemFields,
+  type EndorsementPolicyItem,
+} from "./endorsement-item-fields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,9 +31,11 @@ import { Textarea } from "@/components/ui/textarea";
 export function EndorsementProposalForm({
   proposalId,
   defaultValues,
+  items = [],
 }: {
   proposalId: string;
   defaultValues: EndorsementProposalValues;
+  items?: EndorsementPolicyItem[];
 }) {
   const router = useRouter();
   const [values, setValues] = useState(defaultValues);
@@ -125,18 +131,11 @@ export function EndorsementProposalForm({
           />
         </div>
       </div>
-      {values.type === "MODIFICA_MONTO_PRIMA" ? (
-        <div>
-          <Label className="text-xs">Nuevo monto asegurado del ítem</Label>
-          <Input
-            inputMode="decimal"
-            value={values.newInsuredAmount}
-            onChange={(e) =>
-              setValues({ ...values, newInsuredAmount: e.target.value })
-            }
-          />
-        </div>
-      ) : null}
+      <EndorsementItemFields
+        values={values}
+        onChange={setValues}
+        items={items}
+      />
       {values.type === "CAMBIO_COMISION" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

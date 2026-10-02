@@ -9,6 +9,7 @@ import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries"
 import { listActiveBrokers } from "@/features/brokers/queries";
 import { ProposalForm } from "@/features/proposals/components/proposal-form";
 import { EndorsementProposalForm } from "@/features/endorsements/components/endorsement-proposal-form";
+import { listActivePolicyItems } from "@/features/endorsements/queries";
 import { PageHeader } from "@/components/page-header";
 import type { ProposalFormValues } from "@/features/proposals/schemas";
 import type { CurrencyCode } from "@/lib/money";
@@ -32,6 +33,9 @@ export default async function EditarPropuestaPage({
   }
 
   if (proposal.kind === "ENDOSO") {
+    const policyItems = proposal.endorsedPolicyId
+      ? await listActivePolicyItems(db, proposal.endorsedPolicyId)
+      : [];
     return (
       <div className="space-y-6">
         <PageHeader
@@ -44,6 +48,7 @@ export default async function EditarPropuestaPage({
         />
         <EndorsementProposalForm
           proposalId={id}
+          items={policyItems}
           defaultValues={{
             type: proposal.endorsementType ?? "MODIFICACION",
             effectiveDate: toDateInput(proposal.startDate),
@@ -71,6 +76,8 @@ export default async function EditarPropuestaPage({
               proposal.endorsementCommissionExemptPct != null
                 ? String(proposal.endorsementCommissionExemptPct)
                 : "",
+            targetItemId: proposal.endorsementTargetItemId ?? "",
+            itemDescription: proposal.endorsementItemDescription ?? "",
           }}
         />
       </div>

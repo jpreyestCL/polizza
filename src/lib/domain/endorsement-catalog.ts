@@ -1,7 +1,6 @@
 /**
- * Dieciocho tipos de la especificación. Todos se pueden registrar.
- * Reemplazar ítems sigue en cálculo manual: no hay una lista de ítems
- * nuevos que la compañía haya emitido.
+ * Dieciocho tipos de la especificación. Todos se pueden registrar y cada uno
+ * tiene su tipo propio en la póliza.
  */
 
 export type SpecEndorsementType =
@@ -41,7 +40,7 @@ export type SpecEndorsement = {
 const CALC: Record<SpecEndorsementType, CalcMethod> = {
   ADD_ITEM: "PRORATA_DAYS",
   REMOVE_ITEM: "REFUND_PRORATA",
-  REPLACE_ITEMS: "MANUAL",
+  REPLACE_ITEMS: "PRORATA_DAYS",
   MODIFY_SUM_INSURED_PREMIUM: "PRORATA_DAYS",
   MODIFY_DATA: "NONE",
   CHANGE_PARTY: "NONE",
@@ -81,6 +80,9 @@ const APP_TYPE: Record<string, SpecEndorsementType> = {
   CAMBIO_COMISION: "COMMISSION_CHANGE",
   DECLARACION: "DECLARATION",
   AJUSTE_PRIMA: "PREMIUM_ADJUSTMENT",
+  REEMPLAZA_ITEMS: "REPLACE_ITEMS",
+  REHABILITACION: "REINSTATEMENT",
+  CAMBIO_CORREDOR: "BROKER_CHANGE",
 };
 
 const CLAUSE_TYPES = new Set<SpecEndorsementType>([
@@ -102,7 +104,7 @@ export function specEndorsementOf(appType: string): SpecEndorsement {
 const SPEC_TO_APP: Record<SpecEndorsementType, string> = {
   ADD_ITEM: "AGREGA_ITEMS",
   REMOVE_ITEM: "ELIMINA_ITEMS",
-  REPLACE_ITEMS: "MODIFICACION",
+  REPLACE_ITEMS: "REEMPLAZA_ITEMS",
   MODIFY_SUM_INSURED_PREMIUM: "MODIFICA_MONTO_PRIMA",
   MODIFY_DATA: "MODIFICACION",
   CHANGE_PARTY: "CAMBIO_ASEGURADO_POLIZA",
@@ -110,8 +112,8 @@ const SPEC_TO_APP: Record<SpecEndorsementType, string> = {
   CANCELLATION: "CANCELACION_COMPANIA",
   TOTAL_LOSS_TERMINATION: "CORTE_PERDIDA_TOTAL",
   ANNULMENT: "ANULACION_COMPANIA",
-  REINSTATEMENT: "ENDOSO_INTERNO",
-  BROKER_CHANGE: "ENDOSO_INTERNO",
+  REINSTATEMENT: "REHABILITACION",
+  BROKER_CHANGE: "CAMBIO_CORREDOR",
   OTHER: "ENDOSO_INTERNO",
   EXTENSION_REVERSAL: "REVERSO_PRORROGA",
   REDUCE_TERM: "REDUCE_VIGENCIA",

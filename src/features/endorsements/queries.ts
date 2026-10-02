@@ -72,3 +72,17 @@ export async function listPolicyEndorsementProposals(
     },
   });
 }
+
+/** Ítems que siguen en la póliza, para elegir a cuál apunta un endoso. */
+export async function listActivePolicyItems(db: Db, policyId: string) {
+  const rows = await db.policyItem.findMany({
+    where: { policyId, removedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, description: true, insuredAmount: true },
+  });
+  return rows.map((row) => ({
+    id: row.id,
+    description: row.description,
+    insuredAmount: row.insuredAmount != null ? Number(row.insuredAmount) : null,
+  }));
+}

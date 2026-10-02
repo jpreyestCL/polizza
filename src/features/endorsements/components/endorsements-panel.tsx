@@ -21,6 +21,10 @@ import {
   type EndorsementValues,
 } from "../schemas";
 import type { EndorsementProposalRow, EndorsementRow } from "../queries";
+import {
+  EndorsementItemFields,
+  type EndorsementPolicyItem,
+} from "./endorsement-item-fields";
 import { ProposalStatusBadge } from "@/features/proposals/components/proposal-badges";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +66,7 @@ export function EndorsementsPanel({
   policyEndDate,
   timezone,
   claims = [],
+  items = [],
 }: {
   policyId: string;
   endorsements: EndorsementRow[];
@@ -70,6 +75,7 @@ export function EndorsementsPanel({
   policyEndDate: string;
   timezone?: string;
   claims?: { id: string; claimNumber: string }[];
+  items?: EndorsementPolicyItem[];
 }) {
   const [open, setOpen] = useState(false);
   const blocked =
@@ -85,12 +91,14 @@ export function EndorsementsPanel({
           <h2 className="text-base font-semibold">Endosos</h2>
         </div>
         <EndorsementDialog
+          key={blocked ? "terminated" : "active"}
           policyId={policyId}
           policyEndDate={policyEndDate}
           open={open}
           onOpenChange={setOpen}
-          disabled={blocked}
+          terminated={blocked}
           claims={claims}
+          items={items}
         />
       </div>
       {empty ? (
@@ -238,10 +246,13 @@ function EndorsementItem({
   );
 }
 
-function emptyValues(policyEndDate: string): EndorsementValues {
+function emptyValues(
+  policyEndDate: string,
+  terminated = false,
+): EndorsementValues {
   return {
     mode: "PROPUESTA",
-    type: "MODIFICACION",
+    type: terminated ? "REHABILITACION" : "MODIFICACION",
     effectiveDate: new Date().toISOString().slice(0, 10),
     endDate: policyEndDate,
     detail: "",
@@ -253,6 +264,8 @@ function emptyValues(policyEndDate: string): EndorsementValues {
     offsetClaimId: "",
     commissionAffectPct: "",
     commissionExemptPct: "",
+    targetItemId: "",
+    itemDescription: "",
   };
 }
 
@@ -261,18 +274,25 @@ function EndorsementDialog({
   policyEndDate,
   open,
   onOpenChange,
-  disabled,
+  terminated,
   claims,
+  items,
 }: {
   policyId: string;
   policyEndDate: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  disabled?: boolean;
+  terminated?: boolean;
   claims: { id: string; claimNumber: string }[];
+  items: EndorsementPolicyItem[];
 }) {
   const router = useRouter();
-  const [values, setValues] = useState(() => emptyValues(policyEndDate));
+  const [values, setValues] = useState(() =>
+    emptyValues(policyEndDate, terminated),
+  );
+  const types = terminated
+    ? (["REHABILITACION"] as const)
+    : ENDORSEMENT_TYPES.filter((t) => t !== "REHABILITACION");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isProposal = values.mode === "PROPUESTA";
@@ -293,7 +313,7 @@ function EndorsementDialog({
       return;
     }
     onOpenChange(false);
-    setValues(emptyValues(policyEndDate));
+    setValues(emptyValues(policyEndDate, terminated));
     if (r.data?.proposalId) {
       toast.success("Propuesta de endoso creada");
       router.push(`/propuestas/${r.data.proposalId}`);
@@ -306,8 +326,9 @@ function EndorsementDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
-        <Button size="sm" disabled={disabled}>
-          <Plus className="size-4" /> Nuevo endoso
+        <Button size="sm">
+          <Plus className="size-4" />{" "}
+          {terminated ? "Rehabilitar" : "Nuevo endoso"}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-xl">
@@ -355,7 +376,7 @@ function EndorsementDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ENDORSEMENT_TYPES.map((t) => (
+                {types.map((t) => (
                   <SelectItem key={t} value={t}>
                     {ENDORSEMENT_TYPE_LABELS[t]}
                   </SelectItem>
@@ -372,6 +393,18 @@ function EndorsementDialog({
                   ? "cuando registres el endoso emitido por la compañía"
                   : "al registrarlo"}
                 , con vigencia desde el inicio del endoso.
+              </p>
+            ) : null}
+            {values.type === "REHABILITACION" ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Deja la póliza vigente otra vez y reabre las cuotas que la
+                cancelación o anulación había cerrado.
+              </p>
+            ) : null}
+            {values.type === "CAMBIO_CORREDOR" ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                La póliza pasa a otro corredor: queda marcada como no
+                renovable por cambio de corredor.
               </p>
             ) : null}
           </div>
@@ -445,19 +478,11 @@ function EndorsementDialog({
               </p>
             </div>
           ) : null}
-          {values.type === "MODIFICA_MONTO_PRIMA" ? (
-            <div>
-              <Label className="text-xs">Nuevo monto asegurado del ítem</Label>
-              <Input
-                inputMode="decimal"
-                value={values.newInsuredAmount}
-                onChange={(e) =>
-                  setValues({ ...values, newInsuredAmount: e.target.value })
-                }
-                placeholder="Solo si la póliza tiene un ítem"
-              />
-            </div>
-          ) : null}
+          <EndorsementItemFields
+            values={values}
+            onChange={setValues}
+            items={items}
+          />
           {values.type === "CORTE_PERDIDA_TOTAL" ? (
             <div>
               <Label className="text-xs">Siniestro que compensa</Label>

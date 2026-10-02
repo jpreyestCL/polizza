@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import {
   listPolicyEndorsements,
   listPolicyEndorsementProposals,
+  listActivePolicyItems,
 } from "@/features/endorsements/queries";
 import { EndorsementsPanel } from "@/features/endorsements/components/endorsements-panel";
 import { NonRenewalPanel } from "@/features/policies/components/non-renewal-panel";
@@ -60,6 +61,7 @@ export default async function PolizaDetailPage({
     endorsementProposals,
     renewedByProposals,
     policyClaims,
+    policyItems,
   ] = await Promise.all([
     getPolicyActivity(db, id),
     listDocuments(db, "POLICY", id),
@@ -81,6 +83,7 @@ export default async function PolizaDetailPage({
       orderBy: { createdAt: "desc" },
       select: { id: true, claimNumber: true },
     }),
+    listActivePolicyItems(db, id),
   ]);
 
   const companyName = policy.companyId
@@ -242,6 +245,7 @@ export default async function PolizaDetailPage({
         }
         timezone={ctx.organizationTimezone}
         claims={policyClaims}
+        items={policyItems}
       />
     </div>
   );

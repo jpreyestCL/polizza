@@ -53,7 +53,8 @@ export function PolicyDetailTabs({
   } | null;
 }) {
   const currency = policy.currency as CurrencyCode;
-  const insuredTotal = policy.items.reduce(
+  const activeItems = policy.items.filter((item) => !item.removedAt);
+  const insuredTotal = activeItems.reduce(
     (sum, item) => sum + (item.insuredAmount ?? 0),
     0,
   );
@@ -67,7 +68,7 @@ export function PolicyDetailTabs({
       <TabsList className="flex-wrap">
         <TabsTrigger value="resumen">Resumen</TabsTrigger>
         <TabsTrigger value="materia">
-          Materia ({policy.items.length})
+          Materia ({activeItems.length})
         </TabsTrigger>
         <TabsTrigger value="coberturas">
           Coberturas ({policy.coverages.length})
@@ -194,12 +195,22 @@ export function PolicyDetailTabs({
               </thead>
               <tbody>
                 {policy.items.map((item, idx) => (
-                  <tr key={item.id} className="border-b last:border-0 align-top">
+                  <tr
+                    key={item.id}
+                    className={`border-b last:border-0 align-top ${
+                      item.removedAt ? "text-muted-foreground line-through" : ""
+                    }`}
+                  >
                     <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
                       {idx + 1}
                     </td>
                     <td className="px-3 py-2.5 whitespace-pre-line">
                       {item.description}
+                      {item.removedAt ? (
+                        <span className="ml-2 text-xs no-underline">
+                          (fuera desde {formatDate(item.removedAt)})
+                        </span>
+                      ) : null}
                     </td>
                     <td className="px-3 py-2.5">{item.currency}</td>
                     <td className="px-3 py-2.5 text-right tabular-nums">
@@ -213,7 +224,9 @@ export function PolicyDetailTabs({
                     <td className="px-3 py-2.5 text-right tabular-nums">
                       {/* La prima no se desglosa por ítem; con un único ítem
                           equivale a la prima bruta de la póliza. */}
-                      {policy.items.length === 1 && policy.premiumGross != null
+                      {activeItems.length === 1 &&
+                      !item.removedAt &&
+                      policy.premiumGross != null
                         ? formatMoney(policy.premiumGross, currency)
                         : "—"}
                     </td>

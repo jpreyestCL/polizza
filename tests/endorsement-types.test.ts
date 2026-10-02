@@ -10,9 +10,12 @@ import {
 } from "@/features/endorsements/schemas";
 
 describe("tipos de endoso", () => {
-  it("expone los 21 tipos operativos, cada uno con etiqueta", () => {
-    expect(ENDORSEMENT_TYPES).toHaveLength(21);
+  it("expone los 24 tipos operativos, cada uno con etiqueta", () => {
+    expect(ENDORSEMENT_TYPES).toHaveLength(24);
     for (const type of [
+      "REEMPLAZA_ITEMS",
+      "REHABILITACION",
+      "CAMBIO_CORREDOR",
       "REVERSO_PRORROGA",
       "REDUCE_VIGENCIA",
       "CAMBIO_COMISION",
@@ -143,9 +146,28 @@ describe("endorsementTransitionError", () => {
     expect(endorsementTransitionError("ANULACION_COMPANIA", "ANULADA")).toBeTruthy();
   });
 
+  it("solo se rehabilita una póliza cancelada o anulada", () => {
+    expect(endorsementTransitionError("REHABILITACION", "VIGENTE")).toBeTruthy();
+    expect(endorsementTransitionError("REHABILITACION", "CANCELADA")).toBeNull();
+    expect(endorsementTransitionError("REHABILITACION", "ANULADA")).toBeNull();
+  });
+
   it("los endosos que no mueven el estado se aplican siempre", () => {
     expect(endorsementTransitionError("MODIFICACION", "CANCELADA")).toBeNull();
     expect(endorsementTransitionError("CANCELACION_NO_PAGO", "VIGENTE")).toBeNull();
+  });
+});
+
+describe("catálogo de la especificación", () => {
+  it("rehabilitación, cambio de corredor y reemplazo tienen tipo propio", async () => {
+    const { appTypeForSpec, specEndorsementOf } = await import(
+      "@/lib/domain/endorsement-catalog"
+    );
+    expect(appTypeForSpec("REINSTATEMENT")).toBe("REHABILITACION");
+    expect(appTypeForSpec("BROKER_CHANGE")).toBe("CAMBIO_CORREDOR");
+    expect(appTypeForSpec("REPLACE_ITEMS")).toBe("REEMPLAZA_ITEMS");
+    expect(specEndorsementOf("REHABILITACION").code).toBe("REINSTATEMENT");
+    expect(specEndorsementOf("CAMBIO_CORREDOR").code).toBe("BROKER_CHANGE");
   });
 });
 

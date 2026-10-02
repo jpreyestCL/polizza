@@ -2,14 +2,18 @@ import "server-only";
 import { Prisma, type EndorsementType } from "@prisma/client";
 import {
   closePlanOnTermination,
+  reopenPlanAfterTermination,
   terminationKindOf,
 } from "@/features/billing/termination";
 import {
   appendPremiumMovement,
   ensureIssueMovement,
 } from "@/features/ledger/record";
+import { roundHalfUp } from "@/lib/domain/money";
 import {
   ENDORSEMENT_TYPE_LABELS,
+  ITEM_DESCRIPTION_TYPES,
+  ITEM_TARGET_TYPES,
   endorsementStatusEffect,
   endorsementTransitionError,
 } from "./schemas";
@@ -36,7 +40,22 @@ export type ApplyEndorsementInput = {
   offsetClaimId?: string | null;
   commissionAffectPct?: number | null;
   commissionExemptPct?: number | null;
+  /** Ítem de la póliza al que apunta el endoso. */
+  targetItemId?: string | null;
+  /** Glosa del ítem que agrega, reemplaza o corrige. */
+  itemDescription?: string | null;
+  /** Endoso histórico (migración): se registra aunque falten datos del ítem. */
+  historical?: boolean;
 };
+
+const TERMINATION_TYPES = [
+  "ANULACION_ENDOSO",
+  "ANULACION_COMPANIA",
+  "SOLICITUD_ANULACION",
+  "CANCELACION_COMPANIA",
+  "CANCELACION_NO_PAGO",
+  "SOLICITUD_CANCELACION",
+] as const;
 
 /** Día puro (columna Date, en UTC) como dd-mm-aaaa. */
 function formatDay(date: Date): string {
@@ -65,7 +84,11 @@ export async function applyEndorsementToPolicy(
       terminationBalance: true,
       commissionAffectPct: true,
       commissionExemptPct: true,
-      _count: { select: { items: true } },
+      currency: true,
+      notRenewable: true,
+      nonRenewalReason: true,
+      nonRenewalNote: true,
+      nonRenewalAt: true,
     },
   })) as {
     id: string;
@@ -74,11 +97,18 @@ export async function applyEndorsementToPolicy(
     terminationBalance: { toString(): string } | null;
     commissionAffectPct: { toString(): string } | null;
     commissionExemptPct: { toString(): string } | null;
-    _count: { items: number };
+    currency: string;
+    notRenewable: boolean;
+    nonRenewalReason: string | null;
+    nonRenewalNote: string | null;
+    nonRenewalAt: Date | null;
   } | null;
   if (!policy) return { ok: false, error: "La póliza no existe." };
 
-  const transitionError = endorsementTransitionError(input.type, policy.status);
+  const transitionError =
+    input.historical && input.type === "REHABILITACION"
+      ? null
+      : endorsementTransitionError(input.type, policy.status);
   if (transitionError) return { ok: false, error: transitionError };
   if (input.type === "CORTE_PERDIDA_TOTAL" && input.offsetClaimId) {
     const claim = await tx.claim.findFirst({
@@ -99,17 +129,54 @@ export async function applyEndorsementToPolicy(
 
   const spec = specEndorsementOf(input.type);
   const items = (await tx.policyItem.findMany({
-    where: { policyId: input.policyId },
-    select: { id: true, insuredAmount: true },
-  })) as { id: string; insuredAmount: { toString(): string } | null }[];
-  const singleItem = items.length === 1 ? items[0] : null;
+    where: { policyId: input.policyId, removedAt: null },
+    select: { id: true, description: true, insuredAmount: true },
+  })) as {
+    id: string;
+    description: string;
+    insuredAmount: { toString(): string } | null;
+  }[];
+  let target: (typeof items)[number] | null = null;
+  if (ITEM_TARGET_TYPES.includes(input.type)) {
+    if (input.targetItemId) {
+      target = items.find((item) => item.id === input.targetItemId) ?? null;
+      if (!target) {
+        return { ok: false, error: "El ítem no está vigente en esta póliza." };
+      }
+    } else if (items.length === 1) {
+      target = items[0];
+    } else if (items.length > 1 && !input.historical) {
+      return { ok: false, error: "Elige a qué ítem de la póliza apunta el endoso." };
+    }
+  }
+  const description = input.itemDescription?.trim() || null;
+  if (
+    ITEM_DESCRIPTION_TYPES.includes(input.type) &&
+    !description &&
+    !input.historical
+  ) {
+    return { ok: false, error: "Falta la glosa del ítem." };
+  }
+  if (
+    input.type === "MODIFICA_MONTO_PRIMA" &&
+    target &&
+    input.newInsuredAmount == null &&
+    !input.historical
+  ) {
+    return { ok: false, error: "Falta el nuevo monto asegurado del ítem." };
+  }
   const priorSnapshot = {
     status: policy.status,
     endDate: policy.endDate ? policy.endDate.toISOString().slice(0, 10) : null,
     commissionAffectPct: policy.commissionAffectPct?.toString() ?? null,
     commissionExemptPct: policy.commissionExemptPct?.toString() ?? null,
-    itemId: singleItem?.id ?? null,
-    insuredAmount: singleItem?.insuredAmount?.toString() ?? null,
+    itemId: target?.id ?? null,
+    insuredAmount: target?.insuredAmount?.toString() ?? null,
+    itemDescription: target?.description ?? null,
+    notRenewable: policy.notRenewable,
+    nonRenewalReason: policy.nonRenewalReason,
+    nonRenewalNote: policy.nonRenewalNote,
+    nonRenewalAt: policy.nonRenewalAt ? policy.nonRenewalAt.toISOString() : null,
   };
   const created = (await tx.endorsement.create({
     data: {
@@ -142,6 +209,8 @@ export async function applyEndorsementToPolicy(
           ? new Prisma.Decimal(input.commissionExemptPct.toFixed(3))
           : null,
       priorSnapshot,
+      targetItemId: target?.id ?? null,
+      itemDescription: description,
       premiumAffectedDelta:
         input.premiumAffectedDelta != null
           ? new Prisma.Decimal(input.premiumAffectedDelta.toFixed(4))
@@ -156,11 +225,71 @@ export async function applyEndorsementToPolicy(
   })) as { id: string };
 
   const totalLoss = input.type === "CORTE_PERDIDA_TOTAL";
+  const removesTarget =
+    target != null &&
+    (input.type === "ELIMINA_ITEMS" ||
+      input.type === "REEMPLAZA_ITEMS" ||
+      totalLoss);
+  if (removesTarget && target) {
+    await tx.policyItem.update({
+      where: { id: target.id },
+      data: { removedAt: input.effectiveDate, removedByEndorsementId: created.id },
+    });
+  }
+  if (
+    (input.type === "AGREGA_ITEMS" || input.type === "REEMPLAZA_ITEMS") &&
+    (description || !input.historical)
+  ) {
+    await tx.policyItem.create({
+      data: {
+        organizationId: input.organizationId,
+        policyId: input.policyId,
+        description: description ?? ENDORSEMENT_TYPE_LABELS[input.type],
+        insuredAmount:
+          input.newInsuredAmount != null
+            ? new Prisma.Decimal(input.newInsuredAmount.toFixed(2))
+            : null,
+        currency: policy.currency,
+        addedByEndorsementId: created.id,
+      },
+    });
+  }
+  if (input.type === "MODIFICA_MONTO_PRIMA" && target && input.newInsuredAmount != null) {
+    await tx.policyItem.update({
+      where: { id: target.id },
+      data: {
+        insuredAmount: new Prisma.Decimal(input.newInsuredAmount.toFixed(2)),
+      },
+    });
+  }
+  if (input.type === "MODIFICACION_GLOSA_ITEM" && target && description) {
+    await tx.policyItem.update({
+      where: { id: target.id },
+      data: { description },
+    });
+  }
+  if (input.type === "CAMBIO_CORREDOR") {
+    await tx.policy.update({
+      where: { id: input.policyId },
+      data: {
+        notRenewable: true,
+        nonRenewalReason: "BROKER_CHANGE",
+        nonRenewalNote:
+          input.detail ?? "La póliza pasó a otro corredor por endoso.",
+        nonRenewalAt: new Date(),
+      },
+    });
+  }
+  const remaining = items.length - (removesTarget ? 1 : 0);
   const nextStatus = totalLoss
-    ? policy._count.items <= 1
+    ? remaining <= 0
       ? "CANCELADA"
       : null
-    : endorsementStatusEffect(input.type);
+    : input.type === "REHABILITACION"
+      ? policy.status === "CANCELADA" || policy.status === "ANULADA"
+        ? "VIGENTE"
+        : null
+      : endorsementStatusEffect(input.type);
   if (input.type === "PRORROGA" && input.endDate) {
     await tx.policy.update({
       where: { id: input.policyId },
@@ -177,39 +306,18 @@ export async function applyEndorsementToPolicy(
     });
   }
   if (input.type === "CAMBIO_COMISION") {
-    await tx.policy.update({
-      where: { id: input.policyId },
-      data: {
-        ...(input.commissionAffectPct != null
-          ? {
-              commissionAffectPct: new Prisma.Decimal(
-                input.commissionAffectPct.toFixed(3),
-              ),
-            }
-          : {}),
-        ...(input.commissionExemptPct != null
-          ? {
-              commissionExemptPct: new Prisma.Decimal(
-                input.commissionExemptPct.toFixed(3),
-              ),
-            }
-          : {}),
-      },
+    await postCommissionChange(tx, {
+      organizationId: input.organizationId,
+      policyId: input.policyId,
+      endorsementId: created.id,
+      userId: input.userId,
+      effectiveDate: input.effectiveDate,
+      currency: policy.currency,
+      oldAffectPct: policy.commissionAffectPct,
+      oldExemptPct: policy.commissionExemptPct,
+      newAffectPct: input.commissionAffectPct ?? null,
+      newExemptPct: input.commissionExemptPct ?? null,
     });
-  }
-  if (input.type === "MODIFICA_MONTO_PRIMA" && input.newInsuredAmount != null) {
-    const items = (await tx.policyItem.findMany({
-      where: { policyId: input.policyId },
-      select: { id: true },
-    })) as { id: string }[];
-    if (items.length === 1) {
-      await tx.policyItem.update({
-        where: { id: items[0].id },
-        data: {
-          insuredAmount: new Prisma.Decimal(input.newInsuredAmount.toFixed(2)),
-        },
-      });
-    }
   }
   if (nextStatus) {
     await tx.policy.update({
@@ -229,6 +337,24 @@ export async function applyEndorsementToPolicy(
         changedById: input.userId,
       },
     });
+    if (input.type === "REHABILITACION") {
+      const termination = (await tx.endorsement.findFirst({
+        where: {
+          policyId: input.policyId,
+          type: { in: [...TERMINATION_TYPES] },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      })) as { id: string } | null;
+      if (termination) {
+        await reopenPlanAfterTermination(tx, {
+          organizationId: input.organizationId,
+          policyId: input.policyId,
+          endorsementId: termination.id,
+          userId: input.userId,
+        });
+      }
+    }
     const kind = terminationKindOf(input.type);
     if (kind) {
       await closePlanOnTermination(tx, {
@@ -241,7 +367,11 @@ export async function applyEndorsementToPolicy(
       });
     }
   }
-  if (!terminationKindOf(input.type) && !totalLoss) {
+  if (
+    !terminationKindOf(input.type) &&
+    !totalLoss &&
+    input.type !== "REHABILITACION"
+  ) {
     await postPremiumDelta(tx, {
       organizationId: input.organizationId,
       policyId: input.policyId,
@@ -262,6 +392,11 @@ type PriorSnapshot = {
   commissionExemptPct?: string | null;
   itemId?: string | null;
   insuredAmount?: string | null;
+  itemDescription?: string | null;
+  notRenewable?: boolean;
+  nonRenewalReason?: string | null;
+  nonRenewalNote?: string | null;
+  nonRenewalAt?: string | null;
 };
 
 const TERM_DATE_TYPES = ["PRORROGA", "REDUCE_VIGENCIA", "REVERSO_PRORROGA"] as const;
@@ -273,6 +408,7 @@ const STATUS_TYPES = [
   "CANCELACION_NO_PAGO",
   "SOLICITUD_CANCELACION",
   "CORTE_PERDIDA_TOTAL",
+  "REHABILITACION",
 ] as const;
 
 function asSnapshot(value: unknown): PriorSnapshot | null {
@@ -323,6 +459,14 @@ export async function restoreEndorsementSideEffects(
     });
   }
   if (endorsement.type === "CAMBIO_COMISION" && (await later(["CAMBIO_COMISION"])) === 0) {
+    const current = (await db.policy.findFirst({
+      where: { id: endorsement.policyId },
+      select: { premiumAffect: true, premiumExempt: true },
+    })) as { premiumAffect: unknown; premiumExempt: unknown } | null;
+    const pctA = snap.commissionAffectPct != null ? Number(snap.commissionAffectPct) : null;
+    const pctE = snap.commissionExemptPct != null ? Number(snap.commissionExemptPct) : null;
+    const affected = current?.premiumAffect != null ? Number(current.premiumAffect) : 0;
+    const exempt = current?.premiumExempt != null ? Number(current.premiumExempt) : 0;
     await db.policy.update({
       where: { id: endorsement.policyId },
       data: {
@@ -334,8 +478,85 @@ export async function restoreEndorsementSideEffects(
           snap.commissionExemptPct != null
             ? new Prisma.Decimal(snap.commissionExemptPct)
             : null,
+        commissionAffect: new Prisma.Decimal(
+          roundHalfUp((affected * (pctA ?? 0)) / 100, 4).toFixed(4),
+        ),
+        commissionExempt: new Prisma.Decimal(
+          roundHalfUp((exempt * (pctE ?? 0)) / 100, 4).toFixed(4),
+        ),
       },
     });
+  }
+  await db.policyItem.updateMany({
+    where: { removedByEndorsementId: endorsement.id },
+    data: { removedAt: null, removedByEndorsementId: null },
+  });
+  await db.policyItem.deleteMany({
+    where: { addedByEndorsementId: endorsement.id },
+  });
+  if (
+    endorsement.type === "MODIFICACION_GLOSA_ITEM" &&
+    snap.itemId &&
+    snap.itemDescription &&
+    (await later(["MODIFICACION_GLOSA_ITEM"])) === 0
+  ) {
+    await db.policyItem
+      .update({
+        where: { id: snap.itemId },
+        data: { description: snap.itemDescription },
+      })
+      .catch(() => null);
+  }
+  if (endorsement.type === "CAMBIO_CORREDOR" && (await later(["CAMBIO_CORREDOR"])) === 0) {
+    await db.policy.update({
+      where: { id: endorsement.policyId },
+      data: {
+        notRenewable: snap.notRenewable ?? false,
+        nonRenewalReason: snap.nonRenewalReason ?? null,
+        nonRenewalNote: snap.nonRenewalNote ?? null,
+        nonRenewalAt: snap.nonRenewalAt ? new Date(snap.nonRenewalAt) : null,
+      },
+    });
+  }
+  if (
+    endorsement.type === "REHABILITACION" &&
+    snap.status &&
+    (snap.status === "CANCELADA" || snap.status === "ANULADA") &&
+    (await later(STATUS_TYPES)) === 0
+  ) {
+    const termination = (await db.endorsement.findFirst({
+      where: {
+        policyId: endorsement.policyId,
+        type: { in: [...TERMINATION_TYPES] },
+        createdAt: { lt: endorsement.createdAt },
+      },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, type: true, effectiveDate: true },
+    })) as { id: string; type: EndorsementType; effectiveDate: Date } | null;
+    await db.policy.update({
+      where: { id: endorsement.policyId },
+      data: { status: snap.status },
+    });
+    await db.policyStatusHistory.create({
+      data: {
+        organizationId: user.organizationId,
+        policyId: endorsement.policyId,
+        status: snap.status,
+        note: "Rehabilitación revertida",
+        changedById: user.userId,
+      },
+    });
+    const kind = termination ? terminationKindOf(termination.type) : null;
+    if (termination && kind) {
+      await closePlanOnTermination(db, {
+        organizationId: user.organizationId,
+        policyId: endorsement.policyId,
+        endorsementId: termination.id,
+        userId: user.userId,
+        kind,
+        effectiveDate: termination.effectiveDate,
+      });
+    }
   }
   if (
     endorsement.type === "MODIFICA_MONTO_PRIMA" &&
@@ -376,6 +597,89 @@ export async function restoreEndorsementSideEffects(
       });
     }
   }
+}
+
+/**
+ * Cambia el porcentaje de comisión y asienta la diferencia sobre la prima
+ * ya registrada. El asiento no mueve prima: solo deja por cobrar (o por
+ * devolver) la comisión que cambia.
+ */
+async function postCommissionChange(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  input: {
+    organizationId: string;
+    policyId: string;
+    endorsementId: string;
+    userId: string;
+    effectiveDate: Date;
+    currency: string;
+    oldAffectPct: { toString(): string } | null;
+    oldExemptPct: { toString(): string } | null;
+    newAffectPct: number | null;
+    newExemptPct: number | null;
+  },
+): Promise<void> {
+  const policy = await tx.policy.findFirst({
+    where: { id: input.policyId },
+    select: {
+      id: true,
+      organizationId: true,
+      proposalId: true,
+      premiumAffect: true,
+      premiumExempt: true,
+      premiumNet: true,
+      commissionAffectPct: true,
+      commissionExemptPct: true,
+      currency: true,
+      startDate: true,
+      createdAt: true,
+    },
+  });
+  if (!policy) return;
+  await ensureIssueMovement(tx, policy);
+  const oldA = input.oldAffectPct != null ? Number(input.oldAffectPct.toString()) : 0;
+  const oldE = input.oldExemptPct != null ? Number(input.oldExemptPct.toString()) : 0;
+  const newA = input.newAffectPct ?? oldA;
+  const newE = input.newExemptPct ?? oldE;
+  const rows = (await tx.premiumMovement.findMany({
+    where: { policyId: input.policyId },
+    select: { premiumAffected: true, premiumExempt: true },
+  })) as { premiumAffected: unknown; premiumExempt: unknown }[];
+  const affected = rows.reduce((sum, row) => sum + Number(row.premiumAffected), 0);
+  const exempt = rows.reduce((sum, row) => sum + Number(row.premiumExempt), 0);
+  const deltaAffected = roundHalfUp((affected * (newA - oldA)) / 100, 4);
+  const deltaExempt = roundHalfUp((exempt * (newE - oldE)) / 100, 4);
+  await tx.policy.update({
+    where: { id: input.policyId },
+    data: {
+      commissionAffectPct: new Prisma.Decimal(newA.toFixed(3)),
+      commissionExemptPct: new Prisma.Decimal(newE.toFixed(3)),
+      commissionAffect: new Prisma.Decimal(
+        roundHalfUp((affected * newA) / 100, 4).toFixed(4),
+      ),
+      commissionExempt: new Prisma.Decimal(
+        roundHalfUp((exempt * newE) / 100, 4).toFixed(4),
+      ),
+    },
+  });
+  if (deltaAffected === 0 && deltaExempt === 0) return;
+  await appendPremiumMovement(tx, {
+    organizationId: input.organizationId,
+    policyId: input.policyId,
+    endorsementId: input.endorsementId,
+    movementType: "ENDORSEMENT",
+    issuedOn: new Date(),
+    effectiveOn: input.effectiveDate,
+    currency: input.currency,
+    createdById: input.userId,
+    parts: { affected: 0, exempt: 0 },
+    commission: {
+      affected: deltaAffected,
+      exempt: deltaExempt,
+      total: roundHalfUp(deltaAffected + deltaExempt, 4),
+    },
+  });
 }
 
 async function postPremiumDelta(

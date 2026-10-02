@@ -22,6 +22,9 @@ export const ENDORSEMENT_TYPES = [
   "CAMBIO_COMISION",
   "DECLARACION",
   "AJUSTE_PRIMA",
+  "REEMPLAZA_ITEMS",
+  "REHABILITACION",
+  "CAMBIO_CORREDOR",
 ] as const;
 export type EndorsementTypeValue = (typeof ENDORSEMENT_TYPES)[number];
 
@@ -47,7 +50,34 @@ export const ENDORSEMENT_TYPE_LABELS: Record<EndorsementTypeValue, string> = {
   CAMBIO_COMISION: "Cambio de comisión",
   DECLARACION: "Declaración",
   AJUSTE_PRIMA: "Ajuste de prima",
+  REEMPLAZA_ITEMS: "Reemplaza ítem",
+  REHABILITACION: "Rehabilitación",
+  CAMBIO_CORREDOR: "Cambio de corredor",
 };
+
+/** Endosos que piden elegir un ítem de la póliza. */
+export const ITEM_TARGET_TYPES: EndorsementTypeValue[] = [
+  "ELIMINA_ITEMS",
+  "REEMPLAZA_ITEMS",
+  "MODIFICA_MONTO_PRIMA",
+  "MODIFICACION_GLOSA_ITEM",
+  "CAMBIO_ASEGURADO_ITEM",
+  "CORTE_PERDIDA_TOTAL",
+];
+
+/** Endosos que piden la glosa de un ítem nuevo o corregido. */
+export const ITEM_DESCRIPTION_TYPES: EndorsementTypeValue[] = [
+  "AGREGA_ITEMS",
+  "REEMPLAZA_ITEMS",
+  "MODIFICACION_GLOSA_ITEM",
+];
+
+/** Endosos que piden el monto asegurado del ítem. */
+export const ITEM_AMOUNT_TYPES: EndorsementTypeValue[] = [
+  "AGREGA_ITEMS",
+  "REEMPLAZA_ITEMS",
+  "MODIFICA_MONTO_PRIMA",
+];
 
 /**
  * Efecto de cada tipo de endoso sobre el estado de la póliza.
@@ -134,6 +164,8 @@ export const endorsementSchema = z
     offsetClaimId: optionalString,
     commissionAffectPct: optionalPremiumDelta,
     commissionExemptPct: optionalPremiumDelta,
+    targetItemId: optionalString,
+    itemDescription: z.string().trim().max(500).default(""),
   })
   .superRefine((val, ctx) => {
     if (val.mode === "PROPUESTA" && !val.detail) {
@@ -172,6 +204,8 @@ export const endorsementProposalSchema = z
     offsetClaimId: optionalString,
     commissionAffectPct: optionalPremiumDelta,
     commissionExemptPct: optionalPremiumDelta,
+    targetItemId: optionalString,
+    itemDescription: z.string().trim().max(500).default(""),
   })
   .superRefine((val, ctx) => {
     if (val.endDate && val.endDate < val.effectiveDate) {
@@ -196,6 +230,9 @@ export function endorsementTransitionError(
   type: EndorsementTypeValue,
   policyStatus: string,
 ): string | null {
+  if (type === "REHABILITACION" && !["CANCELADA", "ANULADA"].includes(policyStatus)) {
+    return "Solo se rehabilita una póliza cancelada o anulada.";
+  }
   const next = endorsementStatusEffect(type);
   if (next === "CANCELADA" && !["VIGENTE", "VENCIDA"].includes(policyStatus)) {
     return "Solo se puede cancelar una póliza vigente o vencida.";

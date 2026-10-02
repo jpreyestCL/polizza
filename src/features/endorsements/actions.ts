@@ -213,6 +213,8 @@ export async function createEndorsementAction(
         offsetClaimId: toNullable(data.offsetClaimId),
         commissionAffectPct: parsePremiumDelta(data.commissionAffectPct),
         commissionExemptPct: parsePremiumDelta(data.commissionExemptPct),
+        targetItemId: toNullable(data.targetItemId),
+        itemDescription: toNullable(data.itemDescription),
       }),
     );
     if (!result.ok) return result;
@@ -294,6 +296,8 @@ export async function createEndorsementAction(
             parsePremiumDelta(data.commissionExemptPct) == null
               ? null
               : new Prisma.Decimal(parsePremiumDelta(data.commissionExemptPct)!.toFixed(3)),
+          endorsementTargetItemId: toNullable(data.targetItemId),
+          endorsementItemDescription: toNullable(data.itemDescription),
           observations: [toNullable(data.notes), inalterabilityNote]
             .filter(Boolean)
             .join("\n") || null,
@@ -411,6 +415,8 @@ export async function updateEndorsementProposalAction(
       endorsementOffsetClaimId: toNullable(data.offsetClaimId),
       endorsementCommissionAffectPct: deltaDecimal(data.commissionAffectPct),
       endorsementCommissionExemptPct: deltaDecimal(data.commissionExemptPct),
+      endorsementTargetItemId: toNullable(data.targetItemId),
+      endorsementItemDescription: toNullable(data.itemDescription),
       startDate: effective,
       endDate: toDate(data.endDate),
       observations: toNullable(data.observations),

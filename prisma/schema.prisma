@@ -661,6 +661,8 @@ model Proposal {
   endorsementOffsetClaimId       String?
   endorsementCommissionAffectPct Decimal? @db.Decimal(6, 3)
   endorsementCommissionExemptPct Decimal? @db.Decimal(6, 3)
+  endorsementTargetItemId        String?
+  endorsementItemDescription     String?
   companyId                  String?
   lineId                     String?
   branchId                   String?
@@ -920,6 +922,9 @@ enum EndorsementType {
   CAMBIO_COMISION
   DECLARACION
   AJUSTE_PRIMA
+  REEMPLAZA_ITEMS
+  REHABILITACION
+  CAMBIO_CORREDOR
 }
 
 model Endorsement {
@@ -953,6 +958,10 @@ model Endorsement {
   offsetClaimId     String?
   commissionAffectPct Decimal?      @db.Decimal(6, 3)
   commissionExemptPct Decimal?      @db.Decimal(6, 3)
+  // Ítem de la póliza que toca el endoso (elimina, reemplaza, monto, glosa).
+  targetItemId      String?
+  // Glosa del ítem que agrega o reemplaza el endoso.
+  itemDescription   String?
   // Estado de la póliza antes de aplicar este endoso, para poder revertirlo.
   priorSnapshot     Json?
   createdById       String?
@@ -1168,6 +1177,10 @@ model PolicyItem {
   description    String
   insuredAmount  Decimal? @db.Decimal(16, 2)
   currency       String   @default("UF")
+  // Endoso que agregó el ítem y endoso que lo sacó de la póliza.
+  addedByEndorsementId   String?
+  removedByEndorsementId String?
+  removedAt              DateTime? @db.Date
   createdAt      DateTime @default(now())
 
   policy Policy  @relation(fields: [policyId], references: [id], onDelete: Cascade)
