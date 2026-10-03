@@ -44,12 +44,6 @@ const TYPE_LABELS: Record<string, string> = {
   PERSONA: "Persona",
   EMPRESA: "Empresa",
 };
-const STATUS_LABELS: Record<string, string> = {
-  PROSPECTO: "Prospecto",
-  ACTIVO: "Activo",
-  INACTIVO: "Inactivo",
-};
-
 export function ClientsTable({
   clients,
   members,

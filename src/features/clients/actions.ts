@@ -11,6 +11,7 @@ import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import { cleanRut, normalizeRut } from "@/lib/rut";
 import type { Db } from "@/server/db";
 import { normalizeClientEmail } from "./privacy";
+import { lockClientEmails } from "@/server/client-email-lock";
 import {
   clientFormSchema,
   composeClientName,
@@ -221,9 +222,7 @@ export async function createClientAction(
 
   try {
     const client = await db.$transaction(async (tx) => {
-      await tx.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${"client-email:" + ctx.organizationId}))`,
-      );
+      await lockClientEmails(tx, ctx.organizationId);
       const conflict = await duplicateEmailResult(tx, data);
       if (conflict) throw new DuplicateClientEmailError(conflict);
       const created = await tx.client.create({
@@ -330,9 +329,7 @@ export async function updateClientAction(
 
   try {
     await db.$transaction(async (tx) => {
-      await tx.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${"client-email:" + ctx.organizationId}))`,
-      );
+      await lockClientEmails(tx, ctx.organizationId);
       const conflict = await duplicateEmailResult(tx, data, id);
       if (conflict) throw new DuplicateClientEmailError(conflict);
       await tx.client.update({
