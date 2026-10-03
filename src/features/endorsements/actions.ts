@@ -8,27 +8,17 @@ import { logActivity } from "@/server/activity";
 import { generateProposalNumber } from "@/features/proposals/number-generator";
 import { isProposalLocked } from "@/features/proposals/schemas";
 import { setTenantGuc } from "@/server/tenant-rls";
-import {
-  activeTerminations,
-  applyEndorsementToPolicy,
-  restoreEndorsementSideEffects,
-} from "./apply";
-import {
-  reopenPlanAfterTermination,
-  terminationKindOf,
-} from "@/features/billing/termination";
+import { applyEndorsementToPolicy, deleteEndorsementInTx } from "./apply";
 import {
   endorsementSchema,
   endorsementProposalSchema,
   endorsementTransitionError,
   ENDORSEMENT_TYPE_LABELS,
-  endorsementStatusEffect,
   parsePremiumDelta,
   endorsementUsesCalculatedCredit,
   type EndorsementValues,
   type EndorsementProposalValues,
 } from "./schemas";
-import { reverseEndorsementMovements } from "@/features/ledger/record";
 import { hasPermission } from "@/lib/factory-roles";
 import {
   inalterabilityDecision,
@@ -480,64 +470,10 @@ export async function deleteEndorsementAction(
   await db.$transaction(
     async (tx) => {
       await setTenantGuc(tx as never, ctx.organizationId);
-      await restoreEndorsementSideEffects(tx, endorsement, {
+      await deleteEndorsementInTx(tx, endorsement, {
         organizationId: ctx.organizationId,
         userId: ctx.userId,
       });
-
-      const isTermination = Boolean(terminationKindOf(endorsement.type));
-      const wasActive =
-        isTermination &&
-        (await activeTerminations(tx, endorsement.policyId)).some(
-          (t) => t.id === endorsement.id,
-        );
-      const remaining = wasActive
-        ? await activeTerminations(tx, endorsement.policyId, endorsement.id)
-        : [];
-
-      if (wasActive) {
-        const latest = remaining[remaining.length - 1];
-        const status = latest ? endorsementStatusEffect(latest.type) : "VIGENTE";
-        const current = await tx.policy.findFirst({
-          where: { id: endorsement.policyId },
-          select: { status: true },
-        });
-        if (status && current && current.status !== status) {
-          await tx.policy.update({
-            where: { id: endorsement.policyId },
-            data: { status },
-          });
-          await tx.policyStatusHistory.create({
-            data: {
-              organizationId: ctx.organizationId,
-              policyId: endorsement.policyId,
-              status,
-              note:
-                status === "VIGENTE"
-                  ? "Endoso revertido — póliza vuelve a vigente"
-                  : "Endoso revertido — rige el término anterior",
-              changedById: ctx.userId,
-            },
-          });
-        }
-      }
-
-      await reverseEndorsementMovements(tx, {
-        organizationId: ctx.organizationId,
-        policyId: endorsement.policyId,
-        endorsementId: endorsement.id,
-        createdById: ctx.userId,
-      });
-      if (wasActive && remaining.length === 0) {
-        await reopenPlanAfterTermination(tx, {
-          organizationId: ctx.organizationId,
-          policyId: endorsement.policyId,
-          endorsementId: endorsement.id,
-          userId: ctx.userId,
-        });
-      }
-
-      await tx.endorsement.delete({ where: { id: endorsementId } });
     },
     { timeout: 30_000 },
   );

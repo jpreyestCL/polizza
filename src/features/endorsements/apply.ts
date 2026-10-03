@@ -460,6 +460,79 @@ export async function activeTerminations(
   });
 }
 
+/**
+ * Borra un endoso y deshace lo que hizo: efectos sobre la póliza, asientos
+ * del libro y, si era el término que regía, estado y plan de pago.
+ * Debe correr dentro de una transacción.
+ */
+export async function deleteEndorsementInTx(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  endorsement: {
+    id: string;
+    policyId: string;
+    type: EndorsementType;
+    createdAt: Date;
+    priorSnapshot: unknown;
+  },
+  user: { organizationId: string; userId: string },
+): Promise<void> {
+  await restoreEndorsementSideEffects(tx, endorsement, user);
+
+  const wasActive =
+    Boolean(terminationKindOf(endorsement.type)) &&
+    (await activeTerminations(tx, endorsement.policyId)).some(
+      (t) => t.id === endorsement.id,
+    );
+  const remaining = wasActive
+    ? await activeTerminations(tx, endorsement.policyId, endorsement.id)
+    : [];
+
+  if (wasActive) {
+    const latest = remaining[remaining.length - 1];
+    const status = latest ? endorsementStatusEffect(latest.type) : "VIGENTE";
+    const current = (await tx.policy.findFirst({
+      where: { id: endorsement.policyId },
+      select: { status: true },
+    })) as { status: string } | null;
+    if (status && current && current.status !== status) {
+      await tx.policy.update({
+        where: { id: endorsement.policyId },
+        data: { status },
+      });
+      await tx.policyStatusHistory.create({
+        data: {
+          organizationId: user.organizationId,
+          policyId: endorsement.policyId,
+          status,
+          note:
+            status === "VIGENTE"
+              ? "Endoso revertido — póliza vuelve a vigente"
+              : "Endoso revertido — rige el término anterior",
+          changedById: user.userId,
+        },
+      });
+    }
+  }
+
+  await reverseEndorsementMovements(tx, {
+    organizationId: user.organizationId,
+    policyId: endorsement.policyId,
+    endorsementId: endorsement.id,
+    createdById: user.userId,
+  });
+  if (wasActive && remaining.length === 0) {
+    await reopenPlanAfterTermination(tx, {
+      organizationId: user.organizationId,
+      policyId: endorsement.policyId,
+      endorsementId: endorsement.id,
+      userId: user.userId,
+    });
+  }
+
+  await tx.endorsement.delete({ where: { id: endorsement.id } });
+}
+
 function asSnapshot(value: unknown): PriorSnapshot | null {
   if (!value || typeof value !== "object") return null;
   return value as PriorSnapshot;
