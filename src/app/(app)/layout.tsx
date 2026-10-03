@@ -2,6 +2,7 @@ import { isSuperadminUser, requireSession } from "@/server/context";
 import { getIndicatorValues } from "@/server/uf";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
+import { ActionErrorToaster } from "@/components/action-error-toaster";
 
 export default async function AppLayout({
   children,
@@ -29,6 +30,7 @@ export default async function AppLayout({
           isSuperadmin={isSuperadmin}
         />
         <main className="flex-1 px-5 py-6 sm:px-8">{children}</main>
+        <ActionErrorToaster />
       </div>
     </div>
   );
