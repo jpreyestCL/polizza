@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
 import { basePrisma, getDb } from "@/server/db";
 import type { AppRole } from "@/lib/permissions";
+import { hasPermission } from "@/lib/factory-roles";
 
 export type SessionContext = {
   userId: string;
@@ -67,6 +68,17 @@ export async function requireOrgDb() {
     ctx,
     db: getDb(ctx.organizationId, { writerRole: isAction ? ctx.role : null }),
   };
+}
+
+/**
+ * Para procesos que escriben muchos modelos con un solo permiso (importar,
+ * revertir un lote): exige ese permiso y devuelve el cliente de la
+ * organización sin la guardia por modelo. Devuelve db null sin el permiso.
+ */
+export async function requireOrgDbFor(permission: string) {
+  const ctx = await requireSession();
+  if (!hasPermission(ctx.role, permission)) return { ctx, db: null };
+  return { ctx, db: getDb(ctx.organizationId) };
 }
 
 /**

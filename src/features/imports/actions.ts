@@ -3,7 +3,7 @@
 import type { PolicyStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireOrgDb } from "@/server/context";
+import { requireOrgDb, requireOrgDbFor } from "@/server/context";
 import { hasPermission } from "@/lib/factory-roles";
 import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import { cleanRut, isValidRut } from "@/lib/rut";
@@ -93,10 +93,8 @@ export async function previewImportAction(form: FormData): Promise<void> {
 
 export async function applyImportAction(form: FormData): Promise<void> {
   const jobId = text(form, "jobId");
-  const { ctx, db } = await requireOrgDb();
-  if (!hasPermission(ctx.role, "imports.run")) {
-    redirect("/importaciones?aviso=permiso");
-  }
+  const { ctx, db } = await requireOrgDbFor("imports.run");
+  if (!db) redirect("/importaciones?aviso=permiso");
   const fingerprint = commandFingerprint(jobId);
   const prior = await readIdempotency(
     db,
@@ -233,10 +231,8 @@ export async function revertImportAction(form: FormData): Promise<void> {
   if (reasonError) {
     redirect(`/importaciones?job=${jobId}&aviso=${encodeURIComponent(reasonError)}`);
   }
-  const { ctx, db } = await requireOrgDb();
-  if (!hasPermission(ctx.role, "imports.revert")) {
-    redirect(`/importaciones?job=${jobId}&aviso=permiso`);
-  }
+  const { ctx, db } = await requireOrgDbFor("imports.revert");
+  if (!db) redirect(`/importaciones?job=${jobId}&aviso=permiso`);
   const job = await db.importJob.findFirst({
     where: { id: jobId, status: "APLICADO" },
     include: { rows: true },

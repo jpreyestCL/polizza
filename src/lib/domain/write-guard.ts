@@ -22,7 +22,6 @@ const POLICIES = [
   "policies.change_number",
   "endorsements.issue_nonpayment_cancellation",
   "endorsements.override_inalterability",
-  "imports.run",
 ];
 const LEDGER = [...POLICIES, "commissions.reconcile", "installments.mark_paid"];
 const COLLECTIONS = [
@@ -49,10 +48,11 @@ const CLAIMS = [
 /**
  * Permisos que habilitan escribir cada modelo de la corredora. Basta uno.
  * Es la red de seguridad bajo cada acción: un rol sin ninguno de esos
- * permisos no puede crear, editar ni borrar filas del modelo.
+ * permisos no puede crear, editar ni borrar filas del modelo. Importar no
+ * figura aquí: el lote corre con `requireOrgDbFor("imports.run")`.
  */
 export const MODEL_WRITE_PERMISSIONS: Record<string, readonly string[]> = {
-  Client: [...PARTIES, "policies.write", "quotes.write", "imports.run"],
+  Client: [...PARTIES, "policies.write", "quotes.write"],
   ClientContact: [...PARTIES, "policies.write"],
   ClientRelationship: PARTIES,
   ClientTag: PARTIES,
@@ -60,7 +60,7 @@ export const MODEL_WRITE_PERMISSIONS: Record<string, readonly string[]> = {
   Holding: PARTIES,
   Branch: PARTIES,
 
-  InsuranceCompany: [...CATALOG, "imports.run"],
+  InsuranceCompany: CATALOG,
   InsuranceCompanyContact: CATALOG,
   InsuranceLine: [...CATALOG, "quotes.write", "policies.write"],
   InsuranceProduct: [...CATALOG, "policies.write"],
@@ -70,7 +70,7 @@ export const MODEL_WRITE_PERMISSIONS: Record<string, readonly string[]> = {
   InsurerPortalCredential: ["settings.manage"],
   SalespersonCommissionRate: ["settings.manage", ...COMMISSIONS],
 
-  Proposal: [...PROPOSALS, "imports.run"],
+  Proposal: PROPOSALS,
   ProposalItem: PROPOSALS,
   ProposalItemCoverage: PROPOSALS,
   PaymentPlan: [...PROPOSALS, ...COLLECTIONS],

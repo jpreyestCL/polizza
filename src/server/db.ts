@@ -30,7 +30,7 @@ if (process.env.NODE_ENV !== "production") {
  * Modelos de dominio aislados por organización. Cada operación sobre estos
  * modelos recibe automáticamente el filtro/valor organizationId.
  */
-const TENANT_MODELS = new Set<string>([
+export const TENANT_MODELS = new Set<string>([
   "InsuranceCompany",
   "InsuranceCompanyContact",
   "InsuranceLine",
