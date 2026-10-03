@@ -366,11 +366,13 @@ ssh root@161.35.229.180 'nano /home/ai/apps/poliza/.env && systemctl restart pol
    status `PROSPECTO`. Si el RUT ya existe en la org, devuelve el existente
    (P2002 → fallback al existente).
 
-2. **Conversión Propuesta → Póliza** (`/polizas/nuevo?fromProposal=X`):
-   precarga items + coverages desde `ProposalItem*`, totaliza prima neta. Al
-   crear la póliza vincula `PaymentPlan.policyId` y reasigna las
-   `Installments` desde `paymentPlanId` a `policyId`. Marca propuesta como
-   `EMITIDA` y registra `CONVERTED_TO_POLICY` en bitácora.
+2. **Póliza única desde la propuesta**: la propuesta de póliza abre su
+ `Policy` en `BORRADOR` (`ensureDraftPolicy`, `Policy.proposalId` único) y
+ la mantiene sincronizada (ítems, coberturas, plan) mientras está
+ pre-emisión. `/polizas/nuevo?fromProposal=X` redirige a esa póliza si ya
+ existe; solo precarga el formulario para propuestas antiguas sin póliza.
+ Al emitir, las `Installments` pasan de `paymentPlanId` a `policyId`, la
+ propuesta queda `EMITIDA` y se registra `CONVERTED_TO_POLICY`.
 
 3. **Endosos**: desde la póliza, "Nuevo endoso" crea por defecto una
    **propuesta de endoso** (`Proposal.kind = ENDOSO`, `endorsedPolicyId`,

@@ -168,20 +168,32 @@ export async function ensureDraftPolicy(
   return existing.id;
 }
 
-/** Re-sincroniza la póliza borrador tras editar ítems, coberturas o plan. */
+/**
+ * Re-sincroniza la póliza borrador tras editar ítems, coberturas o plan.
+ * La edición ya quedó guardada: si la sincronización falla no se le informa
+ * error al usuario, se registra, y el siguiente cambio de estado de la
+ * propuesta (que sincroniza dentro de su transacción) la pone al día.
+ */
 export async function refreshDraftPolicy(
   db: Tx,
   ctx: { organizationId: string; userId: string },
   proposalId: string,
 ): Promise<void> {
-  await db.$transaction(async (tx: Tx) => {
-    await setTenantGuc(tx as never, ctx.organizationId);
-    await ensureDraftPolicy(tx, {
-      organizationId: ctx.organizationId,
-      userId: ctx.userId,
-      proposalId,
+  try {
+    await db.$transaction(async (tx: Tx) => {
+      await setTenantGuc(tx as never, ctx.organizationId);
+      await ensureDraftPolicy(tx, {
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        proposalId,
+      });
     });
-  });
+  } catch (error) {
+    console.error("[draft-policy] no se pudo sincronizar la póliza", {
+      proposalId,
+      error,
+    });
+  }
 }
 
 /**
@@ -214,11 +226,35 @@ export async function syncPolicyMateria(
     currency: policy.currency,
   });
 
-  await tx.policyCoverage.deleteMany({ where: { policyId: policy.id } });
-  await tx.policyItem.deleteMany({ where: { policyId: policy.id } });
-  if (mapped.items.length > 0) {
-    await tx.policyItem.createMany({ data: mapped.items });
+  // Los ítems se actualizan en su lugar para no cambiarles el id: un siniestro
+  // o un endoso puede apuntar a ellos. Los que agregó un endoso no se tocan.
+  const current: { id: string }[] = await tx.policyItem.findMany({
+    where: { policyId: policy.id, addedByEndorsementId: null },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true },
+  });
+  for (const [index, item] of mapped.items.entries()) {
+    const target = current[index];
+    if (target) {
+      await tx.policyItem.update({
+        where: { id: target.id },
+        data: {
+          description: item.description,
+          insuredAmount: item.insuredAmount,
+          currency: item.currency,
+        },
+      });
+    } else {
+      await tx.policyItem.create({ data: item });
+    }
   }
+  const surplus = current.slice(mapped.items.length).map((item) => item.id);
+  if (surplus.length > 0) {
+    await tx.policyItem.deleteMany({
+      where: { id: { in: surplus }, claims: { none: {} } },
+    });
+  }
+  await tx.policyCoverage.deleteMany({ where: { policyId: policy.id } });
   if (mapped.coverages.length > 0) {
     await tx.policyCoverage.createMany({ data: mapped.coverages });
   }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Users } from "lucide-react";
 import { requireOrgDb } from "@/server/context";
 import { listClientsForSelect, getOrgMembers } from "@/features/clients/queries";
@@ -23,6 +24,15 @@ export default async function NuevaPolizaPage({
 }) {
   const { fromProposal } = await searchParams;
   const { ctx, db } = await requireOrgDb();
+  // La propuesta ya tiene su única póliza (abierta como borrador): se emite
+  // desde ahí, no con otra fila.
+  if (fromProposal) {
+    const existing = await db.policy.findFirst({
+      where: { proposalId: fromProposal },
+      select: { id: true },
+    });
+    if (existing) redirect(`/polizas/${existing.id}`);
+  }
   const [clients, companies, lines, members, branches] = await Promise.all([
     listClientsForSelect(ctx, db),
     getCompanies(db),
