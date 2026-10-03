@@ -36,109 +36,123 @@ export async function postCommissionStatementAction(form: FormData): Promise<voi
     redirect("/comisiones/liquidacion?error=datos");
   }
 
-  const policies = await db.policy.findMany({
-    where: { policyNumber: { in: parsed.map((line) => line.policyNumber) } },
-    select: { id: true, policyNumber: true },
-  });
-  const policyId = new Map(policies.map((policy) => [policy.policyNumber, policy.id]));
-  const receivables = await db.commissionReceivable.findMany({
-    where: {
-      status: "PENDING",
-      policyId: { in: policies.map((policy) => policy.id) },
-    },
-    select: {
-      id: true,
-      amount: true,
-      currency: true,
-      policy: { select: { policyNumber: true } },
-    },
-  });
-
-  const statement = await db.commissionStatement.create({
-    data: {
-      organizationId: ctx.organizationId,
-      insurerName,
-      currency,
-      status: "POSTED",
-    },
-  });
-  const lineIds: { id: string; policyNumber: string; amount: number }[] = [];
-  for (const line of parsed) {
-    const created = await db.commissionStatementLine.create({
-      data: {
-        organizationId: ctx.organizationId,
-        statementId: statement.id,
-        policyNumber: line.policyNumber,
-        amount: new Prisma.Decimal(line.amount.toFixed(4)),
-        currency,
+  const result = await db.$transaction(async (tx) => {
+    const policies = await tx.policy.findMany({
+      where: { policyNumber: { in: parsed.map((line) => line.policyNumber) } },
+      select: { id: true, policyNumber: true },
+    });
+    const policyId = new Map(
+      policies.map((policy) => [policy.policyNumber, policy.id]),
+    );
+    const receivables = await tx.commissionReceivable.findMany({
+      where: {
+        status: "PENDING",
+        policyId: { in: policies.map((policy) => policy.id) },
+      },
+      select: {
+        id: true,
+        amount: true,
+        currency: true,
+        policy: { select: { policyNumber: true } },
       },
     });
-    lineIds.push({ id: created.id, policyNumber: line.policyNumber, amount: line.amount });
-  }
-  const matches = matchCommissionLines(
-    lineIds.map((line) => ({
-      id: line.id,
-      policyNumber: line.policyNumber,
-      amount: line.amount,
-      currency,
-    })),
-    receivables
-      .filter((row) => row.currency === currency)
-      .map((row) => ({
-        id: row.id,
-        policyNumber: row.policy.policyNumber,
-        amount: Number(row.amount),
-        currency: row.currency,
-      })),
-  );
-  if (matches.length > 0) {
-    await db.commissionAllocation.createMany({
-      data: matches.map((match) => ({
+
+    const statement = await tx.commissionStatement.create({
+      data: {
         organizationId: ctx.organizationId,
-        lineId: match.lineId,
-        receivableId: match.receivableId,
-        amount: new Prisma.Decimal(match.amount.toFixed(4)),
+        insurerName,
+        currency,
+        status: "POSTED",
+      },
+    });
+    const lineIds: { id: string; policyNumber: string; amount: number }[] = [];
+    for (const line of parsed) {
+      const created = await tx.commissionStatementLine.create({
+        data: {
+          organizationId: ctx.organizationId,
+          statementId: statement.id,
+          policyNumber: line.policyNumber,
+          amount: new Prisma.Decimal(line.amount.toFixed(4)),
+          currency,
+        },
+      });
+      lineIds.push({
+        id: created.id,
+        policyNumber: line.policyNumber,
+        amount: line.amount,
+      });
+    }
+    const matches = matchCommissionLines(
+      lineIds.map((line) => ({
+        id: line.id,
+        policyNumber: line.policyNumber,
+        amount: line.amount,
+        currency,
       })),
-    });
-  }
-  const allocated = new Map<string, number>();
-  for (const match of matches) {
-    allocated.set(
-      match.receivableId,
-      (allocated.get(match.receivableId) ?? 0) + match.amount,
+      receivables
+        .filter((row) => row.currency === currency)
+        .map((row) => ({
+          id: row.id,
+          policyNumber: row.policy.policyNumber,
+          amount: Number(row.amount),
+          currency: row.currency,
+        })),
     );
-  }
-  const settled = receivables
-    .filter((row) =>
-      withinCommissionTolerance(Number(row.amount), allocated.get(row.id) ?? 0),
-    )
-    .map((row) => row.id);
-  if (settled.length > 0) {
-    await db.commissionReceivable.updateMany({
-      where: { id: { in: settled } },
-      data: { status: "SETTLED" },
-    });
-  }
-  const missing = parsed
-    .filter((line) => !policyId.has(line.policyNumber))
-    .map((line) => line.policyNumber);
-  const matchedPolicies = new Set(matches.map((match) => match.lineId));
-  const withoutReceivable = lineIds
-    .filter(
-      (line) =>
-        line.amount > 0 &&
-        policyId.has(line.policyNumber) &&
-        !matchedPolicies.has(line.id),
-    )
-    .map((line) => line.policyNumber);
-  const adjustments = lineIds
-    .filter((line) => line.amount < 0)
-    .map((line) => line.policyNumber);
+    if (matches.length > 0) {
+      await tx.commissionAllocation.createMany({
+        data: matches.map((match) => ({
+          organizationId: ctx.organizationId,
+          lineId: match.lineId,
+          receivableId: match.receivableId,
+          amount: new Prisma.Decimal(match.amount.toFixed(4)),
+        })),
+      });
+    }
+    const allocated = new Map<string, number>();
+    for (const match of matches) {
+      allocated.set(
+        match.receivableId,
+        (allocated.get(match.receivableId) ?? 0) + match.amount,
+      );
+    }
+    const settled = receivables
+      .filter(
+        (row) =>
+          row.currency === currency &&
+          withinCommissionTolerance(
+            Number(row.amount),
+            allocated.get(row.id) ?? 0,
+          ),
+      )
+      .map((row) => row.id);
+    if (settled.length > 0) {
+      await tx.commissionReceivable.updateMany({
+        where: { id: { in: settled } },
+        data: { status: "SETTLED" },
+      });
+    }
+    const missing = parsed
+      .filter((line) => !policyId.has(line.policyNumber))
+      .map((line) => line.policyNumber);
+    const matchedLines = new Set(matches.map((match) => match.lineId));
+    const withoutReceivable = lineIds
+      .filter(
+        (line) =>
+          line.amount > 0 &&
+          policyId.has(line.policyNumber) &&
+          !matchedLines.has(line.id),
+      )
+      .map((line) => line.policyNumber);
+    const adjustments = lineIds
+      .filter((line) => line.amount < 0)
+      .map((line) => line.policyNumber);
+    return { matches, missing, withoutReceivable, adjustments };
+  });
   revalidatePath("/comisiones/liquidacion");
-  const faltan = missing.slice(0, 12).join(",");
-  const sinComision = withoutReceivable.slice(0, 12).join(",");
-  const ajustes = adjustments.slice(0, 12).join(",");
+  const faltan = result.missing.slice(0, 12).join(",");
+  const sinComision = result.withoutReceivable.slice(0, 12).join(",");
+  const ajustes = result.adjustments.slice(0, 12).join(",");
   redirect(
-    `/comisiones/liquidacion?ok=1&lineas=${parsed.length}&calces=${matches.length}&sinPoliza=${missing.length}&sinComision=${withoutReceivable.length}&faltan=${encodeURIComponent(faltan)}&pendientes=${encodeURIComponent(sinComision)}&negativos=${adjustments.length}&ajustes=${encodeURIComponent(ajustes)}`,
+    `/comisiones/liquidacion?ok=1&lineas=${parsed.length}&calces=${result.matches.length}&sinPoliza=${result.missing.length}&sinComision=${result.withoutReceivable.length}&faltan=${encodeURIComponent(faltan)}&pendientes=${encodeURIComponent(sinComision)}&negativos=${result.adjustments.length}&ajustes=${encodeURIComponent(ajustes)}`,
   );
 }

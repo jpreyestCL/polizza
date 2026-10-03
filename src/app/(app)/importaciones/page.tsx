@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { requireOrgDb } from "@/server/context";
 import { PageHeader } from "@/components/page-header";
+import { hasPermission } from "@/lib/factory-roles";
 import { BROKERIS_LOAD_ORDER, BROKERIS_REFERENCE } from "@/lib/domain/brokeris-cuadre";
 import {
   applyImportAction,
@@ -19,7 +21,10 @@ export default async function ImportacionesPage({
   const sp = await searchParams;
   const aviso = typeof sp.aviso === "string" ? sp.aviso : null;
   const jobId = typeof sp.job === "string" ? sp.job : null;
-  const { db } = await requireOrgDb();
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "imports.run")) {
+    redirect("/panel?error=permiso");
+  }
   const job = jobId
     ? await db.importJob.findFirst({
         where: { id: jobId },

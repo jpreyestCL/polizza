@@ -51,7 +51,9 @@ export async function createQuoteRequestAction(form: FormData): Promise<void> {
 
 export async function addQuoteOfferAction(form: FormData): Promise<void> {
   const { ctx, db } = await requireOrgDb();
-  if (!hasPermission(ctx.role, "quotes.write")) return;
+  if (!hasPermission(ctx.role, "quotes.write")) {
+    redirect("/cotizaciones-comparativo?error=permiso");
+  }
   const requestId = text(form, "requestId");
   const insurerName = text(form, "insurerName");
   const premiumRaw = text(form, "premiumNet");
@@ -92,7 +94,9 @@ export async function addQuoteOfferAction(form: FormData): Promise<void> {
 
 export async function moveQuoteRequestAction(form: FormData): Promise<void> {
   const { ctx, db } = await requireOrgDb();
-  if (!hasPermission(ctx.role, "quotes.write")) return;
+  if (!hasPermission(ctx.role, "quotes.write")) {
+    redirect("/cotizaciones-comparativo?error=permiso");
+  }
   const requestId = text(form, "requestId");
   const to = text(form, "status");
   const request = await db.quoteRequest.findFirst({
@@ -125,30 +129,38 @@ export async function moveQuoteRequestAction(form: FormData): Promise<void> {
       basePrisma,
       ctx.organizationId,
     );
-    const proposal = await db.proposal.create({
-      data: {
-        organizationId: ctx.organizationId,
-        clientId: request.clientId,
-        proposalNumber,
-        status: "ELABORACION",
-        currency: recommended?.currency ?? request.currency,
-        premiumNet: recommended?.premiumNet ?? null,
-        observations: `Nace de la cotización “${request.title}”. Compañía recomendada: ${recommended?.insurerName ?? "sin oferta"}.`,
-        assignedUserId: request.assignedUserId ?? ctx.userId,
-        createdById: ctx.userId,
-      },
-    });
     const { ensureDraftPolicy } = await import("@/features/policies/draft-policy");
-    await db.$transaction(async (tx) => {
+    const proposal = await db.$transaction(async (tx) => {
+      const created = await tx.proposal.create({
+        data: {
+          organizationId: ctx.organizationId,
+          clientId: request.clientId,
+          proposalNumber,
+          status: "ELABORACION",
+          currency: recommended?.currency ?? request.currency,
+          premiumNet: recommended?.premiumNet ?? null,
+          observations: `Nace de la cotización “${request.title}”. Compañía recomendada: ${recommended?.insurerName ?? "sin oferta"}.`,
+          assignedUserId: request.assignedUserId ?? ctx.userId,
+          createdById: ctx.userId,
+        },
+      });
       await ensureDraftPolicy(tx, {
         organizationId: ctx.organizationId,
         userId: ctx.userId,
-        proposalId: proposal.id,
+        proposalId: created.id,
       });
-    });
-    await db.quoteRequest.update({
-      where: { id: requestId },
-      data: { status: "GANADA", proposalId: proposal.id },
+      const claimed = await tx.quoteRequest.updateMany({
+        where: {
+          id: requestId,
+          status: request.status,
+          proposalId: null,
+        },
+        data: { status: "GANADA", proposalId: created.id },
+      });
+      if (claimed.count !== 1) {
+        throw new Error("La cotización cambió mientras se marcaba como ganada.");
+      }
+      return created;
     });
     await logActivity(db, {
       organizationId: ctx.organizationId,
