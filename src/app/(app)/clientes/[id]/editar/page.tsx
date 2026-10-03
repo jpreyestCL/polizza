@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireOrgDb } from "@/server/context";
 import { getClientDetail, getOrgMembers } from "@/features/clients/queries";
 import { listHoldings } from "@/features/holdings/queries";
@@ -6,6 +6,7 @@ import { ClientForm } from "@/features/clients/components/client-form";
 import { PageHeader } from "@/components/page-header";
 import { formatRut } from "@/lib/rut";
 import type { ClientFormValues } from "@/features/clients/schemas";
+import { hasPermission } from "@/lib/factory-roles";
 
 function toDateInput(date: Date | null): string {
   return date ? date.toISOString().slice(0, 10) : "";
@@ -21,6 +22,11 @@ export default async function EditarClientePage({
   const { id } = await params;
   const { activar } = await searchParams;
   const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "parties.write")) {
+    redirect(
+      `/clientes/${id}?aviso=${encodeURIComponent("No tienes permiso para editar clientes.")}`,
+    );
+  }
 
   const client = await getClientDetail(db, id);
   if (!client) notFound();

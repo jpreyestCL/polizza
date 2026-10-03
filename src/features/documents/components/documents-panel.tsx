@@ -65,8 +65,12 @@ export function DocumentsPanel({
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function handleDelete(id: string) {
+    const reason = window.prompt(
+      "Indica el motivo de eliminación (mínimo 10 caracteres):",
+    );
+    if (!reason) return;
     setDeletingId(id);
-    const result = await deleteDocumentAction(id);
+    const result = await deleteDocumentAction(id, reason);
     setDeletingId(null);
     if (!result.ok) {
       toast.error(result.error);

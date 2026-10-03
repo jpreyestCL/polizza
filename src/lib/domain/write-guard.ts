@@ -67,6 +67,7 @@ export const MODEL_WRITE_PERMISSIONS: Record<string, readonly string[]> = {
   TenantProductCoverage: [...CATALOG, "policies.write"],
   Broker: CATALOG,
   OrganizationSettings: CATALOG,
+  TenantFeature: CATALOG,
   InsurerPortalCredential: ["settings.manage"],
   SalespersonCommissionRate: ["settings.manage", ...COMMISSIONS],
 
@@ -99,6 +100,10 @@ export const MODEL_WRITE_PERMISSIONS: Record<string, readonly string[]> = {
 
   Installment: [...PROPOSALS, ...COLLECTIONS, ...POLICIES],
   InstallmentPayment: COLLECTIONS,
+  CollectionReminder: ["collections.send_reminders"],
+
+  DataSubjectRequest: ["privacy.manage"],
+  ComplianceObligation: ["compliance.manage"],
 
   CommissionStatement: COMMISSIONS,
   CommissionStatementLine: COMMISSIONS,
@@ -126,8 +131,6 @@ const SUPPORT_MODELS = new Set([
   "Comment",
   "Document",
   "DocumentVersion",
-  // Las acciones crean las filas por defecto la primera vez que consultan.
-  "TenantFeature",
 ]);
 
 export const WRITE_OPERATIONS = new Set([

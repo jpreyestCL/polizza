@@ -21,6 +21,10 @@ import {
   Handshake,
   HandCoins,
   Settings,
+  ScrollText,
+  SlidersHorizontal,
+  Scale,
+  LockKeyhole,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,6 +36,7 @@ type NavItem = {
   icon: LucideIcon;
   available: boolean;
   adminOnly?: boolean;
+  permission?: string;
   /** Visible para gerente y admin (cartera global). */
   managerOnly?: boolean;
 };
@@ -76,6 +81,34 @@ const NAV_ITEMS: NavItem[] = [
     managerOnly: true,
   },
   { href: "/tareas", label: "Tareas", icon: ListChecks, available: true },
+  {
+    href: "/configuracion/parametros",
+    label: "Parámetros",
+    icon: SlidersHorizontal,
+    available: true,
+    adminOnly: true,
+  },
+  {
+    href: "/configuracion/auditoria",
+    label: "Auditoría",
+    icon: ScrollText,
+    available: true,
+    permission: "audit.read",
+  },
+  {
+    href: "/privacidad",
+    label: "Privacidad",
+    icon: LockKeyhole,
+    available: true,
+    adminOnly: true,
+  },
+  {
+    href: "/cumplimiento",
+    label: "Cumplimiento",
+    icon: Scale,
+    available: true,
+    adminOnly: true,
+  },
   {
     href: "/configuracion/usuarios",
     label: "Usuarios y roles",
@@ -144,6 +177,7 @@ export function AppNav({
   const pathname = usePathname();
   const items = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && factoryRoleOf(role ?? "") !== "ADMIN") return false;
+    if (item.permission && !hasPermission(role ?? "", item.permission)) return false;
     if (item.managerOnly && !hasPermission(role ?? "", "commissions.reconcile")) {
       return false;
     }

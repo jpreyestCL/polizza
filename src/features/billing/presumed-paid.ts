@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireOrgDb } from "@/server/context";
 import type { Db } from "@/server/db";
 import { presumedPaidDecision } from "@/lib/domain/presumed-paid";
+import { hasPermission } from "@/lib/factory-roles";
 
 export async function sweepPresumedPaid(
   db: Db,
@@ -55,6 +56,9 @@ export async function sweepPresumedPaid(
 
 export async function runPresumedPaidAction(): Promise<void> {
   const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "installments.mark_paid")) {
+    redirect("/cobranza?aviso=permiso");
+  }
   const result = await sweepPresumedPaid(db, ctx.organizationId);
   revalidatePath("/cobranza");
   redirect(

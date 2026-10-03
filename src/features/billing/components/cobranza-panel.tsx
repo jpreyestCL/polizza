@@ -242,12 +242,24 @@ export function CobranzaPanel({
                         setCompanyOn("");
                         return;
                       }
+                      const sensitive =
+                        value === "CASTIGADA" ||
+                        (installment.status === "PAGADA" && value !== "PAGADA");
+                      const reason = sensitive
+                        ? window.prompt(
+                            "Indica el motivo del cambio (mínimo 10 caracteres):",
+                          )
+                        : null;
+                      if (sensitive && !reason) return;
                       runAction(
                         installment.id,
                         (id) =>
                           setInstallmentStatusAction(
                             id,
                             value as InstallmentStatusValue,
+                            undefined,
+                            undefined,
+                            reason,
                           ),
                         `Cuota ${INSTALLMENT_STATUS_LABELS[value as InstallmentStatusValue].toLowerCase()}`,
                       );

@@ -28,6 +28,12 @@ export type InstallmentWithPolicy = InstallmentItem & {
   policyId: string;
   policyNumber: string;
   clientName: string;
+  reminders: {
+    id: string;
+    kind: import("@prisma/client").CollectionReminderKind;
+    sentTo: string;
+    sentAt: Date;
+  }[];
 };
 
 /** Cuotas de una póliza, ordenadas por número. */
@@ -112,6 +118,11 @@ export async function listAllInstallments(
             client: { select: { name: true } },
           },
         },
+        reminders: {
+          orderBy: { sentAt: "desc" },
+          take: 3,
+          select: { id: true, kind: true, sentTo: true, sentAt: true },
+        },
       },
     }),
     db.installment.count({ where }),
@@ -137,6 +148,7 @@ export async function listAllInstallments(
       policyId: row.policyId,
       policyNumber: row.policy.policyNumber,
       clientName: row.policy.client.name,
+      reminders: row.reminders,
     }));
   return buildPaginated(enriched, page, total);
 }

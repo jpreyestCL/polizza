@@ -23,7 +23,24 @@ export async function ensureTenantFeatures(db: Db, organizationId: string) {
       code,
       enabled: DEFAULT_TENANT_FEATURES[code],
     })),
+    skipDuplicates: true,
   });
+}
+
+/** Inicializa, de forma repetible, todos los parámetros propios de una corredora. */
+export async function ensureOrganizationConfiguration(
+  db: Db,
+  organizationId: string,
+) {
+  const [settings] = await Promise.all([
+    db.organizationSettings.upsert({
+      where: { organizationId },
+      create: { organizationId },
+      update: {},
+    }),
+    ensureTenantFeatures(db, organizationId),
+  ]);
+  return settings;
 }
 
 export async function featureEnabled(

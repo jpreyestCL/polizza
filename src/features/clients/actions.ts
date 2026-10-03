@@ -9,6 +9,8 @@ import { canDeleteClient } from "@/lib/roles";
 import { hasPermission } from "@/lib/factory-roles";
 import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import { cleanRut, normalizeRut } from "@/lib/rut";
+import type { Db } from "@/server/db";
+import { normalizeClientEmail } from "./privacy";
 import {
   clientFormSchema,
   composeClientName,
@@ -38,6 +40,83 @@ function duplicateRutResult(): ActionResult {
     error: "Ya existe un cliente con ese RUT en tu corredora.",
     fieldErrors: { rut: "RUT ya registrado" },
   };
+}
+
+async function duplicateEmailResult(
+  db: Pick<Db, "client">,
+  data: ClientFormValues,
+  currentClientId?: string,
+): Promise<Extract<ActionResult, { ok: false }> | null> {
+  const fields = [
+    { path: "email", email: normalizeClientEmail(data.email) },
+    ...data.contacts.map((contact, index) => ({
+      path: `contacts.${index}.email`,
+      email: normalizeClientEmail(contact.email),
+    })),
+  ].filter((item): item is { path: string; email: string } => Boolean(item.email));
+
+  const fieldErrors: Record<string, string> = {};
+  const occurrences = new Map<string, string[]>();
+  for (const field of fields) {
+    occurrences.set(field.email, [...(occurrences.get(field.email) ?? []), field.path]);
+  }
+  for (const paths of occurrences.values()) {
+    if (paths.length > 1) {
+      for (const path of paths) fieldErrors[path] = "Correo repetido en este cliente";
+    }
+  }
+
+  const emails = [...occurrences.keys()];
+  if (emails.length > 0) {
+    const existing = await db.client.findMany({
+      where: {
+        ...(currentClientId ? { id: { not: currentClientId } } : {}),
+        OR: [
+          ...emails.map((email) => ({
+            email: { equals: email, mode: "insensitive" as const },
+          })),
+          {
+            contacts: {
+              some: {
+                OR: emails.map((email) => ({
+                  email: { equals: email, mode: "insensitive" as const },
+                })),
+              },
+            },
+          },
+        ],
+      },
+      select: {
+        email: true,
+        contacts: { select: { email: true } },
+      },
+    });
+    const used = new Set(
+      existing.flatMap((client) => [
+        normalizeClientEmail(client.email),
+        ...client.contacts.map((contact) => normalizeClientEmail(contact.email)),
+      ]).filter((email): email is string => Boolean(email)),
+    );
+    for (const field of fields) {
+      if (used.has(field.email)) {
+        fieldErrors[field.path] = "Correo ya registrado en otro cliente";
+      }
+    }
+  }
+
+  return Object.keys(fieldErrors).length
+    ? {
+        ok: false,
+        error: "Hay correos duplicados en la corredora.",
+        fieldErrors,
+      }
+    : null;
+}
+
+class DuplicateClientEmailError extends Error {
+  constructor(readonly result: Extract<ActionResult, { ok: false }>) {
+    super(result.error);
+  }
 }
 
 /**
@@ -137,9 +216,16 @@ export async function createClientAction(
   }
   const data = parsed.data;
   const { ctx, db } = await requireOrgDb();
+  const emailConflict = await duplicateEmailResult(db, data);
+  if (emailConflict) return emailConflict;
 
   try {
     const client = await db.$transaction(async (tx) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${"client-email:" + ctx.organizationId}))`,
+      );
+      const conflict = await duplicateEmailResult(tx, data);
+      if (conflict) throw new DuplicateClientEmailError(conflict);
       const created = await tx.client.create({
         data: {
           organizationId: ctx.organizationId,
@@ -159,7 +245,7 @@ export async function createClientAction(
           legalName: emptyToNull(data.legalName),
           giro: emptyToNull(data.giro),
           birthDate: parseDate(data.birthDate),
-          email: emptyToNull(data.email),
+          email: normalizeClientEmail(data.email),
           phone: emptyToNull(data.phone),
           celular: emptyToNull(data.celular),
           address: emptyToNull(data.address),
@@ -190,7 +276,7 @@ export async function createClientAction(
             clientId: created.id,
             name: contact.name,
             role: emptyToNull(contact.role),
-            email: emptyToNull(contact.email),
+            email: normalizeClientEmail(contact.email),
             phone: emptyToNull(contact.phone),
             celular: emptyToNull(contact.celular),
             assignmentType: contact.assignmentType || null,
@@ -213,6 +299,7 @@ export async function createClientAction(
     revalidatePath("/clientes");
     return { ok: true, id: client.id };
   } catch (error) {
+    if (error instanceof DuplicateClientEmailError) return error.result;
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
@@ -238,9 +325,16 @@ export async function updateClientAction(
   if (!existing) {
     return { ok: false, error: "El cliente no existe o no tienes acceso." };
   }
+  const emailConflict = await duplicateEmailResult(db, data, id);
+  if (emailConflict) return emailConflict;
 
   try {
     await db.$transaction(async (tx) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${"client-email:" + ctx.organizationId}))`,
+      );
+      const conflict = await duplicateEmailResult(tx, data, id);
+      if (conflict) throw new DuplicateClientEmailError(conflict);
       await tx.client.update({
         where: { id },
         data: {
@@ -260,7 +354,7 @@ export async function updateClientAction(
           legalName: emptyToNull(data.legalName),
           giro: emptyToNull(data.giro),
           birthDate: parseDate(data.birthDate),
-          email: emptyToNull(data.email),
+          email: normalizeClientEmail(data.email),
           phone: emptyToNull(data.phone),
           celular: emptyToNull(data.celular),
           address: emptyToNull(data.address),
@@ -295,7 +389,7 @@ export async function updateClientAction(
             clientId: id,
             name: contact.name,
             role: emptyToNull(contact.role),
-            email: emptyToNull(contact.email),
+            email: normalizeClientEmail(contact.email),
             phone: emptyToNull(contact.phone),
             celular: emptyToNull(contact.celular),
             assignmentType: contact.assignmentType || null,
@@ -318,6 +412,7 @@ export async function updateClientAction(
     revalidatePath(`/clientes/${id}`);
     return { ok: true, id };
   } catch (error) {
+    if (error instanceof DuplicateClientEmailError) return error.result;
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
@@ -357,6 +452,96 @@ export async function deleteClientAction(id: string): Promise<ActionResult> {
 
   revalidatePath("/clientes");
   return { ok: true, id };
+}
+
+export async function createClientTagAction(name: string): Promise<ActionResult> {
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "parties.write")) {
+    return { ok: false, error: "No tienes permiso para administrar tags." };
+  }
+  const normalizedName = name.trim();
+  if (!normalizedName || normalizedName.length > 60) {
+    return { ok: false, error: "El tag debe tener entre 1 y 60 caracteres." };
+  }
+  const duplicate = await db.clientTag.findFirst({
+    where: { name: { equals: normalizedName, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (duplicate) return { ok: false, error: "Ese tag ya existe." };
+  const tag = await db.clientTag.create({
+    data: { organizationId: ctx.organizationId, name: normalizedName },
+  });
+  revalidatePath("/clientes");
+  return { ok: true, id: tag.id };
+}
+
+export async function deleteClientTagAction(id: string): Promise<ActionResult> {
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "parties.write")) {
+    return { ok: false, error: "No tienes permiso para administrar tags." };
+  }
+  const tag = await db.clientTag.findFirst({ where: { id }, select: { id: true } });
+  if (!tag) return { ok: false, error: "El tag no existe." };
+  await db.clientTag.delete({ where: { id } });
+  revalidatePath("/clientes");
+  return { ok: true, id };
+}
+
+export async function updateClientTagAction(
+  id: string,
+  name: string,
+): Promise<ActionResult> {
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "parties.write")) {
+    return { ok: false, error: "No tienes permiso para administrar tags." };
+  }
+  const normalizedName = name.trim();
+  if (!normalizedName || normalizedName.length > 60) {
+    return { ok: false, error: "El tag debe tener entre 1 y 60 caracteres." };
+  }
+  const [tag, duplicate] = await Promise.all([
+    db.clientTag.findFirst({ where: { id }, select: { id: true } }),
+    db.clientTag.findFirst({
+      where: {
+        id: { not: id },
+        name: { equals: normalizedName, mode: "insensitive" },
+      },
+      select: { id: true },
+    }),
+  ]);
+  if (!tag) return { ok: false, error: "El tag no existe." };
+  if (duplicate) return { ok: false, error: "Ese tag ya existe." };
+  await db.clientTag.update({ where: { id }, data: { name: normalizedName } });
+  revalidatePath("/clientes");
+  return { ok: true, id };
+}
+
+export async function setClientTagAction(
+  clientId: string,
+  tagId: string,
+  assigned: boolean,
+): Promise<ActionResult> {
+  const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "parties.write")) {
+    return { ok: false, error: "No tienes permiso para asignar tags." };
+  }
+  const [client, tag] = await Promise.all([
+    db.client.findFirst({ where: { id: clientId }, select: { id: true } }),
+    db.clientTag.findFirst({ where: { id: tagId }, select: { id: true } }),
+  ]);
+  if (!client || !tag) return { ok: false, error: "Cliente o tag no encontrado." };
+  if (assigned) {
+    await db.clientTagAssignment.upsert({
+      where: { clientId_tagId: { clientId, tagId } },
+      create: { organizationId: ctx.organizationId, clientId, tagId },
+      update: {},
+    });
+  } else {
+    await db.clientTagAssignment.deleteMany({ where: { clientId, tagId } });
+  }
+  revalidatePath("/clientes");
+  revalidatePath(`/clientes/${clientId}`);
+  return { ok: true, id: clientId };
 }
 
 /** Registra una gestión (correo, WhatsApp, llamada o nota) en la bitácora. */

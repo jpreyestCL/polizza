@@ -5,6 +5,7 @@ import { requireSession } from "@/server/context";
 import { basePrisma } from "@/server/db";
 import { secondFactorStep } from "@/lib/domain/access-gate";
 import { otpauthUrl, randomBase32, totpMatches } from "@/server/totp";
+import { logAudit } from "@/server/activity";
 
 const COOKIE = "polizza_mfa";
 
@@ -27,6 +28,11 @@ export async function beginSecondFactorAction(): Promise<
   | { step: "enroll"; otpauth: string }
 > {
   const ctx = await requireSession();
+  await logAudit({
+    organizationId: ctx.organizationId,
+    userId: ctx.userId,
+    action: "auth.login.success",
+  });
   const required = await mfaRequiredForUser(ctx.userId);
   const enrollment = await basePrisma.mfaEnrollment.findUnique({
     where: { userId: ctx.userId },
@@ -66,8 +72,57 @@ export async function confirmSecondFactorAction(
       where: { userId: ctx.userId },
       data: { enabled: true },
     });
+    await logAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "mfa.enrolled",
+      metadata: { method: "totp" },
+    });
   }
   const jar = await cookies();
   jar.set(COOKIE, "ok", { httpOnly: true, sameSite: "lax", path: "/" });
+  await logAudit({
+    organizationId: ctx.organizationId,
+    userId: ctx.userId,
+    action: "mfa.verified",
+    metadata: { method: "totp" },
+  });
   return { ok: true };
+}
+
+/**
+ * Opciones de acceso corporativo para el correo ingresado. No devuelve datos
+ * de la cuenta y los proveedores solo aparecen si la corredora los habilitó.
+ */
+export async function getSignInOptionsAction(email: string): Promise<{
+  google: boolean;
+  microsoft: boolean;
+}> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized.includes("@")) return { google: false, microsoft: false };
+  const user = await basePrisma.user.findUnique({
+    where: { email: normalized },
+    select: {
+      members: {
+        select: { organizationId: true },
+      },
+    },
+  });
+  if (!user?.members.length) return { google: false, microsoft: false };
+  const enabled = await basePrisma.organizationSettings.findFirst({
+    where: {
+      organizationId: { in: user.members.map((row) => row.organizationId) },
+      ssoEnabled: true,
+    },
+    select: { organizationId: true },
+  });
+  if (!enabled) return { google: false, microsoft: false };
+  return {
+    google: Boolean(
+      process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
+    ),
+    microsoft: Boolean(
+      process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET,
+    ),
+  };
 }

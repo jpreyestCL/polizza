@@ -6,6 +6,7 @@ import {
   getClientActivity,
   getClientDetail,
   getOrgMembers,
+  listClientFilterOptions,
 } from "@/features/clients/queries";
 import { ClientTabs } from "@/features/clients/components/client-tabs";
 import { ClientStatusBadge } from "@/features/clients/components/client-status-badge";
@@ -23,6 +24,8 @@ import { formatRut } from "@/lib/rut";
 import { ClientAlertBanner } from "@/components/alert-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ClientTagsManager } from "@/features/clients/components/client-tags-manager";
+import { maskAddress, maskEmail, maskPhone } from "@/features/clients/privacy";
 
 export default async function ClienteDetailPage({
   params,
@@ -48,6 +51,7 @@ export default async function ClienteDetailPage({
     clientPolicies,
     clientClaims,
     clientCarQuotations,
+    filterOptions,
   ] = await Promise.all([
     getClientActivity(db, id),
     getOrgMembers(ctx.organizationId),
@@ -57,10 +61,37 @@ export default async function ClienteDetailPage({
     listClientPolicies(db, id),
     listClientClaims(db, id),
     listClientCarQuotations(db, id),
+    listClientFilterOptions(db),
   ]);
   const assignedUserName = client.assignedUserId
     ? (members.find((m) => m.userId === client.assignedUserId)?.name ?? null)
     : null;
+  const canReadSensitive = hasPermission(ctx.role, "parties.read_sensitive");
+  const clientForView = canReadSensitive
+    ? client
+    : {
+        ...client,
+        email: maskEmail(client.email),
+        phone: maskPhone(client.phone),
+        celular: maskPhone(client.celular),
+        address: maskAddress(client.address),
+        birthDate: null,
+        contacts: client.contacts.map((contact) => ({
+          ...contact,
+          email: maskEmail(contact.email),
+          phone: maskPhone(contact.phone),
+          celular: maskPhone(contact.celular),
+        })),
+      };
+  const branchesForView = canReadSensitive
+    ? branches
+    : branches.map((branch) => ({
+        ...branch,
+        email: maskEmail(branch.email),
+        phone: maskPhone(branch.phone),
+        celular: maskPhone(branch.celular),
+        address: maskAddress(branch.address),
+      }));
 
   return (
     <div className="space-y-6">
@@ -80,12 +111,14 @@ export default async function ClienteDetailPage({
           </p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="outline">
-            <Link href={`/clientes/${id}/editar`}>
-              <Pencil />
-              Editar
-            </Link>
-          </Button>
+          {hasPermission(ctx.role, "parties.write") && (
+            <Button asChild variant="outline">
+              <Link href={`/clientes/${id}/editar`}>
+                <Pencil />
+                Editar
+              </Link>
+            </Button>
+          )}
           {canDeleteClient(ctx.role) && (
             <DeleteClientDialog clientId={id} clientName={client.name} />
           )}
@@ -114,16 +147,25 @@ export default async function ClienteDetailPage({
         <ClientAlertBanner message={client.comentarioAlerta} />
       )}
 
+      <ClientTagsManager
+        clientId={id}
+        tags={filterOptions.tags}
+        assignedTagIds={client.tagAssignments.map((assignment) => assignment.tagId)}
+        canWrite={hasPermission(ctx.role, "parties.write")}
+      />
+
       <ClientTabs
-        client={client}
+        client={clientForView}
         activity={activity}
         documents={documents}
-        branches={branches}
+        branches={branchesForView}
         clientProposals={clientProposals}
         clientPolicies={clientPolicies}
         clientClaims={clientClaims}
         clientCarQuotations={clientCarQuotations}
         assignedUserName={assignedUserName}
+        sensitiveMasked={!canReadSensitive}
+        hasBirthDate={Boolean(client.birthDate)}
       />
     </div>
   );

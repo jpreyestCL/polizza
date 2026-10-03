@@ -95,6 +95,9 @@ export const TENANT_MODELS = new Set<string>([
   "CompanyCommissionPayment",
   "SellerCommissionSettlement",
   "SellerCommissionSettlementItem",
+  "CollectionReminder",
+  "DataSubjectRequest",
+  "ComplianceObligation",
 ]);
 
 // Operaciones cuyo `where` debe filtrarse por organizationId.

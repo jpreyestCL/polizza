@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -9,6 +9,7 @@ import { authClient } from "@/lib/auth-client";
 import {
   beginSecondFactorAction,
   confirmSecondFactorAction,
+  getSignInOptionsAction,
 } from "@/features/access/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,10 +26,36 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
+  const socialHandled = useRef(false);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<"password" | "totp" | "enroll">("password");
   const [otpauth, setOtpauth] = useState("");
   const [code, setCode] = useState("");
+  const [sso, setSso] = useState({ google: false, microsoft: false });
+
+  async function continueAfterLogin() {
+    const next = await beginSecondFactorAction();
+    if (next.step === "app") {
+      router.push("/");
+      router.refresh();
+      return;
+    }
+    if (next.step === "enroll") setOtpauth(next.otpauth);
+    setStep(next.step);
+  }
+
+  useEffect(() => {
+    if (
+      new URLSearchParams(window.location.search).get("social") !== "1" ||
+      socialHandled.current
+    ) {
+      return;
+    }
+    socialHandled.current = true;
+    void continueAfterLogin();
+    // Solo se procesa una vez al volver del proveedor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,14 +73,7 @@ export default function LoginPage() {
       });
       return;
     }
-    const next = await beginSecondFactorAction();
-    if (next.step === "app") {
-      router.push("/");
-      router.refresh();
-      return;
-    }
-    if (next.step === "enroll") setOtpauth(next.otpauth);
-    setStep(next.step);
+    await continueAfterLogin();
   }
 
   async function confirmCode(event: React.FormEvent<HTMLFormElement>) {
@@ -105,15 +125,39 @@ export default function LoginPage() {
         </form>
       ) : null}
 
-      {step === "password" && process.env.NEXT_PUBLIC_SSO_GOOGLE === "1" ? (
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          onClick={() => authClient.signIn.social({ provider: "google", callbackURL: "/" })}
-        >
-          Entrar con Google
-        </Button>
+      {step === "password" && (sso.google || sso.microsoft) ? (
+        <div className="space-y-2">
+          {sso.google ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() =>
+                authClient.signIn.social({
+                  provider: "google",
+                  callbackURL: "/login?social=1",
+                })
+              }
+            >
+              Entrar con Google
+            </Button>
+          ) : null}
+          {sso.microsoft ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() =>
+                authClient.signIn.social({
+                  provider: "microsoft",
+                  callbackURL: "/login?social=1",
+                })
+              }
+            >
+              Entrar con Microsoft
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {step === "password" ? (
@@ -127,6 +171,9 @@ export default function LoginPage() {
             autoComplete="email"
             placeholder="tu@corredora.cl"
             required
+            onBlur={async (event) => {
+              setSso(await getSignInOptionsAction(event.currentTarget.value));
+            }}
           />
         </div>
         <div className="space-y-1.5">

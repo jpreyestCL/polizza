@@ -2,6 +2,7 @@
 
 import { requireOrgDb } from "@/server/context";
 import { seedOrganizationCatalog } from "@/server/seed-org";
+import { ensureOrganizationConfiguration } from "@/server/tenant-features";
 
 /**
  * Inicializa una corredora recién creada con su catálogo base de compañías y
@@ -9,6 +10,9 @@ import { seedOrganizationCatalog } from "@/server/seed-org";
  */
 export async function bootstrapOrganizationAction(): Promise<{ ok: boolean }> {
   const { ctx, db } = await requireOrgDb();
-  await seedOrganizationCatalog(db, ctx.organizationId);
+  await Promise.all([
+    seedOrganizationCatalog(db, ctx.organizationId),
+    ensureOrganizationConfiguration(db, ctx.organizationId),
+  ]);
   return { ok: true };
 }

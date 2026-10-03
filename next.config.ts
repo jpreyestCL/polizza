@@ -5,6 +5,12 @@ import { join } from "node:path";
 const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: import.meta.dirname,
+  experimental: {
+    serverActions: {
+      // Brokeris valida el archivo en 10 MB; deja margen al multipart.
+      bodySizeLimit: "11mb",
+    },
+  },
   // jsdom (vía isomorphic-dompurify) lee browser/default-stylesheet.css usando
   // __dirname al inicializar. Webpack reescribe __dirname y el archivo no se
   // copia al output standalone → ENOENT en runtime. Marcarlo como externo

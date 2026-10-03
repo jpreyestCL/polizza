@@ -461,60 +461,62 @@ enum ContactAssignment {
 }
 
 model Client {
-  id               String       @id @default(cuid())
-  organizationId   String
-  type             ClientType   @default(PERSONA)
-  rut              String
-  name             String
-  firstName        String?
-  lastNamePaterno  String?
-  lastNameMaterno  String?
-  legalName        String?
-  nombreFantasia   String?
-  esExtranjero     Boolean      @default(false)
-  externalId       String?
-  email            String?
-  phone            String?
-  celular          String?
-  birthDate        DateTime?    @db.Date
-  address          String?
-  region           String?
-  commune          String?
-  city             String?
-  assignedUserId   String?
-  source           String?
-  status           ClientStatus @default(PROSPECTO)
-  observaciones    String?
-  createdById      String?
-  updatedById      String?
-  giro             String?
-  comentarioAlerta String?
+  id                    String       @id @default(cuid())
+  organizationId        String
+  type                  ClientType   @default(PERSONA)
+  rut                   String
+  name                  String
+  firstName             String?
+  lastNamePaterno       String?
+  lastNameMaterno       String?
+  legalName             String?
+  nombreFantasia        String?
+  esExtranjero          Boolean      @default(false)
+  externalId            String?
+  email                 String?
+  phone                 String?
+  celular               String?
+  birthDate             DateTime?    @db.Date
+  address               String?
+  region                String?
+  commune               String?
+  city                  String?
+  assignedUserId        String?
+  source                String?
+  status                ClientStatus @default(PROSPECTO)
+  observaciones         String?
+  createdById           String?
+  updatedById           String?
+  giro                  String?
+  comentarioAlerta      String?
   // Consentimiento explícito (Ley 21.719): marketing y procesamiento con IA.
-  marketingConsent       Boolean   @default(false)
-  marketingConsentAt     DateTime?
-  aiProcessingConsent    Boolean   @default(false)
-  aiProcessingConsentAt  DateTime?
-  vendedor         String?
-  cobranzaUserId   String?
-  siniestrosUserId String?
-  holdingId        String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  marketingConsent      Boolean      @default(false)
+  marketingConsentAt    DateTime?
+  aiProcessingConsent   Boolean      @default(false)
+  aiProcessingConsentAt DateTime?
+  vendedor              String?
+  cobranzaUserId        String?
+  siniestrosUserId      String?
+  holdingId             String?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
-  contacts       ClientContact[]
-  relationships  ClientRelationship[]
-  tagAssignments ClientTagAssignment[]
-  proposals      Proposal[]
-  policies       Policy[]
-  claims         Claim[]
-  branches       Branch[]
-  carQuotations  CarQuotation[]
-  quoteRequests  QuoteRequest[]
-  holding        Holding?              @relation(fields: [holdingId], references: [id])
+  contacts        ClientContact[]
+  relationships   ClientRelationship[]
+  tagAssignments  ClientTagAssignment[]
+  proposals       Proposal[]
+  policies        Policy[]
+  claims          Claim[]
+  branches        Branch[]
+  carQuotations   CarQuotation[]
+  quoteRequests   QuoteRequest[]
+  privacyRequests DataSubjectRequest[]
+  holding         Holding?              @relation(fields: [holdingId], references: [id])
 
   @@unique([organizationId, rut])
   @@unique([organizationId, externalId])
   @@index([organizationId])
+  @@index([organizationId, email])
   @@index([organizationId, assignedUserId])
 }
 
@@ -538,6 +540,7 @@ model ClientContact {
 
   @@unique([organizationId, externalId])
   @@index([organizationId])
+  @@index([organizationId, email])
   @@index([clientId])
 }
 
@@ -641,108 +644,108 @@ enum ProposalStatus {
 }
 
 model Proposal {
-  id                         String           @id @default(cuid())
-  organizationId             String
-  clientId                   String
-  proposalNumber             String
-  kind                       ProposalKind     @default(POLIZA)
+  id                             String           @id @default(cuid())
+  organizationId                 String
+  clientId                       String
+  proposalNumber                 String
+  kind                           ProposalKind     @default(POLIZA)
   // Propuesta de endoso (kind = ENDOSO): póliza endosada, tipo de endoso y
   // detalle del endoso que va en el PDF "Solicitud de Endoso". Al despacharla
   // se crea el Endorsement vinculado (Endorsement.proposalId).
-  endorsedPolicyId           String?
-  endorsementType            EndorsementType?
-  endorsementDetail          String?
+  endorsedPolicyId               String?
+  endorsementType                EndorsementType?
+  endorsementDetail              String?
   // Delta de prima del endoso (puede ser negativo). La cancelación y la
   // anulación no lo usan: su crédito se calcula al registrar la emisión.
-  endorsementPremiumAffected Decimal?         @db.Decimal(18, 4)
-  endorsementPremiumExempt   Decimal?         @db.Decimal(18, 4)
+  endorsementPremiumAffected     Decimal?         @db.Decimal(18, 4)
+  endorsementPremiumExempt       Decimal?         @db.Decimal(18, 4)
   // Monto asegurado que queda en el ítem, siniestro de la pérdida total
   // y nueva comisión. Viajan con la propuesta hasta que el endoso se aplica.
-  endorsementNewInsuredAmount    Decimal? @db.Decimal(16, 2)
+  endorsementNewInsuredAmount    Decimal?         @db.Decimal(16, 2)
   endorsementOffsetClaimId       String?
-  endorsementCommissionAffectPct Decimal? @db.Decimal(6, 3)
-  endorsementCommissionExemptPct Decimal? @db.Decimal(6, 3)
+  endorsementCommissionAffectPct Decimal?         @db.Decimal(6, 3)
+  endorsementCommissionExemptPct Decimal?         @db.Decimal(6, 3)
   endorsementTargetItemId        String?
   endorsementItemDescription     String?
-  companyId                  String?
-  lineId                     String?
-  branchId                   String?
-  branchTypeId               String?
-  productId                  String?
-  status                     ProposalStatus   @default(ELABORACION)
-  premiumNet                 Decimal?         @db.Decimal(14, 2)
-  premiumGross               Decimal?         @db.Decimal(14, 2)
-  currency                   String           @default("UF")
-  startDate                  DateTime?        @db.Date
-  endDate                    DateTime?        @db.Date
+  companyId                      String?
+  lineId                         String?
+  branchId                       String?
+  branchTypeId                   String?
+  productId                      String?
+  status                         ProposalStatus   @default(ELABORACION)
+  premiumNet                     Decimal?         @db.Decimal(14, 2)
+  premiumGross                   Decimal?         @db.Decimal(14, 2)
+  currency                       String           @default("UF")
+  startDate                      DateTime?        @db.Date
+  endDate                        DateTime?        @db.Date
   // Hora de vigencia (formato "HH:mm"). La fecha vive en startDate/endDate
   // (día puro) y la hora aquí, para que el PDF muestre fecha + hora sin migrar
   // las columnas Date a DateTime (evita choque de tipos con Policy).
-  startTime                  String?
-  endTime                    String?
+  startTime                      String?
+  endTime                        String?
   // Campos del documento "Propuestas":
-  sentAt                     DateTime?
-  recipientEmail             String?
-  recipientContactId         String?
+  sentAt                         DateTime?
+  recipientEmail                 String?
+  recipientContactId             String?
   // Datos de contacto del contratante a nivel propuesta. Por defecto se
   // precargan desde la ficha del Client, pero el corredor puede editarlos
   // (p.ej. poner los datos de la corredora como contacto frente a la cía).
   // El PDF de la propuesta usa ESTOS datos, no los de la ficha del cliente.
-  contratanteEmail           String?
-  contratantePhone           String?
-  contratanteCelular         String?
-  quotationId                String?
-  quotationNumberRef         String?
-  previousPolicyId           String?
+  contratanteEmail               String?
+  contratantePhone               String?
+  contratanteCelular             String?
+  quotationId                    String?
+  quotationNumberRef             String?
+  previousPolicyId               String?
   // Asegurado / beneficiario por defecto (la propuesta usa Client.id como
   // contratante; estos son los defaults a nivel propuesta).
-  insuredClientId            String?
-  beneficiaryClientId        String?
+  insuredClientId                String?
+  beneficiaryClientId            String?
   // Casillas de relación con otras compañías / corredores:
-  coaseguro                  Boolean          @default(false)
-  coaseguroDetails           Json?
-  coCorredor                 Boolean          @default(false)
-  coCorredorDetails          Json?
-  reaseguro                  Boolean          @default(false)
-  reaseguroDetails           Json?
-  deOtroCorredor             Boolean          @default(false)
-  garantiaSuscripcion        Boolean          @default(false)
-  conReserva                 Boolean          @default(false)
-  conClausulaInalterabilidad Boolean          @default(false)
-  discardedAt                DateTime?
-  discardedReason            String?
-  facultativo                Boolean          @default(false)
+  coaseguro                      Boolean          @default(false)
+  coaseguroDetails               Json?
+  coCorredor                     Boolean          @default(false)
+  coCorredorDetails              Json?
+  reaseguro                      Boolean          @default(false)
+  reaseguroDetails               Json?
+  deOtroCorredor                 Boolean          @default(false)
+  garantiaSuscripcion            Boolean          @default(false)
+  conReserva                     Boolean          @default(false)
+  conClausulaInalterabilidad     Boolean          @default(false)
+  discardedAt                    DateTime?
+  discardedReason                String?
+  facultativo                    Boolean          @default(false)
   // Comisión a nivel propuesta (overridea producto):
-  commissionAffectPct        Decimal?         @db.Decimal(6, 3)
-  commissionExemptPct        Decimal?         @db.Decimal(6, 3)
-  observations               String?
-  assignedUserId             String?
-  salespersonId              String?
+  commissionAffectPct            Decimal?         @db.Decimal(6, 3)
+  commissionExemptPct            Decimal?         @db.Decimal(6, 3)
+  observations                   String?
+  assignedUserId                 String?
+  salespersonId                  String?
   // Renovación
-  isRenewal                  Boolean          @default(false)
-  previousPolicyNumberText   String?
+  isRenewal                      Boolean          @default(false)
+  previousPolicyNumberText       String?
   // Garantía de suscripción
-  garantiaExpiry             DateTime?        @db.Date
-  garantiaCompleted          Boolean          @default(false)
-  garantiaCompletedAt        DateTime?        @db.Date
-  garantiaObservations       String?
+  garantiaExpiry                 DateTime?        @db.Date
+  garantiaCompleted              Boolean          @default(false)
+  garantiaCompletedAt            DateTime?        @db.Date
+  garantiaObservations           String?
   // PDF generado y almacenado al pasar a POR_ENVIAR. Se borra al reabrir.
-  pdfBytes                   Bytes?
-  pdfGeneratedAt             DateTime?
+  pdfBytes                       Bytes?
+  pdfGeneratedAt                 DateTime?
   // Recepción de la póliza emitida por la compañía (flujo post-envío). En una
   // propuesta de endoso guarda el N° de endoso emitido por la compañía.
-  policyNumberGenerated      String?
-  policyEmissionDate         DateTime?        @db.Date
-  policyReceptionDate        DateTime?        @db.Date
-  emissionErrorReason        String? // motivo de error de emisión (devuelta a la compañía)
-  emissionErrorDetail        String?
+  policyNumberGenerated          String?
+  policyEmissionDate             DateTime?        @db.Date
+  policyReceptionDate            DateTime?        @db.Date
+  emissionErrorReason            String? // motivo de error de emisión (devuelta a la compañía)
+  emissionErrorDetail            String?
   // Despacho al contratante. En una propuesta de endoso marca el fin del flujo
   // (el endoso ya quedó registrado en la póliza al recepcionarlo).
-  dispatchedAt               DateTime?
-  currentStateStartedAt      DateTime         @default(now())
-  createdById                String?
-  createdAt                  DateTime         @default(now())
-  updatedAt                  DateTime         @updatedAt
+  dispatchedAt                   DateTime?
+  currentStateStartedAt          DateTime         @default(now())
+  createdById                    String?
+  createdAt                      DateTime         @default(now())
+  updatedAt                      DateTime         @updatedAt
 
   client                  Client                           @relation(fields: [clientId], references: [id], onDelete: Cascade)
   branchType              BranchType?                      @relation(fields: [branchTypeId], references: [id])
@@ -844,38 +847,38 @@ enum PaymentOption {
 }
 
 model PaymentPlan {
-  id                String         @id @default(cuid())
-  organizationId    String
-  proposalId        String         @unique
-  policyId          String?        @unique
-  sinPlanDePago     Boolean        @default(false)
-  option            PaymentOption?
-  installmentsCount Int            @default(0)
-  observations      String?
-  documented        Boolean        @default(false)
-  firstPaymentDate  DateTime?      @db.Date
-  firstSignDate     DateTime?      @db.Date
-  valorCuota        Decimal?       @db.Decimal(14, 2)
-  cobrAnticipada    Boolean        @default(false)
-  facturaAnticipada Boolean        @default(false)
-  requiereFactura   Boolean        @default(false)
-  primaBruta        Decimal?       @db.Decimal(14, 4)
-  cambio            Decimal?       @db.Decimal(14, 4)
-  primaTotalPesos   Decimal?       @db.Decimal(14, 2)
-  payerRut          String?
-  payerName         String?
-  payerLastName     String?
-  payerLegalName    String?
-  payerPhone        String?
-  payerCelular      String?
-  payerEmail        String?
+  id                           String         @id @default(cuid())
+  organizationId               String
+  proposalId                   String         @unique
+  policyId                     String?        @unique
+  sinPlanDePago                Boolean        @default(false)
+  option                       PaymentOption?
+  installmentsCount            Int            @default(0)
+  observations                 String?
+  documented                   Boolean        @default(false)
+  firstPaymentDate             DateTime?      @db.Date
+  firstSignDate                DateTime?      @db.Date
+  valorCuota                   Decimal?       @db.Decimal(14, 2)
+  cobrAnticipada               Boolean        @default(false)
+  facturaAnticipada            Boolean        @default(false)
+  requiereFactura              Boolean        @default(false)
+  primaBruta                   Decimal?       @db.Decimal(14, 4)
+  cambio                       Decimal?       @db.Decimal(14, 4)
+  primaTotalPesos              Decimal?       @db.Decimal(14, 2)
+  payerRut                     String?
+  payerName                    String?
+  payerLastName                String?
+  payerLegalName               String?
+  payerPhone                   String?
+  payerCelular                 String?
+  payerEmail                   String?
   // Saldo único tras cancelar o anular: positivo = el cliente debe,
   // negativo = devolución. Estimado hasta que la compañía confirme el monto.
-  terminationBalance            Decimal? @db.Decimal(18, 4)
-  terminationBalanceIsEstimate  Boolean  @default(false)
-  closedReason                  String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  terminationBalance           Decimal?       @db.Decimal(18, 4)
+  terminationBalanceIsEstimate Boolean        @default(false)
+  closedReason                 String?
+  createdAt                    DateTime       @default(now())
+  updatedAt                    DateTime       @updatedAt
 
   proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
@@ -929,44 +932,44 @@ enum EndorsementType {
 }
 
 model Endorsement {
-  id                String          @id @default(cuid())
-  organizationId    String
-  policyId          String
-  type              EndorsementType
-  effectiveDate     DateTime        @db.Date
+  id                   String          @id @default(cuid())
+  organizationId       String
+  policyId             String
+  type                 EndorsementType
+  effectiveDate        DateTime        @db.Date
   // Fin de vigencia del endoso (por defecto, fin de la póliza).
-  endDate           DateTime?       @db.Date
+  endDate              DateTime?       @db.Date
   // N° de endoso emitido por la compañía.
-  endorsementNumber String?
+  endorsementNumber    String?
   // Detalle del endoso (texto de la solicitud enviada a la compañía).
-  detail            String?
+  detail               String?
   // Motivo: ya no se pide en el formulario; se conserva para endosos antiguos.
-  reason            String?
-  notes             String?
+  reason               String?
+  notes                String?
   // Propuesta de endoso que originó este endoso (null = registro directo).
-  proposalId        String?         @unique
+  proposalId           String?         @unique
   // Delta de prima neta afecta y exenta. Vacío en cancelación y anulación,
   // porque ese crédito lo calcula el cierre del plan.
-  premiumAffectedDelta Decimal?      @db.Decimal(18, 4)
-  premiumExemptDelta   Decimal?      @db.Decimal(18, 4)
+  premiumAffectedDelta Decimal?        @db.Decimal(18, 4)
+  premiumExemptDelta   Decimal?        @db.Decimal(18, 4)
   specType             String?
   calcMethod           String?
   initiatedBy          String?
   inalterabilityNote   String?
   // Ítem único: monto asegurado que deja MODIFICA_MONTO_PRIMA.
-  newInsuredAmount  Decimal?        @db.Decimal(16, 2)
+  newInsuredAmount     Decimal?        @db.Decimal(16, 2)
   // Siniestro que origina el corte por pérdida total. No cierra el plan.
-  offsetClaimId     String?
-  commissionAffectPct Decimal?      @db.Decimal(6, 3)
-  commissionExemptPct Decimal?      @db.Decimal(6, 3)
+  offsetClaimId        String?
+  commissionAffectPct  Decimal?        @db.Decimal(6, 3)
+  commissionExemptPct  Decimal?        @db.Decimal(6, 3)
   // Ítem de la póliza que toca el endoso (elimina, reemplaza, monto, glosa).
-  targetItemId      String?
+  targetItemId         String?
   // Glosa del ítem que agrega o reemplaza el endoso.
-  itemDescription   String?
+  itemDescription      String?
   // Estado de la póliza antes de aplicar este endoso, para poder revertirlo.
-  priorSnapshot     Json?
-  createdById       String?
-  createdAt         DateTime        @default(now())
+  priorSnapshot        Json?
+  createdById          String?
+  createdAt            DateTime        @default(now())
 
   policy   Policy    @relation(fields: [policyId], references: [id], onDelete: Cascade)
   proposal Proposal? @relation(fields: [proposalId], references: [id], onDelete: SetNull)
@@ -1072,81 +1075,81 @@ enum PolicyStatus {
 }
 
 model Policy {
-  id                     String       @id @default(cuid())
-  organizationId         String
-  clientId               String
-  proposalId             String?
-  policyNumber           String
-  companyId              String?
-  lineId                 String?
-  branchId               String?
-  status                 PolicyStatus @default(VIGENTE)
-  premiumNet             Decimal?     @db.Decimal(14, 2) // total = afecta + exenta
+  id                           String       @id @default(cuid())
+  organizationId               String
+  clientId                     String
+  proposalId                   String?
+  policyNumber                 String
+  companyId                    String?
+  lineId                       String?
+  branchId                     String?
+  status                       PolicyStatus @default(VIGENTE)
+  premiumNet                   Decimal?     @db.Decimal(14, 2) // total = afecta + exenta
   // Desglose de prima neta: afecta (gravada con IVA) vs exenta. premiumNet es la suma.
-  premiumAffect          Decimal?     @db.Decimal(14, 2)
-  premiumExempt          Decimal?     @db.Decimal(14, 2)
-  currency               String       @default("UF")
-  commissionPercent      Decimal?     @db.Decimal(9, 4)
-  commissionAmount       Decimal?     @db.Decimal(14, 2)
+  premiumAffect                Decimal?     @db.Decimal(14, 2)
+  premiumExempt                Decimal?     @db.Decimal(14, 2)
+  currency                     String       @default("UF")
+  commissionPercent            Decimal?     @db.Decimal(9, 4)
+  commissionAmount             Decimal?     @db.Decimal(14, 2)
   // Desglose de comisión: monto calculado, afecta/exenta (montos y %),
   // comisión final de la compañía y flag de pagada.
-  commissionCalculated   Decimal?     @db.Decimal(14, 4)
-  commissionAffect       Decimal?     @db.Decimal(14, 4)
-  commissionExempt       Decimal?     @db.Decimal(14, 4)
-  commissionAffectPct    Decimal?     @db.Decimal(6, 3)
-  commissionExemptPct    Decimal?     @db.Decimal(6, 3)
-  commissionFinalCompany Decimal?     @db.Decimal(14, 2)
+  commissionCalculated         Decimal?     @db.Decimal(14, 4)
+  commissionAffect             Decimal?     @db.Decimal(14, 4)
+  commissionExempt             Decimal?     @db.Decimal(14, 4)
+  commissionAffectPct          Decimal?     @db.Decimal(6, 3)
+  commissionExemptPct          Decimal?     @db.Decimal(6, 3)
+  commissionFinalCompany       Decimal?     @db.Decimal(14, 2)
   // Estado de la comisión decidido en la revisión de comisiones: true = se
   // dejó pagada por la compañía (aunque haya una diferencia menor), false = se
   // dejó pendiente (p.ej. pago parcial a reclamar), null = automático según la
   // suma de pagos registrados.
-  commissionPaid         Boolean?
+  commissionPaid               Boolean?
   // Snapshot del tipo de cambio al momento de la póliza: valor en pesos de la
   // moneda de la póliza (Cambio) y de la UF. Permite re-expresar montos históricos.
-  exchangeRate           Decimal?     @db.Decimal(14, 4)
-  ufValue                Decimal?     @db.Decimal(14, 4)
-  startDate              DateTime?    @db.Date
-  endDate                DateTime?    @db.Date
-  previousPolicyId       String?
-  nextPolicyId           String?
+  exchangeRate                 Decimal?     @db.Decimal(14, 4)
+  ufValue                      Decimal?     @db.Decimal(14, 4)
+  startDate                    DateTime?    @db.Date
+  endDate                      DateTime?    @db.Date
+  previousPolicyId             String?
+  nextPolicyId                 String?
   // Cadena de renovación. La madre usa su propio id; cada sucesora
   // repite ese id y sube el período.
-  lineageId              String?
-  termNumber             Int          @default(1)
-  externalId             String?
+  lineageId                    String?
+  termNumber                   Int          @default(1)
+  externalId                   String?
   // Producto contratado. En pólizas emitidas en Polizza se hereda de la
   // propuesta; en las importadas lo setea el import desde el catálogo legacy.
-  productId              String?
-  assignedUserId         String?
+  productId                    String?
+  assignedUserId               String?
   // Vendedor (ejecutivo comercial) asociado a la póliza para liquidar su
   // comisión. Precargado desde Proposal.salespersonId al convertir, editable.
-  salespersonId          String?
+  salespersonId                String?
   // Override de la tasa de comisión del vendedor PARA ESTA PÓLIZA. null = usa
   // la tasa default configurada del vendedor (SalespersonCommissionRate). El
   // admin la baja aquí cuando se negocia un acuerdo para cerrar un deal.
-  salesCommissionPct     Decimal?     @db.Decimal(6, 3)
+  salesCommissionPct           Decimal?     @db.Decimal(6, 3)
   // No renovable por naturaleza (garantía de obra, viaje, etc.).
-  notRenewable           Boolean      @default(false)
+  notRenewable                 Boolean      @default(false)
   // No renovación registrada, reversible. null = no hay decisión.
-  nonRenewalReason       String?
-  nonRenewalNote         String?
-  nonRenewalAt           DateTime?
+  nonRenewalReason             String?
+  nonRenewalNote               String?
+  nonRenewalAt                 DateTime?
   // Saldo único tras cancelar o anular. Positivo: el cliente debe.
   // Negativo: devolución. Estimado hasta el monto de la compañía.
-  terminationBalance           Decimal? @db.Decimal(18, 4)
-  terminationBalanceIsEstimate Boolean  @default(false)
+  terminationBalance           Decimal?     @db.Decimal(18, 4)
+  terminationBalanceIsEstimate Boolean      @default(false)
   terminationReason            String?
   // La póliza se emite aunque el documento venga con diferencias.
   // Vacío = emisión correcta.
-  issueProblemCode     String?
-  issueProblemDetail   String?
-  issueProblemOpenedAt DateTime?
-  version                Int          @default(0)
-  reopenedIssueAt        DateTime?
-  reopenedIssueReason    String?
-  createdById            String?
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
+  issueProblemCode             String?
+  issueProblemDetail           String?
+  issueProblemOpenedAt         DateTime?
+  version                      Int          @default(0)
+  reopenedIssueAt              DateTime?
+  reopenedIssueReason          String?
+  createdById                  String?
+  createdAt                    DateTime     @default(now())
+  updatedAt                    DateTime     @updatedAt
 
   client                    Client                          @relation(fields: [clientId], references: [id], onDelete: Cascade)
   proposal                  Proposal?                       @relation(fields: [proposalId], references: [id])
@@ -1172,17 +1175,17 @@ model Policy {
 }
 
 model PolicyItem {
-  id             String   @id @default(cuid())
-  organizationId String
-  policyId       String
-  description    String
-  insuredAmount  Decimal? @db.Decimal(16, 2)
-  currency       String   @default("UF")
+  id                     String    @id @default(cuid())
+  organizationId         String
+  policyId               String
+  description            String
+  insuredAmount          Decimal?  @db.Decimal(16, 2)
+  currency               String    @default("UF")
   // Endoso que agregó el ítem y endoso que lo sacó de la póliza.
   addedByEndorsementId   String?
   removedByEndorsementId String?
   removedAt              DateTime? @db.Date
-  createdAt      DateTime @default(now())
+  createdAt              DateTime  @default(now())
 
   policy Policy  @relation(fields: [policyId], references: [id], onDelete: Cascade)
   claims Claim[]
@@ -1192,17 +1195,17 @@ model PolicyItem {
 }
 
 model PolicyCoverage {
-  id             String   @id @default(cuid())
-  organizationId String
-  policyId       String
-  name           String
-  deductible     String?
+  id                String   @id @default(cuid())
+  organizationId    String
+  policyId          String
+  name              String
+  deductible        String?
   deductibleAmount  Decimal? @db.Decimal(18, 4)
   deductiblePct     Decimal? @db.Decimal(8, 4)
   deductibleMinimum Decimal? @db.Decimal(18, 4)
-  insuredAmount  Decimal? @db.Decimal(16, 2)
-  currency       String   @default("UF")
-  createdAt      DateTime @default(now())
+  insuredAmount     Decimal? @db.Decimal(16, 2)
+  currency          String   @default("UF")
+  createdAt         DateTime @default(now())
 
   policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
 
@@ -1436,6 +1439,7 @@ model AuditLog {
 
   @@index([organizationId])
   @@index([userId])
+  @@index([organizationId, createdAt])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1528,41 +1532,41 @@ enum ClaimLogKind {
 }
 
 model Claim {
-  id                    String      @id @default(cuid())
-  organizationId        String
-  clientId              String
-  policyId              String?
-  policyItemId          String?
-  proposalItemId        String?
-  branchTypeId          String?
-  claimNumber           String
-  folderNumber          Int
-  companyClaimNumber    String?
-  liquidatorName        String?
-  description           String
-  status                ClaimStatus @default(REPORTED)
-  substatusCode         String?
-  closureOutcome        String?
-  adjustmentLegalDeadline DateTime? @db.Date
-  closeDeadline         DateTime?   @db.Date
-  closedAt              DateTime?
-  closedOnTime          Boolean?
-  reopenCount           Int         @default(0)
-  finalReportReceivedAt DateTime?   @db.Date
-  disputeDeadline       DateTime?   @db.Date
-  isDisputed            Boolean     @default(false)
-  isPreventive          Boolean     @default(false)
-  currency              String      @default("UF")
-  estimatedAmount       Decimal?    @db.Decimal(14, 2)
-  settledAmount         Decimal?    @db.Decimal(14, 2)
-  assignedUserId        String?
-  createdById           String?
-  voidedAt              DateTime?
-  voidReason            String?
-  reopenedAt            DateTime?
-  currentStateStartedAt DateTime    @default(now())
-  createdAt             DateTime    @default(now())
-  updatedAt             DateTime    @updatedAt
+  id                      String      @id @default(cuid())
+  organizationId          String
+  clientId                String
+  policyId                String?
+  policyItemId            String?
+  proposalItemId          String?
+  branchTypeId            String?
+  claimNumber             String
+  folderNumber            Int
+  companyClaimNumber      String?
+  liquidatorName          String?
+  description             String
+  status                  ClaimStatus @default(REPORTED)
+  substatusCode           String?
+  closureOutcome          String?
+  adjustmentLegalDeadline DateTime?   @db.Date
+  closeDeadline           DateTime?   @db.Date
+  closedAt                DateTime?
+  closedOnTime            Boolean?
+  reopenCount             Int         @default(0)
+  finalReportReceivedAt   DateTime?   @db.Date
+  disputeDeadline         DateTime?   @db.Date
+  isDisputed              Boolean     @default(false)
+  isPreventive            Boolean     @default(false)
+  currency                String      @default("UF")
+  estimatedAmount         Decimal?    @db.Decimal(14, 2)
+  settledAmount           Decimal?    @db.Decimal(14, 2)
+  assignedUserId          String?
+  createdById             String?
+  voidedAt                DateTime?
+  voidReason              String?
+  reopenedAt              DateTime?
+  currentStateStartedAt   DateTime    @default(now())
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
 
   // Ingreso del denuncio
   entryParty       ClaimEntryParty?
@@ -1602,10 +1606,10 @@ model Claim {
   // Datos específicos por ramo (clave/valor según BranchFieldSchema u otros)
   data Json @default("{}")
 
-  client        Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  policyItem    PolicyItem?          @relation(fields: [policyItemId], references: [id], onDelete: SetNull)
-  proposalItem  ProposalItem?        @relation(fields: [proposalItemId], references: [id], onDelete: SetNull)
-  branchType    BranchType?          @relation(fields: [branchTypeId], references: [id])
+  client        Client                     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  policyItem    PolicyItem?                @relation(fields: [policyItemId], references: [id], onDelete: SetNull)
+  proposalItem  ProposalItem?              @relation(fields: [proposalItemId], references: [id], onDelete: SetNull)
+  branchType    BranchType?                @relation(fields: [branchTypeId], references: [id])
   statusHistory ClaimStatusHistory[]
   thirdParties  ClaimThirdParty[]
   logs          ClaimLog[]
@@ -1737,29 +1741,29 @@ enum CommissionReceivableStatus {
 
 // Libro de primas. La prima vigente de la póliza es la suma de estos asientos.
 model PremiumMovement {
-  id                    String               @id @default(cuid())
-  organizationId        String
-  policyId              String
-  endorsementId         String?
-  seqNo                 Int
-  movementType          PremiumMovementType
-  issuedOn              DateTime             @db.Date
-  effectiveOn           DateTime             @db.Date
-  premiumAffected       Decimal              @db.Decimal(18, 4)
-  premiumExempt         Decimal              @db.Decimal(18, 4)
-  taxAmount             Decimal              @db.Decimal(18, 4)
-  premiumNet            Decimal              @db.Decimal(18, 4)
-  premiumGross          Decimal              @db.Decimal(18, 4)
-  commissionAffected    Decimal              @db.Decimal(18, 4)
-  commissionExempt      Decimal              @db.Decimal(18, 4)
-  commissionTotal       Decimal              @db.Decimal(18, 4)
-  currency              String               @default("UF")
-  reversesMovementId    String?              @unique
-  createdById           String?
-  createdAt             DateTime             @default(now())
+  id                 String              @id @default(cuid())
+  organizationId     String
+  policyId           String
+  endorsementId      String?
+  seqNo              Int
+  movementType       PremiumMovementType
+  issuedOn           DateTime            @db.Date
+  effectiveOn        DateTime            @db.Date
+  premiumAffected    Decimal             @db.Decimal(18, 4)
+  premiumExempt      Decimal             @db.Decimal(18, 4)
+  taxAmount          Decimal             @db.Decimal(18, 4)
+  premiumNet         Decimal             @db.Decimal(18, 4)
+  premiumGross       Decimal             @db.Decimal(18, 4)
+  commissionAffected Decimal             @db.Decimal(18, 4)
+  commissionExempt   Decimal             @db.Decimal(18, 4)
+  commissionTotal    Decimal             @db.Decimal(18, 4)
+  currency           String              @default("UF")
+  reversesMovementId String?             @unique
+  createdById        String?
+  createdAt          DateTime            @default(now())
 
-  policy      Policy                  @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  receivable  CommissionReceivable?
+  policy     Policy                @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  receivable CommissionReceivable?
 
   @@unique([policyId, seqNo])
   @@index([organizationId])
@@ -1769,14 +1773,14 @@ model PremiumMovement {
 
 // Comisión esperada de la corredora, una por movimiento de prima.
 model CommissionReceivable {
-  id             String                      @id @default(cuid())
+  id             String                     @id @default(cuid())
   organizationId String
   policyId       String
-  movementId     String                      @unique
-  amount         Decimal                     @db.Decimal(18, 4)
-  currency       String                      @default("UF")
-  status         CommissionReceivableStatus  @default(PENDING)
-  createdAt      DateTime                    @default(now())
+  movementId     String                     @unique
+  amount         Decimal                    @db.Decimal(18, 4)
+  currency       String                     @default("UF")
+  status         CommissionReceivableStatus @default(PENDING)
+  createdAt      DateTime                   @default(now())
 
   policy      Policy                 @relation(fields: [policyId], references: [id], onDelete: Cascade)
   movement    PremiumMovement        @relation(fields: [movementId], references: [id], onDelete: Cascade)
@@ -1806,14 +1810,14 @@ model PolicySubmission {
 
 // Comparación de lo pedido con lo emitido. Nunca bloquea la emisión.
 model AiComparison {
-  id              String   @id @default(cuid())
-  organizationId  String
-  proposalId      String?
-  policyId        String?
-  verdict         String
-  blocksIssuance  Boolean  @default(false)
-  summary         String?
-  createdAt       DateTime @default(now())
+  id             String   @id @default(cuid())
+  organizationId String
+  proposalId     String?
+  policyId       String?
+  verdict        String
+  blocksIssuance Boolean  @default(false)
+  summary        String?
+  createdAt      DateTime @default(now())
 
   proposal      Proposal?       @relation(fields: [proposalId], references: [id], onDelete: SetNull)
   policy        Policy?         @relation(fields: [policyId], references: [id], onDelete: SetNull)
@@ -1840,14 +1844,14 @@ model AiDiscrepancy {
 
 // Liquidación de la compañía y calce N:M contra la comisión esperada.
 model CommissionStatement {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   organizationId String
   insurerName    String?
   periodFrom     DateTime? @db.Date
   periodTo       DateTime? @db.Date
-  currency       String   @default("CLP")
-  status         String   @default("DRAFT")
-  createdAt      DateTime @default(now())
+  currency       String    @default("CLP")
+  status         String    @default("DRAFT")
+  createdAt      DateTime  @default(now())
 
   lines CommissionStatementLine[]
 
@@ -1855,12 +1859,12 @@ model CommissionStatement {
 }
 
 model CommissionStatementLine {
-  id             String   @id @default(cuid())
+  id             String  @id @default(cuid())
   organizationId String
   statementId    String
   policyNumber   String?
-  amount         Decimal  @db.Decimal(18, 4)
-  currency       String   @default("CLP")
+  amount         Decimal @db.Decimal(18, 4)
+  currency       String  @default("CLP")
 
   statement   CommissionStatement    @relation(fields: [statementId], references: [id], onDelete: Cascade)
   allocations CommissionAllocation[]
@@ -1887,10 +1891,79 @@ model CommissionAllocation {
 
 // Parámetros de la corredora. La presunción PAC/PAT nace apagada.
 model OrganizationSettings {
-  organizationId       String  @id
-  presumedPaidEnabled  Boolean @default(false)
-  mfaRequired          Boolean @default(false)
-  ssoEnabled           Boolean @default(false)
+  organizationId      String   @id
+  presumedPaidEnabled Boolean  @default(false)
+  mfaRequired         Boolean  @default(false)
+  ssoEnabled          Boolean  @default(false)
+  updatedById         String?
+  updatedAt           DateTime @default(now()) @updatedAt
+}
+
+enum DataSubjectRequestType {
+  ACCESS
+  RECTIFICATION
+  DELETION
+  OPPOSITION
+  PORTABILITY
+  BLOCKING
+}
+
+enum DataSubjectRequestStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+}
+
+model DataSubjectRequest {
+  id              String                   @id @default(cuid())
+  organizationId  String
+  clientId        String
+  type            DataSubjectRequestType
+  status          DataSubjectRequestStatus @default(OPEN)
+  channel         String?
+  requestNote     String?
+  receivedAt      DateTime                 @default(now())
+  dueAt           DateTime                 @db.Date
+  completedAt     DateTime?
+  resolutionNote  String?
+  handledById     String?
+  sensitiveReason String?
+  createdById     String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@index([clientId])
+}
+
+enum ComplianceObligationStatus {
+  PENDING
+  DONE
+  WAIVED
+}
+
+model ComplianceObligation {
+  id             String                     @id @default(cuid())
+  organizationId String
+  code           String
+  title          String
+  description    String?
+  dueDate        DateTime                   @db.Date
+  status         ComplianceObligationStatus @default(PENDING)
+  completedAt    DateTime?
+  completedNote  String?
+  assignedUserId String?
+  createdById    String?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@unique([organizationId, code, dueDate])
+  @@index([organizationId])
+  @@index([organizationId, dueDate])
 }
 
 enum QuoteRequestStatus {
@@ -1967,17 +2040,17 @@ model Dispatch {
 
 // Un pago de cuota. La cuota sigue siendo el saldo; esto es el hecho de pago.
 model InstallmentPayment {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   organizationId      String
   installmentId       String
-  amount              Decimal  @db.Decimal(18, 4)
-  paidOn              DateTime @db.Date
+  amount              Decimal   @db.Decimal(18, 4)
+  paidOn              DateTime  @db.Date
   companyRegisteredOn DateTime? @db.Date
-  markedOn            DateTime @db.Date
-  source              String   @default("MANUAL")
+  markedOn            DateTime  @db.Date
+  source              String    @default("MANUAL")
   note                String?
   createdById         String?
-  createdAt           DateTime @default(now())
+  createdAt           DateTime  @default(now())
 
   installment Installment @relation(fields: [installmentId], references: [id], onDelete: Cascade)
 
@@ -2019,6 +2092,8 @@ model ImportJob {
   profile        String
   status         String    @default("PREVIEW")
   fileName       String?
+  fileSha256     String?
+  fileSize       Int?
   decisionNote   String?
   choice         String?
   createdById    String?
@@ -2029,6 +2104,7 @@ model ImportJob {
   rows ImportJobRow[]
 
   @@index([organizationId])
+  @@index([organizationId, fileSha256])
 }
 
 model ImportJobRow {
@@ -2073,39 +2149,65 @@ model IdempotencyRecord {
 
 // Segundo factor del usuario. No es de una corredora.
 model MfaEnrollment {
-  userId        String   @id
-  secretBase32  String
-  enabled       Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  userId       String   @id
+  secretBase32 String
+  enabled      Boolean  @default(false)
+  createdAt    DateTime @default(now())
 }
 
 model Installment {
-  id             String            @id @default(cuid())
-  organizationId String
-  policyId       String?
-  paymentPlanId  String?
-  number         Int
-  amount         Decimal           @db.Decimal(14, 2)
-  currency       String            @default("UF")
-  dueDate        DateTime          @db.Date
-  status         InstallmentStatus @default(PENDIENTE)
-  paidAt         DateTime?         @db.Date
+  id                      String             @id @default(cuid())
+  organizationId          String
+  policyId                String?
+  paymentPlanId           String?
+  number                  Int
+  amount                  Decimal            @db.Decimal(14, 2)
+  currency                String             @default("UF")
+  dueDate                 DateTime           @db.Date
+  status                  InstallmentStatus  @default(PENDIENTE)
+  paidAt                  DateTime?          @db.Date
   // Cobrado cuando el estado es parcial. El resto se anula al cancelar.
-  amountPaid     Decimal?          @db.Decimal(14, 2)
-  creditedAmount Decimal?          @db.Decimal(18, 4)
+  amountPaid              Decimal?           @db.Decimal(14, 2)
+  creditedAmount          Decimal?           @db.Decimal(18, 4)
   // La cuota se anuló por la cascada de cancelación o anulación.
-  voidedByTermination Boolean      @default(false)
+  voidedByTermination     Boolean            @default(false)
   // Estado previo a esa anulación, para reabrirlo al borrar el endoso.
   statusBeforeTermination InstallmentStatus?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
 
-  policy   Policy?              @relation(fields: [policyId], references: [id], onDelete: Cascade)
-  payments InstallmentPayment[]
+  policy    Policy?              @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  payments  InstallmentPayment[]
+  reminders CollectionReminder[]
 
   @@index([organizationId])
   @@index([policyId])
   @@index([paymentPlanId])
+}
+
+enum CollectionReminderKind {
+  ADVANCE
+  OVERDUE
+  REJECTED
+  LAPSE
+}
+
+model CollectionReminder {
+  id             String                 @id @default(cuid())
+  organizationId String
+  installmentId  String
+  kind           CollectionReminderKind
+  sentTo         String
+  subject        String
+  sentAt         DateTime               @default(now())
+  sentById       String?
+  dedupeKey      String
+
+  installment Installment @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, dedupeKey])
+  @@index([organizationId])
+  @@index([installmentId])
 }
 
 // ─────────────────────────────────────────────────────────────

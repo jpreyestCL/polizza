@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOrgDb } from "@/server/context";
-import { logActivity } from "@/server/activity";
+import { logActivity, logAudit } from "@/server/activity";
 import {
   isAllowedExtension,
   saveUploadedFile,
@@ -12,6 +12,8 @@ import {
   ALLOWED_DOC_EXTENSIONS,
 } from "@/server/storage";
 import { documentFormSchema, type DocumentEntity } from "./schemas";
+import { hasPermission } from "@/lib/factory-roles";
+import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 
 export type ActionResult =
   | { ok: true; id: string }
@@ -132,8 +134,14 @@ export async function uploadDocumentAction(
 
 export async function deleteDocumentAction(
   id: string,
+  reason?: string,
 ): Promise<ActionResult> {
   const { ctx, db } = await requireOrgDb();
+  if (!hasPermission(ctx.role, "documents.delete")) {
+    return { ok: false, error: "No tienes permiso para eliminar documentos." };
+  }
+  const reasonError = sensitiveReasonError(reason);
+  if (reasonError) return { ok: false, error: reasonError };
 
   const document = await db.document.findFirst({
     where: { id },
@@ -161,6 +169,18 @@ export async function deleteDocumentAction(
     action: "document_removed",
     summary: `Documento eliminado: ${document.fileName}`,
     userId: ctx.userId,
+    metadata: { reason: reason!.trim() },
+  });
+  await logAudit({
+    organizationId: ctx.organizationId,
+    userId: ctx.userId,
+    action: "documents.deleted",
+    metadata: {
+      documentId: document.id,
+      entityType: document.entityType,
+      entityId: document.entityId,
+      reason: reason!.trim(),
+    },
   });
 
   revalidatePath(

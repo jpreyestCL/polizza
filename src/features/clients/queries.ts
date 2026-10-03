@@ -1,4 +1,5 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
 import { type Db } from "@/server/db";
 import type { SessionContext } from "@/server/context";
 import { canSeeAllClients } from "@/lib/roles";
@@ -16,24 +17,26 @@ export type ClientListFilters = {
   q?: string;
   type?: "PERSONA" | "EMPRESA";
   status?: import("@prisma/client").ClientStatus;
+  assignedUserId?: string;
+  branchTypeId?: string;
+  branchProductIds?: string[];
+  tagId?: string;
   /** Único ordenable server-side por ahora: la columna Cliente (name). */
   sort?: "name";
   order?: "asc" | "desc";
 };
 
-/** Lista paginada de clientes, acotada por rol y filtros. Cursor sobre id. */
-export async function listClients(
+export function clientListWhere(
   ctx: SessionContext,
-  db: Db,
-  page: PageParams,
   filters: ClientListFilters = {},
-): Promise<Paginated<ClientListItem>> {
+): Prisma.ClientWhereInput {
   const q = filters.q?.trim();
-  // El RUT se almacena normalizado (sin puntos, con guion). Limpiamos el
-  // término para que "7.051.978-K" o "7.051.978" matcheen contra "7051978-K".
   const rutTerms = q ? rutSearchTerms(q) : [];
-  const where = {
-    ...(canSeeAllClients(ctx.role) ? {} : { assignedUserId: ctx.userId }),
+  const assignedUserId = canSeeAllClients(ctx.role)
+    ? filters.assignedUserId
+    : ctx.userId;
+  return {
+    ...(assignedUserId ? { assignedUserId } : {}),
     ...(q
       ? {
           OR: [
@@ -41,7 +44,6 @@ export async function listClients(
             ...rutTerms.map((term) => ({
               rut: { contains: term, mode: "insensitive" as const },
             })),
-            // También por N° de póliza: lleva al titular de esa póliza.
             {
               policies: {
                 some: {
@@ -54,7 +56,54 @@ export async function listClients(
       : {}),
     ...(filters.type ? { type: filters.type } : {}),
     ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.tagId
+      ? { tagAssignments: { some: { tagId: filters.tagId } } }
+      : {}),
+    ...(filters.branchTypeId
+      ? {
+          AND: [
+            {
+              OR: [
+                {
+                  policies: {
+                    some: {
+                      OR: [
+                        { proposal: { branchTypeId: filters.branchTypeId } },
+                        ...(filters.branchProductIds?.length
+                          ? [{ productId: { in: filters.branchProductIds } }]
+                          : []),
+                      ],
+                    },
+                  },
+                },
+                {
+                  proposals: {
+                    some: { branchTypeId: filters.branchTypeId },
+                  },
+                },
+              ],
+            },
+          ],
+        }
+      : {}),
   };
+}
+
+/** Lista paginada de clientes, acotada por rol y filtros. Cursor sobre id. */
+export async function listClients(
+  ctx: SessionContext,
+  db: Db,
+  page: PageParams,
+  filters: ClientListFilters = {},
+): Promise<Paginated<ClientListItem>> {
+  if (filters.branchTypeId) {
+    const products = await db.insuranceProduct.findMany({
+      where: { branchTypeId: filters.branchTypeId },
+      select: { id: true },
+    });
+    filters = { ...filters, branchProductIds: products.map((product) => product.id) };
+  }
+  const where = clientListWhere(ctx, filters);
   const order = filters.order === "desc" ? ("desc" as const) : ("asc" as const);
   const orderBy =
     filters.sort === "name"
@@ -76,6 +125,7 @@ export async function listClients(
         region: true,
         commune: true,
         assignedUserId: true,
+        tagAssignments: { select: { tag: true }, orderBy: { tag: { name: "asc" } } },
         createdAt: true,
         _count: { select: { contacts: true, policies: true, proposals: true } },
       },
@@ -96,6 +146,7 @@ export type ClientListItem = {
   region: string | null;
   commune: string | null;
   assignedUserId: string | null;
+  tagAssignments: { tag: { id: string; name: string; color: string } }[];
   createdAt: Date;
   _count: { contacts: number; policies: number; proposals: number };
 };
@@ -125,6 +176,10 @@ export async function listClientsForSelect(
       region: true,
       commune: true,
       assignedUserId: true,
+      tagAssignments: {
+        select: { tag: true },
+        orderBy: { tag: { name: "asc" } },
+      },
       createdAt: true,
       _count: { select: { contacts: true, policies: true, proposals: true } },
     },
@@ -237,3 +292,15 @@ export async function findClientForPayer(
  */
 export type { OrgMember } from "@/server/members";
 export const getOrgMembers = listOrgMembers;
+
+export async function listClientFilterOptions(db: Db) {
+  const [tags, branchTypes] = await Promise.all([
+    db.clientTag.findMany({ orderBy: { name: "asc" } }),
+    db.branchType.findMany({
+      where: { active: true },
+      orderBy: [{ order: "asc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    }),
+  ]);
+  return { tags, branchTypes };
+}

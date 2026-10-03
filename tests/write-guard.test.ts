@@ -14,7 +14,6 @@ const SUPPORT = [
   "Comment",
   "Document",
   "DocumentVersion",
-  "TenantFeature",
 ];
 
 describe("permisos de escritura por modelo", () => {
@@ -46,6 +45,9 @@ describe("permisos de escritura por modelo", () => {
     expect(canWriteModel("FINANCE", "Proposal")).toBe(false);
     expect(canWriteModel("FINANCE", "Endorsement")).toBe(false);
     expect(canWriteModel("FINANCE", "ImportJob")).toBe(true);
+    expect(canWriteModel("FINANCE", "TenantFeature")).toBe(false);
+    expect(canWriteModel("ACCOUNT_EXECUTIVE", "TenantFeature")).toBe(false);
+    expect(canWriteModel("ADMIN", "TenantFeature")).toBe(true);
     expect(canWriteModel("ACCOUNT_EXECUTIVE", "Proposal")).toBe(true);
     expect(canWriteModel("ACCOUNT_EXECUTIVE", "PolicyItem")).toBe(true);
     expect(canWriteModel("ejecutivo", "Client")).toBe(true);

@@ -183,9 +183,11 @@ function BranchDialog({
 export function BranchesPanel({
   clientId,
   branches,
+  canEditSensitive = true,
 }: {
   clientId: string;
   branches: BranchItem[];
+  canEditSensitive?: boolean;
 }) {
   const router = useRouter();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -235,18 +237,20 @@ export function BranchesPanel({
               <div className="flex items-start justify-between gap-2">
                 <p className="font-medium">{branch.name}</p>
                 <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Editar sucursal"
-                    onClick={() => {
-                      setEditing(branch);
-                      setDialogOpen(true);
-                    }}
-                  >
-                    <Pencil className="size-4" />
-                  </Button>
+                  {canEditSensitive && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Editar sucursal"
+                      onClick={() => {
+                        setEditing(branch);
+                        setDialogOpen(true);
+                      }}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"

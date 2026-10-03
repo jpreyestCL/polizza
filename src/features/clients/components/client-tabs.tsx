@@ -34,6 +34,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MASKED_DATE } from "../privacy";
 
 type ClientProposal = {
   id: string;
@@ -89,6 +90,8 @@ export function ClientTabs({
   clientClaims,
   clientCarQuotations,
   assignedUserName,
+  sensitiveMasked,
+  hasBirthDate,
 }: {
   client: ClientDetail;
   activity: ActivityLog[];
@@ -99,6 +102,8 @@ export function ClientTabs({
   clientClaims: ClientClaim[];
   clientCarQuotations: ClientCarQuotation[];
   assignedUserName: string | null;
+  sensitiveMasked: boolean;
+  hasBirthDate: boolean;
 }) {
   const isEmpresa = client.type === "EMPRESA";
   return (
@@ -125,7 +130,11 @@ export function ClientTabs({
 
       {isEmpresa && (
         <TabsContent value="sucursales">
-          <BranchesPanel clientId={client.id} branches={branches} />
+          <BranchesPanel
+            clientId={client.id}
+            branches={branches}
+            canEditSensitive={!sensitiveMasked}
+          />
         </TabsContent>
       )}
 
@@ -144,7 +153,11 @@ export function ClientTabs({
               <Field
                 label="Fecha de nacimiento"
                 value={
-                  client.birthDate ? formatDate(client.birthDate) : null
+                  sensitiveMasked && hasBirthDate
+                    ? MASKED_DATE
+                    : client.birthDate
+                      ? formatDate(client.birthDate)
+                      : null
                 }
               />
             )}

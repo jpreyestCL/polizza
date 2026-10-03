@@ -50,49 +50,18 @@ const STATUS_LABELS: Record<string, string> = {
   INACTIVO: "Inactivo",
 };
 
-function downloadCsv(rows: ClientListItem[], nameByUser: Map<string, string>) {
-  const header = [
-    "Nombre",
-    "Tipo",
-    "RUT",
-    "Estado",
-    "Correo",
-    "Teléfono",
-    "Región",
-    "Comuna",
-    "Ejecutivo",
-  ];
-  const lines = rows.map((c) =>
-    [
-      c.name,
-      TYPE_LABELS[c.type] ?? c.type,
-      formatRut(c.rut),
-      STATUS_LABELS[c.status] ?? c.status,
-      c.email ?? "",
-      c.phone ?? "",
-      c.region ?? "",
-      c.commune ?? "",
-      c.assignedUserId ? (nameByUser.get(c.assignedUserId) ?? "") : "",
-    ]
-      .map((value) => `"${String(value).replace(/"/g, '""')}"`)
-      .join(","),
-  );
-  const csv = [header.join(","), ...lines].join("\n");
-  const blob = new Blob([`﻿${csv}`], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `clientes-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export function ClientsTable({
   clients,
   members,
+  tags,
+  branchTypes,
+  canExport,
 }: {
   clients: ClientListItem[];
   members: OrgMember[];
+  tags: { id: string; name: string }[];
+  branchTypes: { id: string; name: string }[];
+  canExport: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -102,6 +71,9 @@ export function ClientsTable({
   const urlQuery = searchParams.get("q") ?? "";
   const typeFilter = searchParams.get("type") ?? "all";
   const statusFilter = searchParams.get("status") ?? "all";
+  const assigneeFilter = searchParams.get("ejecutivo") ?? "all";
+  const branchFilter = searchParams.get("ramo") ?? "all";
+  const tagFilter = searchParams.get("tag") ?? "all";
   const sort = searchParams.get("sort");
   const order = searchParams.get("order") === "desc" ? "desc" : "asc";
 
@@ -210,6 +182,15 @@ export function ClientsTable({
         ),
       },
       {
+        id: "tags",
+        header: "Tags",
+        cell: ({ row }) => (
+          <span className="text-muted-foreground">
+            {row.original.tagAssignments.map(({ tag }) => tag.name).join(", ") || "—"}
+          </span>
+        ),
+      },
+      {
         id: "location",
         header: "Ubicación",
         accessorFn: (row) =>
@@ -238,7 +219,7 @@ export function ClientsTable({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -279,15 +260,68 @@ export function ClientsTable({
             <SelectItem value="INACTIVO">Inactivo</SelectItem>
           </SelectContent>
         </Select>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => downloadCsv(clients, nameByUser)}
-          disabled={clients.length === 0}
+        <Select
+          value={assigneeFilter}
+          onValueChange={(value) =>
+            applyParams({ ejecutivo: value === "all" ? null : value })
+          }
         >
-          <Download />
-          Exportar
-        </Button>
+          <SelectTrigger className="sm:w-44">
+            <SelectValue placeholder="Ejecutivo" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los ejecutivos</SelectItem>
+            {members.map((member) => (
+              <SelectItem key={member.userId} value={member.userId}>
+                {member.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={branchFilter}
+          onValueChange={(value) =>
+            applyParams({ ramo: value === "all" ? null : value })
+          }
+        >
+          <SelectTrigger className="sm:w-44">
+            <SelectValue placeholder="Ramo" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los ramos</SelectItem>
+            {branchTypes.map((branch) => (
+              <SelectItem key={branch.id} value={branch.id}>
+                {branch.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={tagFilter}
+          onValueChange={(value) =>
+            applyParams({ tag: value === "all" ? null : value })
+          }
+        >
+          <SelectTrigger className="sm:w-40">
+            <SelectValue placeholder="Tag" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los tags</SelectItem>
+            {tags.map((tag) => (
+              <SelectItem key={tag.id} value={tag.id}>
+                {tag.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {canExport && (
+          <Button asChild variant="outline">
+            <a href={`/api/clientes/csv?${searchParams.toString()}`}>
+              <Download />
+              Exportar
+            </a>
+          </Button>
+        )}
       </div>
 
       <div

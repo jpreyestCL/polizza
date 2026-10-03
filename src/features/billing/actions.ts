@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { requireOrgDb } from "@/server/context";
-import { logActivity } from "@/server/activity";
+import { logActivity, logAudit } from "@/server/activity";
+import { hasPermission } from "@/lib/factory-roles";
+import { sensitiveReasonError } from "@/lib/domain/sensitive-reason";
 import {
   generatePlanSchema,
   INSTALLMENT_STATUSES,
@@ -100,7 +102,20 @@ export async function markInstallmentPaidAction(
   id: string,
 ): Promise<ActionResult> {
   const { ctx, db } = await requireOrgDb();
-  const installment = await getInstallmentWithPolicy(db, id);
+  if (!hasPermission(ctx.role, "installments.mark_paid")) {
+    return { ok: false, error: "No tienes permiso para registrar pagos." };
+  }
+  const installment = await db.installment.findFirst({
+    where: { id },
+    select: {
+      id: true,
+      number: true,
+      policyId: true,
+      amount: true,
+      amountPaid: true,
+      status: true,
+    },
+  });
   if (!installment) {
     return { ok: false, error: "La cuota no existe o no tienes acceso." };
   }
@@ -111,9 +126,27 @@ export async function markInstallmentPaidAction(
     };
   }
 
-  await db.installment.update({
-    where: { id },
-    data: { status: "PAGADA", paidAt: new Date() },
+  if (installment.status === "PAGADA") return { ok: true };
+  const today = new Date();
+  await db.$transaction(async (tx) => {
+    await tx.installment.update({
+      where: { id },
+      data: { status: "PAGADA", paidAt: today, amountPaid: null },
+    });
+    await tx.installmentPayment.create({
+      data: {
+        organizationId: ctx.organizationId,
+        installmentId: id,
+        amount: Math.max(
+          0,
+          Number(installment.amount) - Number(installment.amountPaid ?? 0),
+        ).toFixed(4),
+        paidOn: today,
+        markedOn: today,
+        source: "MANUAL",
+        createdById: ctx.userId,
+      },
+    });
   });
 
   await logActivity(db, {
@@ -144,6 +177,7 @@ export async function setInstallmentStatusAction(
   status: InstallmentStatusValue,
   amountPaid?: number | null,
   companyRegisteredOn?: string | null,
+  reason?: string | null,
 ): Promise<ActionResult> {
   if (status === "ANULADA" || status === "CREDITED") {
     return { ok: false, error: "Ese estado no se asigna a mano." };
@@ -158,8 +192,10 @@ export async function setInstallmentStatusAction(
       id: true,
       number: true,
       amount: true,
+      amountPaid: true,
       policyId: true,
       voidedByTermination: true,
+      status: true,
     },
   });
   if (!installment) {
@@ -170,6 +206,44 @@ export async function setInstallmentStatusAction(
       ok: false,
       error: "La cuota se anuló al cancelar o anular la póliza.",
     };
+  }
+  if (
+    status === "CASTIGADA" &&
+    !hasPermission(ctx.role, "installments.write_off")
+  ) {
+    return { ok: false, error: "No tienes permiso para realizar este cambio." };
+  }
+  if (
+    ((installment.status === "PAGADA" && status !== "PAGADA") ||
+      (installment.status === "PRESUNTA" && status !== "PRESUNTA") ||
+      (installment.status === "PARCIAL" &&
+        (status !== "PARCIAL" ||
+          Number(installment.amountPaid ?? 0) !== Number(amountPaid ?? 0)))) &&
+    !hasPermission(ctx.role, "installments.edit_paid")
+  ) {
+    return { ok: false, error: "No tienes permiso para revertir pagos." };
+  }
+  if (
+    status !== "CASTIGADA" &&
+    !(
+      (installment.status === "PAGADA" && status !== "PAGADA") ||
+      (installment.status === "PRESUNTA" && status !== "PRESUNTA") ||
+      (installment.status === "PARCIAL" && status !== "PARCIAL")
+    ) &&
+    !hasPermission(ctx.role, "installments.mark_paid")
+  ) {
+    return { ok: false, error: "No tienes permiso para realizar este cambio." };
+  }
+  if (
+    (status === "CASTIGADA" ||
+      (installment.status === "PAGADA" && status !== "PAGADA") ||
+      (installment.status === "PRESUNTA" && status !== "PRESUNTA") ||
+      (installment.status === "PARCIAL" &&
+        (status !== "PARCIAL" ||
+          Number(installment.amountPaid ?? 0) !== Number(amountPaid ?? 0)))) &&
+    sensitiveReasonError(reason)
+  ) {
+    return { ok: false, error: sensitiveReasonError(reason)! };
   }
   if (status === "PARCIAL") {
     const quota = Number(installment.amount);
@@ -191,7 +265,13 @@ export async function setInstallmentStatusAction(
     status === "PARCIAL" && amountPaid != null
       ? amountPaid
       : status === "PAGADA"
-        ? Number(installment.amount)
+        ? Math.max(
+            0,
+            Number(installment.amount) -
+              (installment.status === "PARCIAL"
+                ? Number(installment.amountPaid ?? 0)
+                : 0),
+          )
         : null;
   await db.installment.update({
     where: { id },
@@ -202,6 +282,43 @@ export async function setInstallmentStatusAction(
         status === "PARCIAL" && amountPaid != null ? amountPaid : null,
     },
   });
+  if (
+    installment.policyId &&
+    ((installment.status === "PAGADA" && status !== "PAGADA") ||
+      (installment.status === "PRESUNTA" && status !== "PRESUNTA") ||
+      (installment.status === "PARCIAL" &&
+        (status !== "PARCIAL" ||
+          Number(installment.amountPaid ?? 0) !== Number(amountPaid ?? 0))))
+  ) {
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "POLICY",
+      entityId: installment.policyId,
+      action: "installment_payment_reverted",
+      summary: `Pago de cuota ${installment.number} revertido`,
+      userId: ctx.userId,
+      metadata: { reason: reason!.trim() },
+    });
+    await logAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "installments.collected_edited",
+      metadata: {
+        installmentId: id,
+        from: installment.status,
+        to: status,
+        reason: reason!.trim(),
+      },
+    });
+  }
+  if (status === "CASTIGADA") {
+    await logAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "installments.written_off",
+      metadata: { installmentId: id, reason: reason!.trim() },
+    });
+  }
   if (paidAmount != null && paidAmount > 0) {
     const today = new Date();
     await db.installmentPayment.create({
@@ -227,6 +344,7 @@ export async function setInstallmentStatusAction(
       action: "installment_status",
       summary: `Cuota ${installment.number} quedó ${INSTALLMENT_STATUS_LABELS[status].toLowerCase()}`,
       userId: ctx.userId,
+      metadata: reason?.trim() ? { reason: reason.trim() } : undefined,
     });
     revalidatePath(`/polizas/${installment.policyId}`);
   }
@@ -236,17 +354,34 @@ export async function setInstallmentStatusAction(
 
 export async function markInstallmentPendingAction(
   id: string,
+  reason?: string,
 ): Promise<ActionResult> {
-  const { db } = await requireOrgDb();
+  const { ctx, db } = await requireOrgDb();
   const installment = await getInstallmentWithPolicy(db, id);
   if (!installment) {
     return { ok: false, error: "La cuota no existe o no tienes acceso." };
   }
+  if (!hasPermission(ctx.role, "installments.edit_paid")) {
+    return { ok: false, error: "No tienes permiso para revertir pagos." };
+  }
+  const reasonError = sensitiveReasonError(reason);
+  if (reasonError) return { ok: false, error: reasonError };
 
   await db.installment.update({
     where: { id },
     data: { status: "PENDIENTE", paidAt: null },
   });
+  if (installment.policyId) {
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "POLICY",
+      entityId: installment.policyId,
+      action: "installment_payment_reverted",
+      summary: `Pago de cuota ${installment.number} revertido`,
+      userId: ctx.userId,
+      metadata: { reason: reason!.trim() },
+    });
+  }
 
   revalidatePath("/cobranza");
   revalidatePath(`/polizas/${installment.policyId}`);

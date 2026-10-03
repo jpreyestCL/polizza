@@ -4,21 +4,29 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Check, Loader2, Wallet } from "lucide-react";
+import { Bell, Check, Loader2, Wallet } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { formatMoney, type CurrencyCode } from "@/lib/money";
 import { markInstallmentPaidAction } from "../actions";
+import { sendCollectionReminderAction } from "../reminder-actions";
 import type { InstallmentWithPolicy } from "../queries";
 import { InstallmentBadge } from "./installment-badge";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { maskEmail } from "@/features/clients/privacy";
 
 type Filter = "all" | "vencida" | "porvencer" | "pagada";
 
 export function CobranzaOverview({
   installments,
+  canMarkPaid,
+  canSendReminders,
+  canReadSensitive,
 }: {
   installments: InstallmentWithPolicy[];
+  canMarkPaid: boolean;
+  canSendReminders: boolean;
+  canReadSensitive: boolean;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState<Filter>("all");
@@ -50,6 +58,15 @@ export function CobranzaOverview({
       return;
     }
     toast.success("Cuota marcada como pagada");
+    router.refresh();
+  }
+
+  async function remind(id: string) {
+    setBusyId(id);
+    const result = await sendCollectionReminderAction(id);
+    setBusyId(null);
+    if (!result.ok) return toast.error(result.error);
+    toast.success(result.sent ? "Recordatorio enviado" : "Ya fue enviado hoy");
     router.refresh();
   }
 
@@ -105,6 +122,15 @@ export function CobranzaOverview({
                   {installment.clientName} · vence el{" "}
                   {formatDate(installment.dueDate)}
                 </p>
+                {installment.reminders.map((reminder, index) => (
+                  <p key={reminder.id} className="text-xs text-muted-foreground">
+                    {index === 0 ? "Último aviso" : "Aviso anterior"}:{" "}
+                    {formatDate(reminder.sentAt)} · {reminder.kind.toLowerCase()} a{" "}
+                    {canReadSensitive
+                      ? reminder.sentTo
+                      : maskEmail(reminder.sentTo)}
+                  </p>
+                ))}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium">
@@ -120,7 +146,23 @@ export function CobranzaOverview({
                 {(installment.status === "PENDIENTE" ||
                   installment.status === "PARCIAL" ||
                   installment.status === "RECHAZADA") &&
-                  !installment.voidedByTermination && (
+                  canSendReminders && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busyId === installment.id}
+                    onClick={() => remind(installment.id)}
+                  >
+                    <Bell />
+                    Avisar
+                  </Button>
+                )}
+                {(installment.status === "PENDIENTE" ||
+                  installment.status === "PARCIAL" ||
+                  installment.status === "RECHAZADA") &&
+                  !installment.voidedByTermination &&
+                  canMarkPaid && (
                   <Button
                     type="button"
                     variant="outline"

@@ -8,6 +8,7 @@ import { auth } from "@/server/auth";
 import { logAudit } from "@/server/activity";
 import {
   cancelOrgInvitation,
+  listOrgInvitations,
   listOrgMembers,
   removeOrgMember,
   updateOrgMemberRole,
@@ -58,6 +59,9 @@ export async function changeMemberRoleAction(form: FormData): Promise<void> {
   const memberId = text(form, "memberId");
   const role = text(form, "role");
   if (!memberId || !isFactoryRole(role)) redirect(`${PAGE}?aviso=rol`);
+  const members = await listOrgMembers(ctx.organizationId);
+  const target = members.find((member) => member.memberId === memberId);
+  if (!target) redirect(`${PAGE}?aviso=miembro`);
   if (await wouldLeaveNoAdmin(ctx.organizationId, memberId, role)) {
     redirect(`${PAGE}?aviso=ultimo-admin`);
   }
@@ -67,7 +71,7 @@ export async function changeMemberRoleAction(form: FormData): Promise<void> {
     organizationId: ctx.organizationId,
     userId: ctx.userId,
     action: "member.role_changed",
-    metadata: { memberId, role },
+    metadata: { memberId, before: target.role, after: role },
   });
   revalidatePath(PAGE);
   redirect(`${PAGE}?aviso=rol-ok`);
@@ -127,7 +131,16 @@ export async function inviteMemberAction(form: FormData): Promise<void> {
 export async function cancelInvitationAction(form: FormData): Promise<void> {
   const ctx = await requireUsersManager();
   const invitationId = text(form, "invitationId");
+  const invitations = await listOrgInvitations(ctx.organizationId);
+  const invitation = invitations.find((item) => item.id === invitationId);
+  if (!invitation) redirect(`${PAGE}?aviso=miembro`);
   await cancelOrgInvitation(ctx.organizationId, invitationId);
+  await logAudit({
+    organizationId: ctx.organizationId,
+    userId: ctx.userId,
+    action: "member.invitation_cancelled",
+    metadata: { invitationId, email: invitation.email },
+  });
   revalidatePath(PAGE);
   redirect(`${PAGE}?aviso=invitacion-cancelada`);
 }

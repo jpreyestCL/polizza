@@ -26,13 +26,18 @@ export default async function ImportacionesPage({
         include: { rows: { orderBy: { rowNo: "asc" } } },
       })
     : null;
+  const history = await db.importJob.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 30,
+    include: { _count: { select: { rows: true } } },
+  });
   const ref = BROKERIS_REFERENCE;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Importaciones"
-        description="Clientes en RUT;nombre;teléfono;PERSONA o EMPRESA. El texto de Brokeris se traduce con el mapa de códigos. Al aplicar, una fila traducida con número de póliza y RUT crea la ficha; una fila en revisión se queda en el lote."
+        description="Carga archivos Brokeris con un perfil explícito, revisa la traducción y recién entonces aplica el lote. Los archivos aplicados quedan identificados por SHA-256."
       />
       {aviso ? <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{aviso}</p> : null}
 
@@ -56,7 +61,9 @@ export default async function ImportacionesPage({
       <form action={previewBrokerisAction} className="space-y-3 rounded-xl border bg-card p-4">
         <h2 className="text-sm font-medium">Traducción Brokeris</h2>
         <p className="text-sm text-muted-foreground">
-          Columnas separadas por tabulación. Pólizas: id, estado, es renovación, id madre,
+          Sube CSV, TSV o XLSX (máximo 10 MB). En XLSX se usa solo la primera hoja y se
+          conserva su matriz en el orden del perfil seleccionado; no se infieren layouts.
+          Pólizas: id, estado, es renovación, id madre,
           vigencia, número, RUT, nombre, prima, moneda, inicio, fin, compañía y, si vienen, glosa
           del ítem, monto asegurado y coberturas (Daños=500|RC=1000). Una compañía que no está
           en la corredora se crea como propia. Sin RUT y número
@@ -67,7 +74,8 @@ export default async function ImportacionesPage({
         </p>
         <label className="flex flex-col gap-1 text-sm">
           Perfil
-          <select name="profile" className={inputClass}>
+          <select name="profile" required defaultValue="" className={inputClass}>
+            <option value="" disabled>Selecciona un perfil</option>
             <option value="POLIZAS">Pólizas</option>
             <option value="ENDOSOS">Endosos</option>
             <option value="SINIESTROS">Siniestros</option>
@@ -76,17 +84,17 @@ export default async function ImportacionesPage({
           </select>
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          Filas
-          <textarea
-            name="rows"
+          Archivo
+          <input
+            name="sourceFile"
+            type="file"
             required
-            rows={6}
-            className={`${inputClass} font-mono text-xs`}
-            placeholder={"pol-1\t4\t1\tpol-0\t01-01-2026\tPOL-100"}
+            accept=".csv,.tsv,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className={inputClass}
           />
         </label>
         <button type="submit" className="rounded-md border px-3 py-2 text-sm">
-          Traducir
+          Subir y previsualizar
         </button>
       </form>
 
@@ -157,6 +165,13 @@ export default async function ImportacionesPage({
             Lote {job.profile} {job.status}. {job.rows.length} filas.
             {job.decisionNote ? ` ${job.decisionNote}` : ""}
           </p>
+          {job.fileName ? (
+            <p className="text-xs text-muted-foreground">
+              {job.fileName}
+              {job.fileSize != null ? ` · ${formatBytes(job.fileSize)}` : ""}
+              {job.fileSha256 ? ` · SHA-256 ${job.fileSha256}` : ""}
+            </p>
+          ) : null}
           <ul className="space-y-1 text-sm">
             {job.rows.map((row: { id: string; rowNo: number; action: string; message: string | null }) => (
               <li key={row.id}>
@@ -187,8 +202,56 @@ export default async function ImportacionesPage({
           ) : null}
         </section>
       ) : null}
+
+      <section className="space-y-3 rounded-xl border bg-card p-4">
+        <h2 className="text-sm font-medium">Historial de lotes</h2>
+        {history.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Todavía no hay lotes.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-2 pr-3 font-medium">Fecha</th>
+                  <th className="py-2 pr-3 font-medium">Perfil</th>
+                  <th className="py-2 pr-3 font-medium">Archivo</th>
+                  <th className="py-2 pr-3 font-medium">Filas</th>
+                  <th className="py-2 font-medium">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {history.map((item) => (
+                  <tr key={item.id} className="border-t">
+                    <td className="py-2 pr-3">{item.createdAt.toLocaleString("es-CL")}</td>
+                    <td className="py-2 pr-3">{item.profile}</td>
+                    <td className="py-2 pr-3">
+                      <a className="underline underline-offset-2" href={`/importaciones?job=${item.id}`}>
+                        {item.fileName || "Sin archivo"}
+                      </a>
+                      {item.fileSize != null ? (
+                        <span className="block text-xs text-muted-foreground">
+                          {formatBytes(item.fileSize)}
+                          {item.fileSha256 ? ` · ${item.fileSha256.slice(0, 12)}…` : ""}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="py-2 pr-3">{item._count.rows}</td>
+                    <td className="py-2">{item.status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function NumberField({ name, label }: { name: string; label: string }) {

@@ -13,7 +13,9 @@ import {
   isBrokerisPasteProfile,
   translateBrokerisPaste,
 } from "@/lib/domain/brokeris-translate";
-import { logActivity } from "@/server/activity";
+import { parseBrokerisFile, sha256Hex } from "@/lib/domain/brokeris-file";
+import { logActivity, logAudit } from "@/server/activity";
+import { lockImportFile } from "@/server/import-lock";
 import { applyBrokerisJob } from "@/features/imports/apply-brokeris";
 import { restoreEndorsementSideEffects } from "@/features/endorsements/apply";
 import {
@@ -25,6 +27,12 @@ import {
 function text(form: FormData, key: string): string {
   const value = form.get(key);
   return typeof value === "string" ? value.trim() : "";
+}
+
+class DuplicateAppliedImportError extends Error {
+  constructor(readonly jobId: string) {
+    super("Este archivo ya fue aplicado para la organización y el perfil.");
+  }
 }
 
 type ParsedClient = {
@@ -110,19 +118,54 @@ export async function applyImportAction(form: FormData): Promise<void> {
     include: { rows: { orderBy: { rowNo: "asc" } } },
   });
   if (!job) redirect("/importaciones?aviso=lote");
-  if (job.profile.startsWith("BROKERIS_")) {
-    const created = await db.$transaction(async (tx) =>
-      applyBrokerisJob(tx, {
-        organizationId: ctx.organizationId,
-        userId: ctx.userId,
+  if (job.fileSha256) {
+    const duplicate = await db.importJob.findFirst({
+      where: {
         profile: job.profile,
-        rows: job.rows,
-      }),
-    );
-    await db.importJob.update({
-      where: { id: jobId },
-      data: { status: "APLICADO", appliedAt: new Date() },
+        fileSha256: job.fileSha256,
+        status: "APLICADO",
+      },
+      select: { id: true },
     });
+    if (duplicate) {
+      redirect(`/importaciones?job=${duplicate.id}&aviso=archivo_ya_aplicado`);
+    }
+  }
+  if (job.profile.startsWith("BROKERIS_")) {
+    let created: number;
+    try {
+      created = await db.$transaction(async (tx) => {
+        if (job.fileSha256) {
+          // Serializa aplicaciones del mismo archivo aun sin un índice único parcial.
+          await lockImportFile(tx, ctx.organizationId, job.profile, job.fileSha256);
+          const applied = await tx.importJob.findFirst({
+            where: {
+              profile: job.profile,
+              fileSha256: job.fileSha256,
+              status: "APLICADO",
+            },
+            select: { id: true },
+          });
+          if (applied) throw new DuplicateAppliedImportError(applied.id);
+        }
+        const count = await applyBrokerisJob(tx, {
+          organizationId: ctx.organizationId,
+          userId: ctx.userId,
+          profile: job.profile,
+          rows: job.rows,
+        });
+        await tx.importJob.update({
+          where: { id: jobId },
+          data: { status: "APLICADO", appliedAt: new Date() },
+        });
+        return count;
+      });
+    } catch (error) {
+      if (error instanceof DuplicateAppliedImportError) {
+        redirect(`/importaciones?job=${error.jobId}&aviso=archivo_ya_aplicado`);
+      }
+      throw error;
+    }
     await storeIdempotency(db, {
       organizationId: ctx.organizationId,
       key: `import:${jobId}`,
@@ -137,6 +180,18 @@ export async function applyImportAction(form: FormData): Promise<void> {
       action: "import_applied",
       summary: `Lote ${job.profile} aplicado. Fichas nuevas: ${created}. Las filas en revisión quedaron sin crear.`,
       userId: ctx.userId,
+    });
+    await logAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "imports.apply",
+      metadata: {
+        jobId,
+        profile: job.profile,
+        fileName: job.fileName,
+        fileSha256: job.fileSha256,
+        created,
+      },
     });
     revalidatePath("/importaciones");
     revalidatePath("/polizas");
@@ -162,6 +217,12 @@ export async function applyImportAction(form: FormData): Promise<void> {
       action: "import_applied",
       summary: `Lote ${job.profile} registrado. El cuadre no crea fichas.`,
       userId: ctx.userId,
+    });
+    await logAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "imports.apply",
+      metadata: { jobId, profile: job.profile, fileName: job.fileName },
     });
     revalidatePath("/importaciones");
     redirect(`/importaciones?job=${jobId}&aviso=registrado`);
@@ -218,6 +279,12 @@ export async function applyImportAction(form: FormData): Promise<void> {
     action: "import_applied",
     summary: `Importación de clientes aplicada. Fichas nuevas: ${created}.`,
     userId: ctx.userId,
+  });
+  await logAudit({
+    organizationId: ctx.organizationId,
+    userId: ctx.userId,
+    action: "imports.apply",
+    metadata: { jobId, profile: job.profile, fileName: job.fileName, created },
   });
   revalidatePath("/importaciones");
   revalidatePath("/clientes");
@@ -367,6 +434,21 @@ export async function revertImportAction(form: FormData): Promise<void> {
       where: { id: jobId },
       data: { status: "REVERTIDO", revertedAt: new Date(), decisionNote: reason },
     });
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "CLIENT",
+      entityId: ctx.organizationId,
+      action: "import_reverted",
+      summary: `Lote ${job.profile} revertido. Motivo: ${reason}`,
+      userId: ctx.userId,
+      metadata: { jobId },
+    });
+    await logAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "imports.revert",
+      metadata: { jobId, profile: job.profile, fileName: job.fileName, reason },
+    });
     revalidatePath("/importaciones");
     revalidatePath("/polizas");
     redirect(`/importaciones?job=${jobId}&aviso=revertido`);
@@ -375,6 +457,21 @@ export async function revertImportAction(form: FormData): Promise<void> {
     await db.importJob.update({
       where: { id: jobId },
       data: { status: "REVERTIDO", revertedAt: new Date(), decisionNote: reason },
+    });
+    await logActivity(db, {
+      organizationId: ctx.organizationId,
+      entityType: "CLIENT",
+      entityId: ctx.organizationId,
+      action: "import_reverted",
+      summary: `Lote ${job.profile} revertido. Motivo: ${reason}`,
+      userId: ctx.userId,
+      metadata: { jobId },
+    });
+    await logAudit({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: "imports.revert",
+      metadata: { jobId, profile: job.profile, fileName: job.fileName, reason },
     });
     revalidatePath("/importaciones");
     redirect(`/importaciones?job=${jobId}&aviso=revertido`);
@@ -401,6 +498,21 @@ export async function revertImportAction(form: FormData): Promise<void> {
   await db.importJob.update({
     where: { id: jobId },
     data: { status: "REVERTIDO", revertedAt: new Date(), decisionNote: reason },
+  });
+  await logActivity(db, {
+    organizationId: ctx.organizationId,
+    entityType: "CLIENT",
+    entityId: ctx.organizationId,
+    action: "import_reverted",
+    summary: `Lote ${job.profile} revertido. Motivo: ${reason}`,
+    userId: ctx.userId,
+    metadata: { jobId },
+  });
+  await logAudit({
+    organizationId: ctx.organizationId,
+    userId: ctx.userId,
+    action: "imports.revert",
+    metadata: { jobId, profile: job.profile, fileName: job.fileName, reason },
   });
   revalidatePath("/importaciones");
   revalidatePath("/clientes");
@@ -429,28 +541,58 @@ export async function previewBrokerisAction(form: FormData): Promise<void> {
   }
   const profile = text(form, "profile");
   if (!isBrokerisPasteProfile(profile)) redirect("/importaciones?aviso=perfil");
-  const parsed = translateBrokerisPaste(profile, text(form, "rows"));
-  if (parsed.length === 0) redirect("/importaciones?aviso=vacio");
-  const job = await db.importJob.create({
-    data: {
-      organizationId: ctx.organizationId,
-      profile: `BROKERIS_${profile}`,
-      status: "PREVIEW",
-      fileName: text(form, "fileName") || "brokeris.txt",
-      createdById: ctx.userId,
-      decisionNote: "Traducción de códigos. Al aplicar se crean las filas traducidas que traen contratante, número y fechas.",
+  const upload = form.get("sourceFile");
+  if (!(upload instanceof File) || !upload.name || upload.size === 0) {
+    redirect("/importaciones?aviso=archivo");
+  }
+  const bytes = new Uint8Array(await upload.arrayBuffer());
+  let sourceText: string;
+  try {
+    sourceText = parseBrokerisFile(bytes, upload.name).text;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo leer el archivo.";
+    redirect(`/importaciones?aviso=${encodeURIComponent(message)}`);
+  }
+  const fileSha256 = sha256Hex(bytes);
+  const storedProfile = `BROKERIS_${profile}`;
+  const duplicate = await db.importJob.findFirst({
+    where: {
+      profile: storedProfile,
+      fileSha256,
+      status: "APLICADO",
     },
     select: { id: true },
   });
-  await db.importJobRow.createMany({
-    data: parsed.map((row) => ({
-      organizationId: ctx.organizationId,
-      jobId: job.id,
-      rowNo: row.rowNo,
-      action: row.action,
-      payload: row.payload,
-      message: row.message,
-    })),
+  if (duplicate) {
+    redirect(`/importaciones?job=${duplicate.id}&aviso=archivo_ya_aplicado`);
+  }
+  const parsed = translateBrokerisPaste(profile, sourceText);
+  if (parsed.length === 0) redirect("/importaciones?aviso=vacio");
+  const job = await db.$transaction(async (tx) => {
+    const created = await tx.importJob.create({
+      data: {
+        organizationId: ctx.organizationId,
+        profile: storedProfile,
+        status: "PREVIEW",
+        fileName: upload.name,
+        fileSize: upload.size,
+        fileSha256,
+        createdById: ctx.userId,
+        decisionNote: "Primera hoja traducida con el perfil elegido. No se infirió ni modificó el layout.",
+      },
+      select: { id: true },
+    });
+    await tx.importJobRow.createMany({
+      data: parsed.map((row) => ({
+        organizationId: ctx.organizationId,
+        jobId: created.id,
+        rowNo: row.rowNo,
+        action: row.action,
+        payload: row.payload,
+        message: row.message,
+      })),
+    });
+    return created;
   });
   revalidatePath("/importaciones");
   redirect(`/importaciones?job=${job.id}`);
