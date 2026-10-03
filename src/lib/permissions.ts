@@ -20,8 +20,12 @@ export const ejecutivo = ac.newRole({
   client: ["create", "read", "update", "export"],
 });
 
-/** Gerente: ve y gestiona toda la cartera de la corredora. */
+/**
+ * Gerente: ve y gestiona toda la cartera de la corredora. Equivale a ADMIN
+ * en `factoryRoleOf`, así que también invita y cambia roles.
+ */
 export const gerente = ac.newRole({
+  ...adminAc.statements,
   client: ["create", "read", "readAll", "update", "delete", "export"],
 });
 
