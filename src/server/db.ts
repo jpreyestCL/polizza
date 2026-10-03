@@ -1,4 +1,9 @@
 import { PrismaClient } from "@prisma/client";
+import {
+  WRITE_OPERATIONS,
+  WriteForbiddenError,
+  canWriteModel,
+} from "@/lib/domain/write-guard";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
@@ -153,7 +158,11 @@ function assertNoNestedWrites(
  * anidados), se lanza un error en runtime. El patrón seguro es transacción
  * explícita con createMany por entidad hija.
  */
-export function getDb(organizationId: string) {
+export function getDb(
+  organizationId: string,
+  options: { writerRole?: string | null } = {},
+) {
+  const writerRole = options.writerRole ?? null;
   return basePrisma.$extends({
     name: "tenant-isolation",
     query: {
@@ -161,6 +170,14 @@ export function getDb(organizationId: string) {
         async $allOperations({ model, operation, args, query }) {
           if (!TENANT_MODELS.has(model)) {
             return query(args);
+          }
+
+          if (
+            writerRole != null &&
+            WRITE_OPERATIONS.has(operation) &&
+            !canWriteModel(writerRole, model)
+          ) {
+            throw new WriteForbiddenError(model);
           }
 
           const next = { ...((args as Record<string, unknown>) ?? {}) };

@@ -54,10 +54,19 @@ export async function requireSession(): Promise<SessionContext> {
   return ctx;
 }
 
-/** Sesión + cliente Prisma acotado a la organización del usuario. */
+/**
+ * Sesión + cliente Prisma acotado a la organización del usuario. En una
+ * server action el cliente además exige que el rol pueda escribir cada
+ * modelo que toca; el render de una página no se restringe porque algunas
+ * lecturas completan datos (asiento 0 del libro, catálogo de partida).
+ */
 export async function requireOrgDb() {
   const ctx = await requireSession();
-  return { ctx, db: getDb(ctx.organizationId) };
+  const isAction = (await headers()).has("next-action");
+  return {
+    ctx,
+    db: getDb(ctx.organizationId, { writerRole: isAction ? ctx.role : null }),
+  };
 }
 
 /**
