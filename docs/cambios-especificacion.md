@@ -263,7 +263,7 @@ cierre a tiempo. Invitar usuarios fallaba porque la tabla de invitaciones
 no tenía `createdAt`.
 
 **Ahora.** Cada cambio de ítems, coberturas o plan en la propuesta se
-copia a la póliza en borrador dentro de la misma acción; el plan queda
+copia a la póliza en borrador al terminar la acción; el plan queda
 enlazado a la póliza y las cuotas pasan a cobranza solo al despachar. Un
 borrador que ya existía recibe sus ítems con la siguiente edición. El
 endoso elige el ítem: eliminar, reemplazar y la pérdida total lo sacan de
@@ -285,6 +285,38 @@ compañía y ejecutivo, y los CSV respetan el filtro. R-07 muestra la
 antigüedad de las comisiones pendientes y R-08 el porcentaje de siniestros
 cerrados a tiempo.
 
+## Revisión: roles, términos, importación y liquidación
+
+**Antes.** Solo lectura, cobranza, siniestros y finanzas podían escribir
+cualquier dato desde una acción que pedía solo sesión. La rehabilitación
+reversaba solo el último término; borrar la rehabilitación después de
+borrar su cancelación volvía a cancelar la póliza; borrar un endoso corría
+en varios pasos sueltos. Revertir un lote borraba la compañía creada aunque
+tuviera productos o propuestas, no anotaba el cambio de estado de la madre
+ni desenlazaba una sucesora que ya existía. Una compañía parecida a otra
+podía calzar con la equivocada. La liquidación tomaba la columna «Nro» como
+póliza y «% Comisión» como monto, y descartaba los montos negativos. El
+gerente veía Usuarios pero Better Auth no lo dejaba invitar.
+`/polizas/nuevo?fromProposal=` fallaba si la propuesta ya tenía su póliza.
+
+**Ahora.** El cliente de la corredora, dentro de una acción, rechaza
+escribir un modelo para el que el rol no tiene permiso (administración y
+gerencia escriben todo; solo lectura, nada). Importar y revertir un lote
+corren con su propio permiso. La rehabilitación reversa todos los términos
+que regían y guarda cuáles; borrarla vuelve a aplicar solo los que siguen
+existiendo. Borrar un endoso es una sola transacción, y no se borra el que
+agregó un ítem con siniestros o endosos posteriores. Revertir el lote deja
+la madre como estaba una sola vez, con su historial, desenlaza la sucesora
+que ya existía y borra la compañía solo si nada la usa. Si el nombre de la
+compañía calza con más de una, la fila queda por revisar. La liquidación
+prefiere la columna «Póliza», ignora tasas y porcentajes, y guarda los
+montos negativos como ajustes que no calzan y se informan. El gerente
+invita como el administrador. `/polizas/nuevo?fromProposal=` lleva a la
+póliza que la propuesta ya tiene. La póliza en borrador actualiza sus ítems
+en el mismo lugar, sin cambiarles el id; si la copia falla, la edición de la
+propuesta queda guardada, el error se registra y el siguiente cambio de
+estado la pone al día.
+
 ## Lo que queda apagado a propósito
 
 | Tema | Cómo queda | Por qué no se enciende solo |
@@ -294,4 +326,3 @@ cerrados a tiempo.
 | RLS forzado | La política existe y no está forzada | Forzarla con el rol dueño de las tablas, sin la variable de sesión en cada conexión, deja la aplicación sin leer |
 | Portales de las aseguradoras | Las credenciales se guardan cifradas y no se llama a ningún portal | Cada compañía tiene su propio portal y no hay acuerdo de integración |
 | Volcado X1–X17 de Brokeris | El traductor, el lote y el cuadre están listos; la carga completa espera el volcado | El volcado no está en el repositorio |
-| Solo lectura en cada acción | La navegación, usuarios, comisiones y portales miran la matriz de permisos; varias acciones de escritura siguen pidiendo solo sesión de la corredora | Revisar acción por acción sin romper los roles históricos queda como trabajo aparte |
