@@ -310,7 +310,7 @@ RESEND_API_KEY=re_...
 EMAIL_FROM="Polizza <no-reply@polizza.cl>"
 
 # Crypto AES-256-GCM para credenciales de portales aseguradoras
-INSURER_CREDS_KEY=<base64 32 bytes>
+QUOTE_CREDENTIALS_KEY=<base64 32 bytes>
 
 # Documentos subidos al servidor (propuestas/pólizas). DEBE apuntar a un
 # directorio persistente FUERA de .next/standalone, si no los archivos se

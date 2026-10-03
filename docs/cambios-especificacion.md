@@ -326,3 +326,33 @@ estado la pone al día.
 | RLS forzado | La política existe y no está forzada | Forzarla con el rol dueño de las tablas, sin la variable de sesión en cada conexión, deja la aplicación sin leer |
 | Portales de las aseguradoras | Las credenciales se guardan cifradas y no se llama a ningún portal | Cada compañía tiene su propio portal y no hay acuerdo de integración |
 | Volcado X1–X17 de Brokeris | El traductor, el lote y el cuadre están listos; la carga completa espera el volcado | El volcado no está en el repositorio |
+
+## Funciones declaradas, gobierno y migración por archivo
+
+**Antes.** Los permisos de recordatorios de cobranza, privacidad,
+cumplimiento y auditoría existían en la matriz, pero no tenían flujo. Los
+parámetros PAC/PAT, MFA, SSO y módulos contratados solo estaban en la base.
+Clientes validaba el formato del correo, exportaba solo la página visible y
+no filtraba por ejecutivo, ramo o tag. Brokeris aceptaba texto pegado, sin
+huella del archivo.
+
+**Ahora.** Cobranza envía recordatorios individuales o masivos al pagador,
+elige aviso previo, vencido, rechazado o riesgo de término, evita repetirlo el
+mismo día y guarda el historial. Privacidad registra solicitudes del titular,
+plazo, transición con motivo y export JSON. Cumplimiento administra
+obligaciones, responsable, vencimiento y resolución. Configuración →
+Parámetros controla PAC/PAT, MFA, SSO y los módulos de la corredora; los
+cambios quedan auditados. Configuración → Auditoría filtra por evento,
+usuario y fecha, con IP, agente y detalle.
+
+El correo de cliente se normaliza y no puede repetirse entre titulares o
+contactos de la misma corredora. El listado filtra por ejecutivo, ramo y tag,
+permite administrar tags y exporta todas las filas filtradas desde el
+servidor solo con `parties.export`. Los datos personales se enmascaran sin
+`parties.read_sensitive`.
+
+Importaciones acepta CSV, TSV o XLSX para los cinco perfiles Brokeris
+operativos. Conserva nombre, tamaño y SHA-256, previsualiza antes de aplicar,
+impide aplicar dos veces el mismo archivo y muestra el historial. El contrato
+X1–X17 definitivo sigue esperando los archivos reales: no se inventan
+columnas ni binarios que no fueron entregados.
