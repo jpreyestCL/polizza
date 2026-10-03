@@ -8,6 +8,7 @@ import {
 import {
   appendPremiumMovement,
   ensureIssueMovement,
+  reverseEndorsementMovements,
 } from "@/features/ledger/record";
 import { roundHalfUp } from "@/lib/domain/money";
 import {
@@ -338,22 +339,33 @@ export async function applyEndorsementToPolicy(
       },
     });
     if (input.type === "REHABILITACION") {
-      const termination = (await tx.endorsement.findFirst({
-        where: {
-          policyId: input.policyId,
-          type: { in: [...TERMINATION_TYPES] },
-        },
-        orderBy: { createdAt: "desc" },
-        select: { id: true },
-      })) as { id: string } | null;
-      if (termination) {
-        await reopenPlanAfterTermination(tx, {
+      const terminations = await activeTerminations(tx, input.policyId, created.id);
+      for (const termination of terminations) {
+        await reverseEndorsementMovements(tx, {
           organizationId: input.organizationId,
           policyId: input.policyId,
           endorsementId: termination.id,
+          createdById: input.userId,
+        });
+      }
+      const latest = terminations[terminations.length - 1];
+      if (latest) {
+        await reopenPlanAfterTermination(tx, {
+          organizationId: input.organizationId,
+          policyId: input.policyId,
+          endorsementId: latest.id,
           userId: input.userId,
         });
       }
+      await tx.endorsement.update({
+        where: { id: created.id },
+        data: {
+          priorSnapshot: {
+            ...priorSnapshot,
+            reversedTerminationIds: terminations.map((t) => t.id),
+          },
+        },
+      });
     }
     const kind = terminationKindOf(input.type);
     if (kind) {
@@ -410,6 +422,43 @@ const STATUS_TYPES = [
   "CORTE_PERDIDA_TOTAL",
   "REHABILITACION",
 ] as const;
+
+/**
+ * Endosos de término que siguen rigiendo: los creados después de la última
+ * rehabilitación, en orden. `before` limita a los anteriores a esa fecha.
+ */
+export async function activeTerminations(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  policyId: string,
+  excludeId?: string,
+  before?: Date,
+): Promise<{ id: string; type: EndorsementType; effectiveDate: Date }[]> {
+  const lastRehab = (await db.endorsement.findFirst({
+    where: {
+      policyId,
+      type: "REHABILITACION",
+      ...(excludeId ? { NOT: { id: excludeId } } : {}),
+      ...(before ? { createdAt: { lt: before } } : {}),
+    },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  })) as { createdAt: Date } | null;
+  const createdAt = {
+    ...(lastRehab ? { gt: lastRehab.createdAt } : {}),
+    ...(before ? { lt: before } : {}),
+  };
+  return db.endorsement.findMany({
+    where: {
+      policyId,
+      type: { in: [...TERMINATION_TYPES] },
+      ...(excludeId ? { NOT: { id: excludeId } } : {}),
+      ...(Object.keys(createdAt).length ? { createdAt } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, type: true, effectiveDate: true },
+  });
+}
 
 function asSnapshot(value: unknown): PriorSnapshot | null {
   if (!value || typeof value !== "object") return null;
@@ -500,12 +549,10 @@ export async function restoreEndorsementSideEffects(
     snap.itemDescription &&
     (await later(["MODIFICACION_GLOSA_ITEM"])) === 0
   ) {
-    await db.policyItem
-      .update({
-        where: { id: snap.itemId },
-        data: { description: snap.itemDescription },
-      })
-      .catch(() => null);
+    await db.policyItem.updateMany({
+      where: { id: snap.itemId },
+      data: { description: snap.itemDescription },
+    });
   }
   if (endorsement.type === "CAMBIO_CORREDOR" && (await later(["CAMBIO_CORREDOR"])) === 0) {
     await db.policy.update({
@@ -518,44 +565,46 @@ export async function restoreEndorsementSideEffects(
       },
     });
   }
-  if (
-    endorsement.type === "REHABILITACION" &&
-    snap.status &&
-    (snap.status === "CANCELADA" || snap.status === "ANULADA") &&
-    (await later(STATUS_TYPES)) === 0
-  ) {
-    const termination = (await db.endorsement.findFirst({
-      where: {
-        policyId: endorsement.policyId,
-        type: { in: [...TERMINATION_TYPES] },
-        createdAt: { lt: endorsement.createdAt },
-      },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, type: true, effectiveDate: true },
-    })) as { id: string; type: EndorsementType; effectiveDate: Date } | null;
-    await db.policy.update({
-      where: { id: endorsement.policyId },
-      data: { status: snap.status },
-    });
-    await db.policyStatusHistory.create({
-      data: {
-        organizationId: user.organizationId,
-        policyId: endorsement.policyId,
-        status: snap.status,
-        note: "Rehabilitación revertida",
-        changedById: user.userId,
-      },
-    });
-    const kind = termination ? terminationKindOf(termination.type) : null;
-    if (termination && kind) {
-      await closePlanOnTermination(db, {
-        organizationId: user.organizationId,
-        policyId: endorsement.policyId,
-        endorsementId: termination.id,
-        userId: user.userId,
-        kind,
-        effectiveDate: termination.effectiveDate,
+  if (endorsement.type === "REHABILITACION" && (await later(STATUS_TYPES)) === 0) {
+    const recorded = (snap as { reversedTerminationIds?: unknown })
+      .reversedTerminationIds;
+    const terminations = Array.isArray(recorded)
+      ? ((await db.endorsement.findMany({
+          where: {
+            id: { in: recorded.filter((id): id is string => typeof id === "string") },
+          },
+          orderBy: { createdAt: "asc" },
+          select: { id: true, type: true, effectiveDate: true },
+        })) as { id: string; type: EndorsementType; effectiveDate: Date }[])
+      : await activeTerminations(db, endorsement.policyId, endorsement.id, endorsement.createdAt);
+    const latest = terminations[terminations.length - 1];
+    const status = latest ? endorsementStatusEffect(latest.type) : null;
+    if (latest && status) {
+      await db.policy.update({
+        where: { id: endorsement.policyId },
+        data: { status },
       });
+      await db.policyStatusHistory.create({
+        data: {
+          organizationId: user.organizationId,
+          policyId: endorsement.policyId,
+          status,
+          note: "Rehabilitación revertida",
+          changedById: user.userId,
+        },
+      });
+      for (const termination of terminations) {
+        const kind = terminationKindOf(termination.type);
+        if (!kind) continue;
+        await closePlanOnTermination(db, {
+          organizationId: user.organizationId,
+          policyId: endorsement.policyId,
+          endorsementId: termination.id,
+          userId: user.userId,
+          kind,
+          effectiveDate: termination.effectiveDate,
+        });
+      }
     }
   }
   if (
@@ -563,13 +612,13 @@ export async function restoreEndorsementSideEffects(
     snap.itemId &&
     (await later(["MODIFICA_MONTO_PRIMA"])) === 0
   ) {
-    await db.policyItem.update({
+    await db.policyItem.updateMany({
       where: { id: snap.itemId },
       data: {
         insuredAmount:
           snap.insuredAmount != null ? new Prisma.Decimal(snap.insuredAmount) : null,
       },
-    }).catch(() => null);
+    });
   }
   if (
     endorsement.type === "CORTE_PERDIDA_TOTAL" &&
