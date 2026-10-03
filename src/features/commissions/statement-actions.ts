@@ -124,12 +124,21 @@ export async function postCommissionStatementAction(form: FormData): Promise<voi
     .map((line) => line.policyNumber);
   const matchedPolicies = new Set(matches.map((match) => match.lineId));
   const withoutReceivable = lineIds
-    .filter((line) => policyId.has(line.policyNumber) && !matchedPolicies.has(line.id))
+    .filter(
+      (line) =>
+        line.amount > 0 &&
+        policyId.has(line.policyNumber) &&
+        !matchedPolicies.has(line.id),
+    )
+    .map((line) => line.policyNumber);
+  const adjustments = lineIds
+    .filter((line) => line.amount < 0)
     .map((line) => line.policyNumber);
   revalidatePath("/comisiones/liquidacion");
   const faltan = missing.slice(0, 12).join(",");
   const sinComision = withoutReceivable.slice(0, 12).join(",");
+  const ajustes = adjustments.slice(0, 12).join(",");
   redirect(
-    `/comisiones/liquidacion?ok=1&lineas=${parsed.length}&calces=${matches.length}&sinPoliza=${missing.length}&sinComision=${withoutReceivable.length}&faltan=${encodeURIComponent(faltan)}&pendientes=${encodeURIComponent(sinComision)}`,
+    `/comisiones/liquidacion?ok=1&lineas=${parsed.length}&calces=${matches.length}&sinPoliza=${missing.length}&sinComision=${withoutReceivable.length}&faltan=${encodeURIComponent(faltan)}&pendientes=${encodeURIComponent(sinComision)}&negativos=${adjustments.length}&ajustes=${encodeURIComponent(ajustes)}`,
   );
 }

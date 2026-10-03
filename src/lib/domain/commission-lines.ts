@@ -4,8 +4,37 @@ export type CommissionPasteLine = {
 };
 
 const POLICY_HEADER = /p[oó]liza|policy|n[uú]mero|nro|folio/i;
+const STRONG_POLICY_HEADER = /p[oó]liza|policy/i;
+const NOT_POLICY_HEADER = /endoso|cuota|[ií]tem|l[ií]nea|fila|row|^#$|^n[°º]$/i;
 const COMMISSION_HEADER = /comisi[oó]n|commission/i;
 const AMOUNT_HEADER = /monto|amount|valor|importe|total/i;
+const RATE_HEADER = /%|tasa|porc|rate/i;
+
+/**
+ * Columna de póliza: primero la que dice "póliza", luego "número"/"folio",
+ * nunca la de endoso, cuota o correlativo de fila.
+ */
+function findPolicyColumn(cells: string[]): number {
+  const candidates = cells
+    .map((cell, index) => ({ cell, index }))
+    .filter(({ cell }) => POLICY_HEADER.test(cell));
+  const strong = candidates.find(
+    ({ cell }) => STRONG_POLICY_HEADER.test(cell) && !/endoso/i.test(cell),
+  );
+  if (strong) return strong.index;
+  return candidates.find(({ cell }) => !NOT_POLICY_HEADER.test(cell))?.index ?? -1;
+}
+
+/** Columna del monto de comisión, nunca la de tasa o porcentaje. */
+function findAmountColumn(cells: string[], policyCol: number): number {
+  const usable = (cell: string, index: number) =>
+    index !== policyCol && !RATE_HEADER.test(cell);
+  const commission = cells.findIndex(
+    (cell, index) => usable(cell, index) && COMMISSION_HEADER.test(cell),
+  );
+  if (commission >= 0) return commission;
+  return cells.findIndex((cell, index) => usable(cell, index) && AMOUNT_HEADER.test(cell));
+}
 
 /** Corta una fila respetando comillas dobles ("a;b" es una celda). */
 export function splitCsvRow(line: string, delimiter: string): string[] {
@@ -95,7 +124,9 @@ export function parseCommissionLines(
   const push = (policyNumber: string, amountRaw: string) => {
     const amount = parseStatementAmount(amountRaw, currency);
     const number = policyNumber.trim();
-    if (!number || amount == null || amount <= 0) return;
+    // Los montos negativos (reversas de la compañía) se guardan; el calce no
+    // los asigna y la pantalla los informa como ajustes.
+    if (!number || amount == null || amount === 0) return;
     parsed.push({ policyNumber: number, amount });
   };
 
@@ -104,14 +135,8 @@ export function parseCommissionLines(
     const line = rows[index];
     const delimiter = detectDelimiter(line);
     const headerCells = delimiter ? splitCsvRow(line, delimiter) : line.split(/\s+/);
-    const policyCol = headerCells.findIndex((cell) => POLICY_HEADER.test(cell));
-    const commissionCol = headerCells.findIndex((cell) => COMMISSION_HEADER.test(cell));
-    const amountCol =
-      commissionCol >= 0
-        ? commissionCol
-        : headerCells.findIndex(
-            (cell, i) => i !== policyCol && AMOUNT_HEADER.test(cell),
-          );
+    const policyCol = findPolicyColumn(headerCells);
+    const amountCol = findAmountColumn(headerCells, policyCol);
     const isHeader =
       policyCol >= 0 &&
       amountCol >= 0 &&

@@ -34,6 +34,14 @@ export default async function LiquidacionPage({
           {typeof sp.faltan === "string" && sp.faltan ? `: ${sp.faltan}` : ""}.{" "}
           {sp.sinComision ?? 0} líneas tenían póliza y no una comisión pendiente
           {typeof sp.pendientes === "string" && sp.pendientes ? `: ${sp.pendientes}` : ""}.
+          {sp.negativos && sp.negativos !== "0" ? (
+            <>
+              {" "}
+              {sp.negativos} líneas vienen con monto negativo (reversas de la compañía) y quedan sin calzar para
+              revisarlas a mano
+              {typeof sp.ajustes === "string" && sp.ajustes ? `: ${sp.ajustes}` : ""}.
+            </>
+          ) : null}
         </p>
       ) : null}
       {sp.error === "datos" ? (

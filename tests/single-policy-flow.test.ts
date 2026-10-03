@@ -96,6 +96,21 @@ describe("comisión y no renovación", () => {
     ).toEqual([{ policyNumber: "POL-9", amount: 12345 }]);
   });
 
+  it("no confunde la columna de póliza con el correlativo ni la comisión con la tasa", () => {
+    const csv = [
+      "Nro;N° Endoso;Póliza;% Comisión;Comisión",
+      "1;0;POL-100;15;12,5",
+      "2;3;POL-200;10;-4",
+    ].join("\n");
+    expect(parseCommissionLines(csv)).toEqual([
+      { policyNumber: "POL-100", amount: 12.5 },
+      { policyNumber: "POL-200", amount: -4 },
+    ]);
+    expect(parseCommissionLines("Folio;Tasa comisión;Monto\nPOL-7;12;3")).toEqual([
+      { policyNumber: "POL-7", amount: 3 },
+    ]);
+  });
+
   it("nombra los 23 motivos y sigue leyendo uno viejo", () => {
     expect(nonRenewalReasonLabel("PRICE")).toBe("Precio");
     expect(nonRenewalReasonLabel("PRECIO")).toBe("Precio");
