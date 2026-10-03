@@ -126,6 +126,10 @@ async function linkImportedRenewals(
   input: { organizationId: string; userId: string },
   rows: JobRow[],
 ): Promise<void> {
+  const originals = new Map<
+    string,
+    { id: string; status: string; nextPolicyId: string | null }
+  >();
   for (const row of rows) {
     const payload = (row.payload ?? {}) as Record<string, unknown>;
     const childExternal = text(payload.id);
@@ -134,7 +138,13 @@ async function linkImportedRenewals(
     const [child, mother] = await Promise.all([
       tx.policy.findFirst({
         where: { externalId: childExternal },
-        select: { id: true, status: true, previousPolicyId: true },
+        select: {
+          id: true,
+          status: true,
+          previousPolicyId: true,
+          lineageId: true,
+          termNumber: true,
+        },
       }),
       tx.policy.findFirst({
         where: { externalId: motherExternal },
@@ -148,6 +158,13 @@ async function linkImportedRenewals(
       }),
     ]);
     if (!child || !mother || child.previousPolicyId) continue;
+    if (!originals.has(mother.id)) {
+      originals.set(mother.id, {
+        id: mother.id,
+        status: mother.status,
+        nextPolicyId: mother.nextPolicyId,
+      });
+    }
     await tx.policy.update({
       where: { id: child.id },
       data: {
@@ -187,10 +204,12 @@ async function linkImportedRenewals(
       data: {
         payload: {
           ...((stored?.payload ?? payload) as Record<string, unknown>),
-          _mother: {
-            id: mother.id,
-            status: mother.status,
-            nextPolicyId: mother.nextPolicyId,
+          _mother: originals.get(mother.id),
+          _child: {
+            id: child.id,
+            previousPolicyId: child.previousPolicyId,
+            lineageId: child.lineageId,
+            termNumber: child.termNumber,
           },
         },
       },
@@ -238,6 +257,43 @@ async function applyPolicy(
     await mark(tx, rowId, "OMITIR", "La póliza ya estaba en la cartera.");
     return false;
   }
+  const companyName = text(payload.companyName);
+  let createdCompanyId: string | null = null;
+  let company: { id: string } | null = null;
+  if (companyName) {
+    company =
+      (await tx.insuranceCompany.findFirst({
+        where: {
+          OR: [
+            { name: { equals: companyName, mode: "insensitive" } },
+            { globalCompany: { name: { equals: companyName, mode: "insensitive" } } },
+          ],
+        },
+        select: { id: true },
+      })) ?? null;
+    if (!company && companyName.length >= 4) {
+      const partial: { id: string }[] = await tx.insuranceCompany.findMany({
+        where: {
+          OR: [
+            { name: { contains: companyName, mode: "insensitive" } },
+            { globalCompany: { name: { contains: companyName, mode: "insensitive" } } },
+          ],
+        },
+        select: { id: true },
+        take: 2,
+      });
+      if (partial.length > 1) {
+        await mark(
+          tx,
+          rowId,
+          "REVISAR",
+          `No se creó: «${companyName}» calza con más de una compañía de la corredora. Usa el nombre completo.`,
+        );
+        return false;
+      }
+      company = partial[0] ?? null;
+    }
+  }
   const terms = rutSearchTerms(rut);
   let client = await tx.client.findFirst({
     where: { OR: terms.map((term) => ({ rut: term })) },
@@ -261,25 +317,6 @@ async function applyPolicy(
       },
       select: { id: true },
     });
-  }
-  const companyName = text(payload.companyName);
-  let createdCompanyId: string | null = null;
-  let company: { id: string } | null = null;
-  if (companyName) {
-    company =
-      (await tx.insuranceCompany.findFirst({
-        where: { name: { equals: companyName, mode: "insensitive" } },
-        select: { id: true },
-      })) ??
-      (await tx.insuranceCompany.findFirst({
-        where: {
-          OR: [
-            { name: { contains: companyName, mode: "insensitive" } },
-            { globalCompany: { name: { contains: companyName, mode: "insensitive" } } },
-          ],
-        },
-        select: { id: true },
-      }));
   }
   if (companyName && !company) {
     const newCompany: { id: string } = await tx.insuranceCompany.create({

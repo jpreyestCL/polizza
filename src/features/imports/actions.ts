@@ -243,20 +243,55 @@ export async function revertImportAction(form: FormData): Promise<void> {
   });
   if (!job) redirect("/importaciones?aviso=lote");
   if (job.profile.startsWith("BROKERIS_")) {
+    const restoredMothers = new Set<string>();
     for (const row of job.rows) {
-      const mother = ((row.payload ?? {}) as {
+      const links = (row.payload ?? {}) as {
         _mother?: { id: string; status: string; nextPolicyId: string | null };
-      })._mother;
-      if (mother) {
-        await db.policy
-          .update({
+        _child?: {
+          id: string;
+          previousPolicyId: string | null;
+          lineageId: string | null;
+          termNumber: number | null;
+        };
+      };
+      const mother = links._mother;
+      if (mother && !restoredMothers.has(mother.id)) {
+        restoredMothers.add(mother.id);
+        const current = await db.policy.findFirst({
+          where: { id: mother.id },
+          select: { status: true },
+        });
+        if (current) {
+          await db.policy.update({
             where: { id: mother.id },
             data: {
               status: mother.status as PolicyStatus,
               nextPolicyId: mother.nextPolicyId,
             },
-          })
-          .catch(() => null);
+          });
+          if (current.status !== mother.status) {
+            await db.policyStatusHistory.create({
+              data: {
+                organizationId: ctx.organizationId,
+                policyId: mother.id,
+                status: mother.status as PolicyStatus,
+                note: `Lote de importación revertido: ${reason}`,
+                changedById: ctx.userId,
+              },
+            });
+          }
+        }
+      }
+      const child = links._child;
+      if (child && child.id !== row.createdEntityId) {
+        await db.policy.updateMany({
+          where: { id: child.id },
+          data: {
+            previousPolicyId: child.previousPolicyId,
+            lineageId: child.lineageId,
+            termNumber: child.termNumber ?? 1,
+          },
+        });
       }
       if (!row.createdEntityId) continue;
       if (row.createdEntityType === "CLAIM") {
@@ -310,10 +345,17 @@ export async function revertImportAction(form: FormData): Promise<void> {
           _createdCompanyId?: string;
         };
         if (extra._createdCompanyId) {
-          const used = await db.policy.count({
-            where: { companyId: extra._createdCompanyId },
-          });
-          if (used === 0) {
+          const companyId = extra._createdCompanyId;
+          const uses = await Promise.all([
+            db.policy.count({ where: { companyId } }),
+            db.proposal.count({ where: { companyId } }),
+            db.insuranceProduct.count({ where: { insuranceCompanyId: companyId } }),
+            db.insuranceCompanyContact.count({ where: { insuranceCompanyId: companyId } }),
+            db.proposalCoaseguroParticipation.count({
+              where: { insuranceCompanyId: companyId },
+            }),
+          ]);
+          if (uses.every((count) => count === 0)) {
             await db.insuranceCompany
               .delete({ where: { id: extra._createdCompanyId } })
               .catch(() => null);
